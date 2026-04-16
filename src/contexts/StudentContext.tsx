@@ -5,11 +5,13 @@ import type { Payment, AttendanceRecord, ExamResult } from "@/types/student";
 
 interface StudentContextType {
   students: Student[];
+  payments: Payment[];
   addStudent: (student: Omit<Student, "id" | "studentId" | "status">) => void;
   updateStudent: (id: string, data: Partial<Student>) => void;
   deleteStudent: (id: string) => void;
   getStudent: (id: string) => Student | undefined;
   getPayments: (studentId: string) => Payment[];
+  addPayment: (payment: Omit<Payment, "id">) => void;
   getAttendance: (studentId: string) => AttendanceRecord[];
   getResults: (studentId: string) => ExamResult[];
 }
@@ -18,6 +20,7 @@ const StudentContext = createContext<StudentContextType | null>(null);
 
 export function StudentProvider({ children }: { children: React.ReactNode }) {
   const [students, setStudents] = useState<Student[]>(mockStudents);
+  const [payments, setPayments] = useState<Payment[]>(mockPayments);
 
   const addStudent = useCallback((data: Omit<Student, "id" | "studentId" | "status">) => {
     const newStudent: Student = {
@@ -43,9 +46,27 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
   );
 
   const getPayments = useCallback(
-    (studentId: string) => mockPayments.filter((p) => p.studentId === studentId),
-    []
+    (studentId: string) => payments.filter((p) => p.studentId === studentId),
+    [payments]
   );
+
+  const addPayment = useCallback((payment: Omit<Payment, "id">) => {
+    const newPayment: Payment = {
+      ...payment,
+      id: `p${Date.now()}`,
+    };
+    setPayments((prev) => [newPayment, ...prev]);
+    // Update student paid/due
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (s.id === payment.studentId) {
+          const newPaid = s.paid + payment.paidAmount;
+          return { ...s, paid: newPaid, due: s.totalFee - newPaid };
+        }
+        return s;
+      })
+    );
+  }, []);
 
   const getAttendance = useCallback(
     (studentId: string) => mockAttendance[studentId] || [],
@@ -59,7 +80,7 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StudentContext.Provider
-      value={{ students, addStudent, updateStudent, deleteStudent, getStudent, getPayments, getAttendance, getResults }}
+      value={{ students, payments, addStudent, updateStudent, deleteStudent, getStudent, getPayments, addPayment, getAttendance, getResults }}
     >
       {children}
     </StudentContext.Provider>

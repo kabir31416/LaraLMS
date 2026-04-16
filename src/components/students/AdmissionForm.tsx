@@ -35,8 +35,9 @@ import {
   SUBJECTS,
   GENDERS,
   RELATIONS,
+  FEE_TYPES,
 } from "@/types/student";
-import type { Student } from "@/types/student";
+import type { Student, FeeType } from "@/types/student";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,13 +47,6 @@ interface AdmissionFormProps {
   onOpenChange: (open: boolean) => void;
   editStudent?: Student | null;
 }
-
-const defaultFees = {
-  admissionFee: 2000,
-  monthlyFee: 1500,
-  discount: 0,
-  paid: 0,
-};
 
 export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionFormProps) {
   const { addStudent, updateStudent } = useStudents();
@@ -84,6 +78,9 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         section: student.section,
         group: student.group,
         admissionType: student.admissionType,
+        feeType: student.feeType as string,
+        courseDuration: student.courseDuration,
+        totalCourseFee: student.totalCourseFee,
         admissionFee: student.admissionFee,
         monthlyFee: student.monthlyFee,
         discount: student.discount,
@@ -107,12 +104,20 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       section: "" as string,
       group: "" as string,
       admissionType: "নতুন" as string,
-      ...defaultFees,
+      feeType: "এককালীন" as string,
+      courseDuration: 12,
+      totalCourseFee: 0,
+      admissionFee: 0,
+      monthlyFee: 0,
+      discount: 0,
+      paid: 0,
     };
   }
 
-  const totalFee =
-    Number(form.admissionFee) + Number(form.monthlyFee) * 12 - Number(form.discount);
+  const isOneTime = form.feeType === "এককালীন";
+  const totalFee = isOneTime
+    ? Number(form.totalCourseFee) + Number(form.admissionFee) - Number(form.discount)
+    : Number(form.admissionFee) + Number(form.monthlyFee) * Number(form.courseDuration) - Number(form.discount);
   const due = totalFee - Number(form.paid);
 
   const updateField = (field: string, value: string | number) => {
@@ -151,8 +156,11 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       subjects: selectedSubjects,
       admissionDate: admissionDate ? format(admissionDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       admissionType: form.admissionType as Student["admissionType"],
+      feeType: form.feeType as FeeType,
+      courseDuration: Number(form.courseDuration),
+      totalCourseFee: Number(form.totalCourseFee),
       admissionFee: Number(form.admissionFee),
-      monthlyFee: Number(form.monthlyFee),
+      monthlyFee: isOneTime ? 0 : Number(form.monthlyFee),
       discount: Number(form.discount),
       totalFee,
       paid: Number(form.paid),
@@ -188,60 +196,31 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>শিক্ষার্থীর নাম *</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                    placeholder="পূর্ণ নাম লিখুন"
-                  />
+                  <Input value={form.name} onChange={(e) => updateField("name", e.target.value)} placeholder="পূর্ণ নাম লিখুন" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>মোবাইল নম্বর *</Label>
-                  <Input
-                    value={form.mobile}
-                    onChange={(e) => updateField("mobile", e.target.value)}
-                    placeholder="01XXXXXXXXX"
-                  />
+                  <Input value={form.mobile} onChange={(e) => updateField("mobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>বিকল্প মোবাইল</Label>
-                  <Input
-                    value={form.altMobile}
-                    onChange={(e) => updateField("altMobile", e.target.value)}
-                    placeholder="01XXXXXXXXX"
-                  />
+                  <Input value={form.altMobile} onChange={(e) => updateField("altMobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>ইমেইল</Label>
-                  <Input
-                    value={form.email}
-                    onChange={(e) => updateField("email", e.target.value)}
-                    placeholder="example@email.com"
-                  />
+                  <Input value={form.email} onChange={(e) => updateField("email", e.target.value)} placeholder="example@email.com" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>জন্ম তারিখ</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !dob && "text-muted-foreground"
-                        )}
-                      >
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dob && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dob ? format(dob, "dd MMMM yyyy", { locale: bn }) : "তারিখ নির্বাচন করুন"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={dob}
-                        onSelect={setDob}
-                        disabled={(date) => date > new Date()}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
+                      <Calendar mode="single" selected={dob} onSelect={setDob} disabled={(date) => date > new Date()} initialFocus className="p-3 pointer-events-auto" />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -250,28 +229,20 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Select value={form.gender} onValueChange={(v) => updateField("gender", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {GENDERS.map((g) => (
-                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                      ))}
+                      {GENDERS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>প্রতিষ্ঠান/স্কুল নাম</Label>
-                  <Input
-                    value={form.institution}
-                    onChange={(e) => updateField("institution", e.target.value)}
-                    placeholder="প্রতিষ্ঠানের নাম"
-                  />
+                  <Input value={form.institution} onChange={(e) => updateField("institution", e.target.value)} placeholder="প্রতিষ্ঠানের নাম" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>শ্রেণি</Label>
                   <Select value={form.class} onValueChange={(v) => updateField("class", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {CLASSES.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
+                      {CLASSES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -286,38 +257,24 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>অভিভাবকের নাম *</Label>
-                  <Input
-                    value={form.guardianName}
-                    onChange={(e) => updateField("guardianName", e.target.value)}
-                    placeholder="অভিভাবকের নাম"
-                  />
+                  <Input value={form.guardianName} onChange={(e) => updateField("guardianName", e.target.value)} placeholder="অভিভাবকের নাম" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>সম্পর্ক</Label>
                   <Select value={form.guardianRelation} onValueChange={(v) => updateField("guardianRelation", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {RELATIONS.map((r) => (
-                        <SelectItem key={r} value={r}>{r}</SelectItem>
-                      ))}
+                      {RELATIONS.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>অভিভাবকের মোবাইল</Label>
-                  <Input
-                    value={form.guardianMobile}
-                    onChange={(e) => updateField("guardianMobile", e.target.value)}
-                    placeholder="01XXXXXXXXX"
-                  />
+                  <Input value={form.guardianMobile} onChange={(e) => updateField("guardianMobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
                   <Label>ঠিকানা</Label>
-                  <Input
-                    value={form.address}
-                    onChange={(e) => updateField("address", e.target.value)}
-                    placeholder="সম্পূর্ণ ঠিকানা"
-                  />
+                  <Input value={form.address} onChange={(e) => updateField("address", e.target.value)} placeholder="সম্পূর্ণ ঠিকানা" />
                 </div>
               </div>
             </section>
@@ -333,9 +290,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Select value={form.course} onValueChange={(v) => updateField("course", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {COURSES.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
+                      {COURSES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -344,9 +299,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Select value={form.batch} onValueChange={(v) => updateField("batch", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {BATCHES.map((b) => (
-                        <SelectItem key={b} value={b}>{b}</SelectItem>
-                      ))}
+                      {BATCHES.map((b) => (<SelectItem key={b} value={b}>{b}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -355,9 +308,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Select value={form.section} onValueChange={(v) => updateField("section", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {SECTIONS.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
+                      {SECTIONS.map((s) => (<SelectItem key={s} value={s}>{s}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -366,9 +317,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Select value={form.group} onValueChange={(v) => updateField("group", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>
-                      {GROUPS.map((g) => (
-                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                      ))}
+                      {GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -376,27 +325,13 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Label>ভর্তি তারিখ</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !admissionDate && "text-muted-foreground"
-                        )}
-                      >
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !admissionDate && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {admissionDate
-                          ? format(admissionDate, "dd MMMM yyyy", { locale: bn })
-                          : "তারিখ নির্বাচন করুন"}
+                        {admissionDate ? format(admissionDate, "dd MMMM yyyy", { locale: bn }) : "তারিখ নির্বাচন করুন"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={admissionDate}
-                        onSelect={setAdmissionDate}
-                        initialFocus
-                        className="p-3 pointer-events-auto"
-                      />
+                      <Calendar mode="single" selected={admissionDate} onSelect={setAdmissionDate} initialFocus className="p-3 pointer-events-auto" />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -415,10 +350,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 border rounded-lg p-3 bg-muted/30">
                     {SUBJECTS.map((subject) => (
                       <label key={subject} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <Checkbox
-                          checked={selectedSubjects.includes(subject)}
-                          onCheckedChange={() => toggleSubject(subject)}
-                        />
+                        <Checkbox checked={selectedSubjects.includes(subject)} onCheckedChange={() => toggleSubject(subject)} />
                         {subject}
                       </label>
                     ))}
@@ -434,36 +366,42 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label>ভর্তি ফি (৳)</Label>
-                  <Input
-                    type="number"
-                    value={form.admissionFee}
-                    onChange={(e) => updateField("admissionFee", Number(e.target.value))}
-                  />
+                  <Label>ফি ধরন</Label>
+                  <Select value={form.feeType} onValueChange={(v) => updateField("feeType", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FEE_TYPES.map((ft) => (<SelectItem key={ft} value={ft}>{ft}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>মাসিক ফি (৳)</Label>
-                  <Input
-                    type="number"
-                    value={form.monthlyFee}
-                    onChange={(e) => updateField("monthlyFee", Number(e.target.value))}
-                  />
+                  <Label>কোর্স সময়কাল (মাস)</Label>
+                  <Input type="number" value={form.courseDuration} onChange={(e) => updateField("courseDuration", Number(e.target.value))} />
                 </div>
+                <div className="space-y-1.5">
+                  <Label>ভর্তি ফি (৳)</Label>
+                  <Input type="number" value={form.admissionFee} onChange={(e) => updateField("admissionFee", Number(e.target.value))} />
+                </div>
+
+                {isOneTime ? (
+                  <div className="space-y-1.5">
+                    <Label>মোট কোর্স ফি (৳)</Label>
+                    <Input type="number" value={form.totalCourseFee} onChange={(e) => updateField("totalCourseFee", Number(e.target.value))} />
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label>মাসিক ফি (৳)</Label>
+                    <Input type="number" value={form.monthlyFee} onChange={(e) => updateField("monthlyFee", Number(e.target.value))} />
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label>ডিসকাউন্ট (৳)</Label>
-                  <Input
-                    type="number"
-                    value={form.discount}
-                    onChange={(e) => updateField("discount", Number(e.target.value))}
-                  />
+                  <Input type="number" value={form.discount} onChange={(e) => updateField("discount", Number(e.target.value))} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>পরিশোধিত (৳)</Label>
-                  <Input
-                    type="number"
-                    value={form.paid}
-                    onChange={(e) => updateField("paid", Number(e.target.value))}
-                  />
+                  <Input type="number" value={form.paid} onChange={(e) => updateField("paid", Number(e.target.value))} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>মোট ফি (৳)</Label>
@@ -471,22 +409,14 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                 </div>
                 <div className="space-y-1.5">
                   <Label>বাকি (৳)</Label>
-                  <Input
-                    value={due}
-                    readOnly
-                    className={cn("bg-muted/50", due > 0 && "text-destructive font-semibold")}
-                  />
+                  <Input value={due} readOnly className={cn("bg-muted/50", due > 0 && "text-destructive font-semibold")} />
                 </div>
               </div>
             </section>
 
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                বাতিল
-              </Button>
-              <Button onClick={handleSubmit}>
-                {isEdit ? "হালনাগাদ করুন" : "ভর্তি সম্পন্ন করুন"}
-              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
+              <Button onClick={handleSubmit}>{isEdit ? "হালনাগাদ করুন" : "ভর্তি সম্পন্ন করুন"}</Button>
             </div>
           </div>
         </ScrollArea>

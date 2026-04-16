@@ -1,3 +1,5 @@
+export type FeeType = "এককালীন" | "মাসিক";
+
 export interface Student {
   id: string;
   studentId: string;
@@ -27,6 +29,9 @@ export interface Student {
   admissionType: "নতুন" | "পুরাতন";
 
   // Fees
+  feeType: FeeType;
+  courseDuration: number; // months
+  totalCourseFee: number;
   admissionFee: number;
   monthlyFee: number;
   discount: number;
@@ -43,7 +48,12 @@ export interface Payment {
   studentId: string;
   date: string;
   amount: number;
+  discount: number;
+  fine: number;
+  paidAmount: number;
   method: string;
+  feeType: FeeType;
+  month?: string; // for monthly payments
   note?: string;
 }
 
@@ -60,6 +70,7 @@ export interface ExamResult {
   grade: string;
 }
 
+export const FEE_TYPES: FeeType[] = ["এককালীন", "মাসিক"];
 export const COURSES = ["বিজ্ঞান", "বাণিজ্য", "মানবিক", "সাধারণ"];
 export const BATCHES = ["ব্যাচ-২০২৬-A", "ব্যাচ-২০২৬-B", "ব্যাচ-২০২৫-A", "ব্যাচ-২০২৫-B"];
 export const SECTIONS = ["সেকশন-A", "সেকশন-B", "সেকশন-C"];
@@ -72,3 +83,4 @@ export const SUBJECTS = [
 ];
 export const GENDERS = ["পুরুষ", "মহিলা", "অন্যান্য"] as const;
 export const RELATIONS = ["পিতা", "মাতা", "ভাই", "বোন", "অন্যান্য"];
+export const PAYMENT_METHODS = ["নগদ", "বিকাশ", "নগদ (মোবাইল)", "রকেট", "ব্যাংক", "অন্যান্য"];

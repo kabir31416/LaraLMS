@@ -6,15 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Pencil, Phone, Mail, MapPin, Calendar, BookOpen } from "lucide-react";
+import { ArrowLeft, Pencil, Phone, Mail, MapPin } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useState } from "react";
 
@@ -41,6 +36,8 @@ const StudentProfile = () => {
   const absent = attendance.filter((a) => a.status === "অনুপস্থিত").length;
   const late = attendance.filter((a) => a.status === "দেরি").length;
   const attendanceRate = attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0;
+
+  const installmentCount = payments.length;
 
   return (
     <DashboardLayout>
@@ -69,13 +66,7 @@ const StudentProfile = () => {
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-3">
                   <h2 className="text-xl font-bold">{student.name}</h2>
-                  <Badge
-                    className={
-                      student.status === "সক্রিয়"
-                        ? "bg-success/10 text-success border-success/20"
-                        : "bg-muted text-muted-foreground"
-                    }
-                  >
+                  <Badge className={student.status === "সক্রিয়" ? "bg-success/10 text-success border-success/20" : "bg-muted text-muted-foreground"}>
                     {student.status}
                   </Badge>
                 </div>
@@ -90,6 +81,9 @@ const StudentProfile = () => {
                   <Badge variant="outline">{student.course}</Badge>
                   <Badge variant="outline">{student.batch}</Badge>
                   <Badge variant="outline">{student.section}</Badge>
+                  <Badge variant="outline" className={student.feeType === "এককালীন" ? "bg-info/10 text-info border-info/20" : "bg-primary/10 text-primary border-primary/20"}>
+                    {student.feeType}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -149,14 +143,27 @@ const StudentProfile = () => {
           <TabsContent value="fees">
             <Card className="border-none shadow-sm">
               <CardContent className="p-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <FeeBox label="ফি ধরন" value={student.feeType} />
+                  <FeeBox label="কোর্স সময়কাল" value={`${student.courseDuration} মাস`} />
+                  {student.feeType === "এককালীন" ? (
+                    <FeeBox label="কোর্স ফি" value={`৳ ${student.totalCourseFee.toLocaleString()}`} />
+                  ) : (
+                    <FeeBox label="মাসিক ফি" value={`৳ ${student.monthlyFee.toLocaleString()}`} />
+                  )}
                   <FeeBox label="ভর্তি ফি" value={`৳ ${student.admissionFee.toLocaleString()}`} />
-                  <FeeBox label="মাসিক ফি" value={`৳ ${student.monthlyFee.toLocaleString()}`} />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <FeeBox label="ডিসকাউন্ট" value={`৳ ${student.discount.toLocaleString()}`} />
                   <FeeBox label="মোট ফি" value={`৳ ${student.totalFee.toLocaleString()}`} variant="primary" />
                   <FeeBox label="পরিশোধিত" value={`৳ ${student.paid.toLocaleString()}`} variant="success" />
                   <FeeBox label="বকেয়া" value={`৳ ${student.due.toLocaleString()}`} variant={student.due > 0 ? "destructive" : "success"} />
                 </div>
+                {student.feeType === "এককালীন" && installmentCount > 0 && (
+                  <div className="mt-4 p-3 bg-muted/30 rounded-lg text-sm text-center">
+                    মোট কিস্তি পরিশোধ: <span className="font-bold text-primary">{installmentCount} বার</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -197,18 +204,11 @@ const StudentProfile = () => {
                       <TableRow key={i}>
                         <TableCell>{a.date}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              a.status === "উপস্থিত"
-                                ? "bg-success/10 text-success border-success/20"
-                                : a.status === "অনুপস্থিত"
-                                ? "bg-destructive/10 text-destructive border-destructive/20"
-                                : "bg-warning/10 text-warning border-warning/20"
-                            }
-                          >
-                            {a.status}
-                          </Badge>
+                          <Badge variant="outline" className={
+                            a.status === "উপস্থিত" ? "bg-success/10 text-success border-success/20" :
+                            a.status === "অনুপস্থিত" ? "bg-destructive/10 text-destructive border-destructive/20" :
+                            "bg-warning/10 text-warning border-warning/20"
+                          }>{a.status}</Badge>
                         </TableCell>
                       </TableRow>
                     ))
@@ -241,9 +241,7 @@ const StudentProfile = () => {
                         <TableCell>{r.subject}</TableCell>
                         <TableCell className="text-center">{r.totalMarks}</TableCell>
                         <TableCell className="text-center font-semibold">{r.obtained}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="outline">{r.grade}</Badge>
-                        </TableCell>
+                        <TableCell className="text-center"><Badge variant="outline">{r.grade}</Badge></TableCell>
                       </TableRow>
                     ))
                   )}
@@ -259,21 +257,29 @@ const StudentProfile = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>তারিখ</TableHead>
-                    <TableHead>পরিমাণ</TableHead>
+                    <TableHead>ফি ধরন</TableHead>
+                    <TableHead>মাস</TableHead>
+                    <TableHead className="text-right">পরিমাণ</TableHead>
+                    <TableHead className="text-right">জরিমানা</TableHead>
+                    <TableHead className="text-right">পরিশোধিত</TableHead>
                     <TableHead>পদ্ধতি</TableHead>
                     <TableHead>নোট</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {payments.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">কোনো পেমেন্ট নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">কোনো পেমেন্ট নেই</TableCell></TableRow>
                   ) : (
                     payments.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell>{p.date}</TableCell>
-                        <TableCell className="font-semibold">৳ {p.amount.toLocaleString()}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{p.feeType}</Badge></TableCell>
+                        <TableCell>{p.month || "—"}</TableCell>
+                        <TableCell className="text-right">৳ {p.amount.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{p.fine > 0 ? `৳ ${p.fine}` : "—"}</TableCell>
+                        <TableCell className="text-right font-semibold text-success">৳ {p.paidAmount.toLocaleString()}</TableCell>
                         <TableCell>{p.method}</TableCell>
-                        <TableCell className="text-muted-foreground">{p.note || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{p.note || "—"}</TableCell>
                       </TableRow>
                     ))
                   )}
