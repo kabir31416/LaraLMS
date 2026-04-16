@@ -1,30 +1,25 @@
-import { Users, UserPlus, DollarSign, AlertCircle } from "lucide-react";
+import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const stats = [
-  { title: "মোট শিক্ষার্থী", value: "১,২৪৫", icon: Users, variant: "primary" as const, trend: "+১২ এই মাসে" },
-  { title: "আজকের ভর্তি", value: "৮", icon: UserPlus, variant: "success" as const, trend: "+৩ গতকাল থেকে" },
-  { title: "আজকের আদায়", value: "৳ ৩৫,৫০০", icon: DollarSign, variant: "info" as const },
-  { title: "বকেয়া ফি", value: "৳ ১,২৫,০০০", icon: AlertCircle, variant: "warning" as const },
-];
-
-const recentAdmissions = [
-  { name: "রাহাত হোসেন", class: "দশম শ্রেণি", date: "১৬ এপ্রিল ২০২৬" },
-  { name: "ফাতেমা আক্তার", class: "নবম শ্রেণি", date: "১৬ এপ্রিল ২০২৬" },
-  { name: "আরিফ ইসলাম", class: "অষ্টম শ্রেণি", date: "১৫ এপ্রিল ২০২৬" },
-  { name: "সুমাইয়া খান", class: "দশম শ্রেণি", date: "১৫ এপ্রিল ২০২৬" },
-  { name: "মেহেদী হাসান", class: "একাদশ শ্রেণি", date: "১৪ এপ্রিল ২০২৬" },
-];
-
-const upcomingExams = [
-  { subject: "গণিত", class: "দশম শ্রেণি", date: "২০ এপ্রিল ২০২৬" },
-  { subject: "পদার্থবিজ্ঞান", class: "একাদশ শ্রেণি", date: "২২ এপ্রিল ২০২৬" },
-  { subject: "ইংরেজি", class: "নবম শ্রেণি", date: "২৪ এপ্রিল ২০২৬" },
-];
+import { useStudents } from "@/contexts/StudentContext";
+import { format } from "date-fns";
 
 const Index = () => {
+  const { students, payments } = useStudents();
+
+  const totalStudents = students.length;
+  const today = format(new Date(), "yyyy-MM-dd");
+  const todayAdmissions = students.filter((s) => s.admissionDate === today).length;
+  const todayCollection = payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
+  const totalDue = students.reduce((sum, s) => sum + s.due, 0);
+  const packageDue = students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
+  const monthlyDue = students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+
+  const recentAdmissions = [...students]
+    .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
+    .slice(0, 5);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -33,10 +28,16 @@ const Index = () => {
           <p className="text-muted-foreground text-sm">স্বাগতম! আজকের সারসংক্ষেপ দেখুন</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {stats.map((stat) => (
-            <StatCard key={stat.title} {...stat} />
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <StatCard title="মোট শিক্ষার্থী" value={String(totalStudents)} icon={Users} variant="primary" />
+          <StatCard title="আজকের ভর্তি" value={String(todayAdmissions)} icon={UserPlus} variant="success" />
+          <StatCard title="আজকের আদায়" value={`৳ ${todayCollection.toLocaleString()}`} icon={DollarSign} variant="info" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard title="মোট বকেয়া" value={`৳ ${totalDue.toLocaleString()}`} icon={AlertCircle} variant="warning" />
+          <StatCard title="প্যাকেজ বকেয়া" value={`৳ ${packageDue.toLocaleString()}`} icon={Package} variant="info" />
+          <StatCard title="মাসিক বকেয়া" value={`৳ ${monthlyDue.toLocaleString()}`} icon={TrendingUp} variant="primary" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -46,13 +47,13 @@ const Index = () => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {recentAdmissions.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between px-5 py-3">
+                {recentAdmissions.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between px-5 py-3">
                     <div>
                       <p className="text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.class}</p>
+                      <p className="text-xs text-muted-foreground">{item.class} — {item.course}</p>
                     </div>
-                    <span className="text-xs text-muted-foreground">{item.date}</span>
+                    <span className="text-xs text-muted-foreground">{item.admissionDate}</span>
                   </div>
                 ))}
               </div>
@@ -61,17 +62,17 @@ const Index = () => {
 
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">আসন্ন পরীক্ষা</CardTitle>
+              <CardTitle className="text-base font-semibold">বকেয়া শিক্ষার্থী</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {upcomingExams.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between px-5 py-3">
+                {students.filter((s) => s.due > 0).slice(0, 5).map((item) => (
+                  <div key={item.id} className="flex items-center justify-between px-5 py-3">
                     <div>
-                      <p className="text-sm font-medium">{item.subject}</p>
-                      <p className="text-xs text-muted-foreground">{item.class}</p>
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.feeType} — {item.course}</p>
                     </div>
-                    <span className="text-xs text-muted-foreground">{item.date}</span>
+                    <span className="text-xs text-destructive font-semibold">৳ {item.due.toLocaleString()}</span>
                   </div>
                 ))}
               </div>
