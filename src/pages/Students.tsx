@@ -67,7 +67,7 @@ const Students = () => {
           batch={batch}
           onBatchChange={setBatch}
           section={section}
-          onSectionChange={setSSection}
+          onSectionChange={setSection}
           dueOnly={dueOnly}
           onDueOnlyChange={setDueOnly}
         />
