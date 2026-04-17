@@ -478,4 +478,115 @@ function PaymentDialog({
   );
 }
 
+function ReceiptDialog({
+  payment,
+  students,
+  onOpenChange,
+}: {
+  payment: Payment | null;
+  students: Student[];
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!payment) return null;
+  const student = students.find((s) => s.id === payment.studentId);
+
+  const handlePrint = () => window.print();
+
+  return (
+    <Dialog open={!!payment} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md print:shadow-none print:max-w-full">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ReceiptIcon className="h-5 w-5 text-primary" />
+            পেমেন্ট রসিদ
+          </DialogTitle>
+        </DialogHeader>
+
+        <div id="receipt-print" className="space-y-4 pt-2">
+          <div className="text-center border-b border-dashed pb-3">
+            <h2 className="font-bold text-lg">লারা এলএমএস</h2>
+            <p className="text-xs text-muted-foreground">কোচিং ম্যানেজমেন্ট সিস্টেম</p>
+          </div>
+
+          <div className="bg-primary/5 rounded-lg p-3 text-center">
+            <p className="text-xs text-muted-foreground">রসিদ নম্বর</p>
+            <p className="text-lg font-bold font-mono text-primary">{payment.receiptNo}</p>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">শিক্ষার্থীর নাম:</span>
+              <span className="font-medium">{student?.name || "—"}</span>
+            </div>
+            {student && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">শিক্ষার্থী আইডি:</span>
+                <span className="font-mono text-xs">{student.studentId}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">তারিখ:</span>
+              <span>{payment.date}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">ফি ধরন:</span>
+              <Badge variant="outline">{payment.feeType}</Badge>
+            </div>
+            {payment.month && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">মাস:</span>
+                <span>{payment.month}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">পেমেন্ট পদ্ধতি:</span>
+              <span>{payment.method}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">পরিমাণ:</span>
+              <span>৳ {payment.amount.toLocaleString()}</span>
+            </div>
+            {payment.discount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ডিসকাউন্ট:</span>
+                <span className="text-success">- ৳ {payment.discount.toLocaleString()}</span>
+              </div>
+            )}
+            {payment.fine > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">জরিমানা:</span>
+                <span className="text-warning">+ ৳ {payment.fine.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t pt-2 mt-2">
+              <span className="font-semibold">মোট পরিশোধিত:</span>
+              <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
+            </div>
+          </div>
+
+          {payment.note && (
+            <div className="text-xs text-muted-foreground border-t border-dashed pt-2">
+              <span className="font-medium">নোট: </span>{payment.note}
+            </div>
+          )}
+
+          <div className="text-center text-xs text-muted-foreground pt-2 border-t border-dashed">
+            ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 print:hidden">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>বন্ধ</Button>
+          <Button onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" /> প্রিন্ট
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default FeeManagement;
