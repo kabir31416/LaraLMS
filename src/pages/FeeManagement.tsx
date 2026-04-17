@@ -50,6 +50,7 @@ import {
 const FeeManagement = () => {
   const { students, payments, addPayment, getPayments } = useStudents();
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
   const [search, setSearch] = useState("");
   const [filterFeeType, setFilterFeeType] = useState("all");
 
