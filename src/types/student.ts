@@ -45,6 +45,7 @@ export interface Student {
 
 export interface Payment {
   id: string;
+  receiptNo: string;
   studentId: string;
   date: string;
   amount: number;
