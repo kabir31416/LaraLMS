@@ -6,6 +6,13 @@ export const generateStudentId = () => {
   return `LMS-${String(counter).padStart(5, "0")}`;
 };
 
+let receiptCounter = 10;
+export const generateReceiptNo = () => {
+  receiptCounter++;
+  const year = new Date().getFullYear();
+  return `RCPT-${year}-${String(receiptCounter).padStart(4, "0")}`;
+};
+
 export const mockStudents: Student[] = [
   {
     id: "1",
@@ -198,16 +205,16 @@ export const mockStudents: Student[] = [
 ];
 
 export const mockPayments: Payment[] = [
-  { id: "p1", studentId: "1", date: "2026-01-15", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "এককালীন", note: "প্রথম কিস্তি" },
-  { id: "p2", studentId: "1", date: "2026-03-01", amount: 3000, discount: 0, fine: 0, paidAmount: 3000, method: "বিকাশ", feeType: "এককালীন", note: "দ্বিতীয় কিস্তি" },
-  { id: "p3", studentId: "1", date: "2026-04-10", amount: 4000, discount: 0, fine: 0, paidAmount: 4000, method: "নগদ", feeType: "এককালীন" },
-  { id: "p4", studentId: "2", date: "2026-02-01", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "ব্যাংক", feeType: "মাসিক", month: "ফেব্রুয়ারি ২০২৬", note: "৩ মাসের অগ্রিম" },
-  { id: "p5", studentId: "2", date: "2026-03-01", amount: 1500, discount: 0, fine: 0, paidAmount: 1500, method: "বিকাশ", feeType: "মাসিক", month: "মার্চ ২০২৬" },
-  { id: "p6", studentId: "2", date: "2026-04-01", amount: 1500, discount: 0, fine: 0, paidAmount: 1500, method: "বিকাশ", feeType: "মাসিক", month: "এপ্রিল ২০২৬" },
-  { id: "p7", studentId: "3", date: "2026-03-10", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "এককালীন", note: "ভর্তি ফি সহ" },
-  { id: "p8", studentId: "3", date: "2026-04-05", amount: 3000, discount: 0, fine: 0, paidAmount: 3000, method: "নগদ", feeType: "এককালীন" },
-  { id: "p9", studentId: "4", date: "2025-07-01", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "মাসিক", month: "জুলাই ২০২৫" },
-  { id: "p10", studentId: "4", date: "2026-04-16", amount: 1500, discount: 0, fine: 100, paidAmount: 1600, method: "বিকাশ", feeType: "মাসিক", month: "এপ্রিল ২০২৬", note: "দেরি জরিমানা সহ" },
+  { id: "p1", receiptNo: "RCPT-2026-0001", studentId: "1", date: "2026-01-15", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "এককালীন", note: "প্রথম কিস্তি" },
+  { id: "p2", receiptNo: "RCPT-2026-0002", studentId: "1", date: "2026-03-01", amount: 3000, discount: 0, fine: 0, paidAmount: 3000, method: "বিকাশ", feeType: "এককালীন", note: "দ্বিতীয় কিস্তি" },
+  { id: "p3", receiptNo: "RCPT-2026-0003", studentId: "1", date: "2026-04-10", amount: 4000, discount: 0, fine: 0, paidAmount: 4000, method: "নগদ", feeType: "এককালীন" },
+  { id: "p4", receiptNo: "RCPT-2026-0004", studentId: "2", date: "2026-02-01", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "ব্যাংক", feeType: "মাসিক", month: "ফেব্রুয়ারি ২০২৬", note: "৩ মাসের অগ্রিম" },
+  { id: "p5", receiptNo: "RCPT-2026-0005", studentId: "2", date: "2026-03-01", amount: 1500, discount: 0, fine: 0, paidAmount: 1500, method: "বিকাশ", feeType: "মাসিক", month: "মার্চ ২০২৬" },
+  { id: "p6", receiptNo: "RCPT-2026-0006", studentId: "2", date: "2026-04-01", amount: 1500, discount: 0, fine: 0, paidAmount: 1500, method: "বিকাশ", feeType: "মাসিক", month: "এপ্রিল ২০২৬" },
+  { id: "p7", receiptNo: "RCPT-2026-0007", studentId: "3", date: "2026-03-10", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "এককালীন", note: "ভর্তি ফি সহ" },
+  { id: "p8", receiptNo: "RCPT-2026-0008", studentId: "3", date: "2026-04-05", amount: 3000, discount: 0, fine: 0, paidAmount: 3000, method: "নগদ", feeType: "এককালীন" },
+  { id: "p9", receiptNo: "RCPT-2025-0009", studentId: "4", date: "2025-07-01", amount: 5000, discount: 0, fine: 0, paidAmount: 5000, method: "নগদ", feeType: "মাসিক", month: "জুলাই ২০২৫" },
+  { id: "p10", receiptNo: "RCPT-2026-0010", studentId: "4", date: "2026-04-16", amount: 1500, discount: 0, fine: 100, paidAmount: 1600, method: "বিকাশ", feeType: "মাসিক", month: "এপ্রিল ২০২৬", note: "দেরি জরিমানা সহ" },
 ];
 
 export const mockAttendance: Record<string, AttendanceRecord[]> = {

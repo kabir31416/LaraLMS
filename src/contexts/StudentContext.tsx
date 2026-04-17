@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { Student } from "@/types/student";
-import { mockStudents, mockPayments, mockAttendance, mockResults, generateStudentId } from "@/data/students";
+import { mockStudents, mockPayments, mockAttendance, mockResults, generateStudentId, generateReceiptNo } from "@/data/students";
 import type { Payment, AttendanceRecord, ExamResult } from "@/types/student";
 
 interface StudentContextType {
@@ -11,7 +11,7 @@ interface StudentContextType {
   deleteStudent: (id: string) => void;
   getStudent: (id: string) => Student | undefined;
   getPayments: (studentId: string) => Payment[];
-  addPayment: (payment: Omit<Payment, "id">) => void;
+  addPayment: (payment: Omit<Payment, "id" | "receiptNo">) => Payment;
   getAttendance: (studentId: string) => AttendanceRecord[];
   getResults: (studentId: string) => ExamResult[];
 }
@@ -50,10 +50,11 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
     [payments]
   );
 
-  const addPayment = useCallback((payment: Omit<Payment, "id">) => {
+  const addPayment = useCallback((payment: Omit<Payment, "id" | "receiptNo">): Payment => {
     const newPayment: Payment = {
       ...payment,
       id: `p${Date.now()}`,
+      receiptNo: generateReceiptNo(),
     };
     setPayments((prev) => [newPayment, ...prev]);
     // Update student paid/due
@@ -66,6 +67,7 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         return s;
       })
     );
+    return newPayment;
   }, []);
 
   const getAttendance = useCallback(
