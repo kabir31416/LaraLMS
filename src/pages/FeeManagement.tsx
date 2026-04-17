@@ -30,14 +30,22 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Plus, Search, DollarSign, AlertCircle, TrendingUp, Package } from "lucide-react";
+import { CalendarIcon, Plus, Search, DollarSign, AlertCircle, TrendingUp, Package, Check, ChevronsUpDown, Printer, Receipt as ReceiptIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { bn } from "date-fns/locale";
 import { toast } from "sonner";
 import { PAYMENT_METHODS, FEE_TYPES } from "@/types/student";
-import type { Student } from "@/types/student";
+import type { Student, Payment } from "@/types/student";
 import { StatCard } from "@/components/StatCard";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 const FeeManagement = () => {
   const { students, payments, addPayment, getPayments } = useStudents();
