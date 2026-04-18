@@ -11,7 +11,9 @@ import Admission from "./pages/Admission.tsx";
 import StudentProfile from "./pages/StudentProfile.tsx";
 import FeeManagement from "./pages/FeeManagement.tsx";
 import Routine from "./pages/Routine.tsx";
+import Books from "./pages/Books.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import { BookProvider } from "@/contexts/BookContext";
 
 const queryClient = new QueryClient();
 
@@ -20,19 +22,22 @@ const App = () => (
     <TooltipProvider>
       <StudentProvider>
         <RoutineProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/students" element={<Students />} />
-              <Route path="/students/:id" element={<StudentProfile />} />
-              <Route path="/admission" element={<Admission />} />
-              <Route path="/fees" element={<FeeManagement />} />
-              <Route path="/routine" element={<Routine />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
+          <BookProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/students" element={<Students />} />
+                <Route path="/students/:id" element={<StudentProfile />} />
+                <Route path="/admission" element={<Admission />} />
+                <Route path="/fees" element={<FeeManagement />} />
+                <Route path="/routine" element={<Routine />} />
+                <Route path="/books" element={<Books />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </BookProvider>
         </RoutineProvider>
       </StudentProvider>
     </TooltipProvider>
