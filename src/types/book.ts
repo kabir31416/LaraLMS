@@ -25,15 +25,15 @@ export interface BranchStock {
   quantity: number;
 }
 
-// Books currently issued to students
+// Books currently issued to students (now from main stock)
 export interface StudentBookIssue {
   id: string;
   studentId: string;
-  branchId: string;
+  branchId?: string; // optional — issues now come from main stock
   bookId: string;
   quantity: number;
   issueDate: string;
-  returnedQuantity: number; // partial return support
+  returnedQuantity: number;
   status: "ইস্যু" | "আংশিক ফেরত" | "ফেরত";
 }
 

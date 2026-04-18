@@ -25,6 +25,10 @@ interface BookContextType {
   reduceStock: (bookId: string, qty: number, note?: string) => void;
 
   transferToBranch: (bookId: string, branchId: string, qty: number) => boolean;
+  transferMultipleToBranch: (
+    branchId: string,
+    items: { bookId: string; quantity: number }[]
+  ) => { ok: boolean; failed?: string[] };
 
   issueToStudent: (params: {
     studentId: string;
@@ -34,6 +38,13 @@ interface BookContextType {
     quantity: number;
     issueDate: string;
   }) => boolean;
+
+  issueMultipleToStudent: (params: {
+    studentId: string;
+    studentName: string;
+    issueDate: string;
+    items: { bookId: string; quantity: number }[];
+  }) => { ok: boolean; failed?: string[] };
 
   returnFromStudent: (issueId: string, qty: number) => boolean;
 
@@ -111,12 +122,59 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [findBook, findBranch, pushHistory]);
 
+  const transferMultipleToBranch = useCallback((
+    branchId: string,
+    items: { bookId: string; quantity: number }[]
+  ) => {
+    const branch = findBranch(branchId);
+    if (!branch) return { ok: false };
+    const failed: string[] = [];
+    const valid: { bookId: string; quantity: number; book: Book }[] = [];
+    items.forEach((it) => {
+      const book = findBook(it.bookId);
+      if (!book || it.quantity <= 0 || book.totalStock < it.quantity) {
+        if (book) failed.push(book.name);
+      } else {
+        valid.push({ ...it, book });
+      }
+    });
+    if (valid.length === 0) return { ok: false, failed };
+
+    setBooks((prev) =>
+      prev.map((b) => {
+        const it = valid.find((v) => v.bookId === b.id);
+        return it ? { ...b, totalStock: b.totalStock - it.quantity } : b;
+      })
+    );
+    setBranchStock((prev) => {
+      const next = [...prev];
+      valid.forEach((it) => {
+        const idx = next.findIndex((bs) => bs.branchId === branchId && bs.bookId === it.bookId);
+        if (idx >= 0) next[idx] = { ...next[idx], quantity: next[idx].quantity + it.quantity };
+        else next.push({ branchId, bookId: it.bookId, quantity: it.quantity });
+      });
+      return next;
+    });
+    valid.forEach((it) => {
+      pushHistory({
+        action: "ব্রাঞ্চে স্থানান্তর",
+        bookId: it.bookId,
+        bookName: it.book.name,
+        branchId,
+        branchName: branch.name,
+        quantity: it.quantity,
+      });
+    });
+    return { ok: true, failed: failed.length ? failed : undefined };
+  }, [findBook, findBranch, pushHistory]);
+
   const getBranchStock = useCallback(
     (branchId: string, bookId: string) =>
       branchStock.find((bs) => bs.branchId === branchId && bs.bookId === bookId)?.quantity ?? 0,
     [branchStock]
   );
 
+  // Issue from MAIN stock (branchId param kept for backward compat, ignored)
   const issueToStudent = useCallback((params: {
     studentId: string;
     studentName: string;
@@ -125,26 +183,16 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
     quantity: number;
     issueDate: string;
   }) => {
-    const available = branchStock.find(
-      (bs) => bs.branchId === params.branchId && bs.bookId === params.bookId
-    );
-    if (!available || available.quantity < params.quantity) return false;
     const book = findBook(params.bookId);
-    const branch = findBranch(params.branchId);
-    if (!book || !branch) return false;
+    if (!book || book.totalStock < params.quantity) return false;
 
-    setBranchStock((prev) =>
-      prev.map((bs) =>
-        bs.branchId === params.branchId && bs.bookId === params.bookId
-          ? { ...bs, quantity: bs.quantity - params.quantity }
-          : bs
-      )
+    setBooks((prev) =>
+      prev.map((b) => (b.id === params.bookId ? { ...b, totalStock: b.totalStock - params.quantity } : b))
     );
 
     const newIssue: StudentBookIssue = {
       id: `iss${Date.now()}${Math.random()}`,
       studentId: params.studentId,
-      branchId: params.branchId,
       bookId: params.bookId,
       quantity: params.quantity,
       issueDate: params.issueDate,
@@ -156,14 +204,59 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
       action: "শিক্ষার্থীকে বিতরণ",
       bookId: params.bookId,
       bookName: book.name,
-      branchId: params.branchId,
-      branchName: branch.name,
       studentId: params.studentId,
       studentName: params.studentName,
       quantity: params.quantity,
     });
     return true;
-  }, [branchStock, findBook, findBranch, pushHistory]);
+  }, [findBook, pushHistory]);
+
+  const issueMultipleToStudent = useCallback((params: {
+    studentId: string;
+    studentName: string;
+    issueDate: string;
+    items: { bookId: string; quantity: number }[];
+  }) => {
+    const failed: string[] = [];
+    const valid: { bookId: string; quantity: number; book: Book }[] = [];
+    params.items.forEach((it) => {
+      const book = findBook(it.bookId);
+      if (!book || it.quantity <= 0 || book.totalStock < it.quantity) {
+        if (book) failed.push(book.name);
+      } else {
+        valid.push({ ...it, book });
+      }
+    });
+    if (valid.length === 0) return { ok: false, failed };
+
+    setBooks((prev) =>
+      prev.map((b) => {
+        const it = valid.find((v) => v.bookId === b.id);
+        return it ? { ...b, totalStock: b.totalStock - it.quantity } : b;
+      })
+    );
+    const newIssues: StudentBookIssue[] = valid.map((it) => ({
+      id: `iss${Date.now()}${Math.random()}${it.bookId}`,
+      studentId: params.studentId,
+      bookId: it.bookId,
+      quantity: it.quantity,
+      issueDate: params.issueDate,
+      returnedQuantity: 0,
+      status: "ইস্যু" as const,
+    }));
+    setIssues((prev) => [...newIssues, ...prev]);
+    valid.forEach((it) => {
+      pushHistory({
+        action: "শিক্ষার্থীকে বিতরণ",
+        bookId: it.bookId,
+        bookName: it.book.name,
+        studentId: params.studentId,
+        studentName: params.studentName,
+        quantity: it.quantity,
+      });
+    });
+    return { ok: true, failed: failed.length ? failed : undefined };
+  }, [findBook, pushHistory]);
 
   const returnFromStudent = useCallback((issueId: string, qty: number) => {
     const issue = issues.find((i) => i.id === issueId);
@@ -171,8 +264,7 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
     const remaining = issue.quantity - issue.returnedQuantity;
     if (qty <= 0 || qty > remaining) return false;
     const book = findBook(issue.bookId);
-    const branch = findBranch(issue.branchId);
-    if (!book || !branch) return false;
+    if (!book) return false;
 
     setIssues((prev) =>
       prev.map((i) => {
@@ -183,29 +275,20 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    setBranchStock((prev) => {
-      const existing = prev.find((bs) => bs.branchId === issue.branchId && bs.bookId === issue.bookId);
-      if (existing) {
-        return prev.map((bs) =>
-          bs.branchId === issue.branchId && bs.bookId === issue.bookId
-            ? { ...bs, quantity: bs.quantity + qty }
-            : bs
-        );
-      }
-      return [...prev, { branchId: issue.branchId, bookId: issue.bookId, quantity: qty }];
-    });
+    // Return goes back to main stock
+    setBooks((prev) =>
+      prev.map((b) => (b.id === issue.bookId ? { ...b, totalStock: b.totalStock + qty } : b))
+    );
 
     pushHistory({
       action: "শিক্ষার্থী থেকে ফেরত",
       bookId: issue.bookId,
       bookName: book.name,
-      branchId: issue.branchId,
-      branchName: branch.name,
       studentId: issue.studentId,
       quantity: qty,
     });
     return true;
-  }, [issues, findBook, findBranch, pushHistory]);
+  }, [issues, findBook, pushHistory]);
 
   const getStudentIssues = useCallback(
     (studentId: string) => issues.filter((i) => i.studentId === studentId),
@@ -226,7 +309,9 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
         addStock,
         reduceStock,
         transferToBranch,
+        transferMultipleToBranch,
         issueToStudent,
+        issueMultipleToStudent,
         returnFromStudent,
         getBranchStock,
         getStudentIssues,
