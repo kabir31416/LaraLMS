@@ -25,6 +25,10 @@ interface BookContextType {
   reduceStock: (bookId: string, qty: number, note?: string) => void;
 
   transferToBranch: (bookId: string, branchId: string, qty: number) => boolean;
+  transferMultipleToBranch: (
+    branchId: string,
+    items: { bookId: string; quantity: number }[]
+  ) => { ok: boolean; failed?: string[] };
 
   issueToStudent: (params: {
     studentId: string;
@@ -34,6 +38,13 @@ interface BookContextType {
     quantity: number;
     issueDate: string;
   }) => boolean;
+
+  issueMultipleToStudent: (params: {
+    studentId: string;
+    studentName: string;
+    issueDate: string;
+    items: { bookId: string; quantity: number }[];
+  }) => { ok: boolean; failed?: string[] };
 
   returnFromStudent: (issueId: string, qty: number) => boolean;
 
