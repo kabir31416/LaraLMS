@@ -18,7 +18,7 @@ import {
 import { useBooks } from "@/contexts/BookContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { CLASSES, SUBJECTS } from "@/types/student";
-import { Plus, Minus, AlertTriangle, ArrowRightLeft, BookPlus, Undo2 } from "lucide-react";
+import { Plus, Minus, AlertTriangle, ArrowRightLeft, BookPlus, Undo2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Books() {
@@ -229,24 +229,33 @@ function StockTab() {
   );
 }
 
-/* ---------------- Branch Stock ---------------- */
+/* ---------------- Branch Stock (Multi-book transfer) ---------------- */
+type Row = { bookId: string; quantity: number };
+
 function BranchStockTab() {
-  const { books, branches, branchStock, transferToBranch } = useBooks();
+  const { books, branches, branchStock, transferMultipleToBranch } = useBooks();
   const [open, setOpen] = useState(false);
   const [branchId, setBranchId] = useState("");
-  const [bookId, setBookId] = useState("");
-  const [qty, setQty] = useState(0);
+  const [rows, setRows] = useState<Row[]>([{ bookId: "", quantity: 1 }]);
   const [filterBranch, setFilterBranch] = useState<string>("all");
 
+  const addRow = () => setRows([...rows, { bookId: "", quantity: 1 }]);
+  const removeRow = (i: number) => setRows(rows.filter((_, idx) => idx !== i));
+  const updateRow = (i: number, patch: Partial<Row>) =>
+    setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
   const submit = () => {
-    if (!branchId || !bookId || qty <= 0) return toast.error("সব ফিল্ড পূরণ করুন");
-    const ok = transferToBranch(bookId, branchId, qty);
-    if (!ok) return toast.error("যথেষ্ট স্টক নেই");
-    toast.success("স্থানান্তর সফল");
-    setOpen(false); setBranchId(""); setBookId(""); setQty(0);
+    if (!branchId) return toast.error("ব্রাঞ্চ নির্বাচন করুন");
+    const items = rows.filter((r) => r.bookId && r.quantity > 0);
+    if (items.length === 0) return toast.error("কমপক্ষে একটি বই যোগ করুন");
+    const res = transferMultipleToBranch(branchId, items);
+    if (!res.ok) return toast.error("স্থানান্তর ব্যর্থ — যথেষ্ট স্টক নেই");
+    if (res.failed?.length) toast.warning(`কিছু বই স্থানান্তর হয়নি: ${res.failed.join(", ")}`);
+    else toast.success("স্থানান্তর সফল");
+    setOpen(false); setBranchId(""); setRows([{ bookId: "", quantity: 1 }]);
   };
 
-  const rows = useMemo(() => {
+  const branchRows = useMemo(() => {
     return branchStock
       .filter((bs) => filterBranch === "all" || bs.branchId === filterBranch)
       .map((bs) => ({
@@ -274,9 +283,9 @@ function BranchStockTab() {
                 <DialogTrigger asChild>
                   <Button><ArrowRightLeft className="w-4 h-4 mr-2" />স্থানান্তর</Button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>ব্রাঞ্চে বই স্থানান্তর</DialogTitle></DialogHeader>
-                  <div className="grid gap-3 py-2">
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader><DialogTitle>ব্রাঞ্চে বই স্থানান্তর (একাধিক বই)</DialogTitle></DialogHeader>
+                  <div className="grid gap-4 py-2">
                     <div>
                       <Label>ব্রাঞ্চ</Label>
                       <Select value={branchId} onValueChange={setBranchId}>
@@ -286,20 +295,52 @@ function BranchStockTab() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <Label>বই</Label>
-                      <Select value={bookId} onValueChange={setBookId}>
-                        <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                        <SelectContent>
-                          {books.map((b) => (
-                            <SelectItem key={b.id} value={b.id}>
-                              {b.name} (স্টক: {b.totalStock})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+
+                    <div className="space-y-2">
+                      <Label>বইসমূহ</Label>
+                      {rows.map((row, i) => {
+                        const selected = books.find((b) => b.id === row.bookId);
+                        return (
+                          <div key={i} className="flex gap-2 items-end">
+                            <div className="flex-1">
+                              <Select value={row.bookId} onValueChange={(v) => updateRow(i, { bookId: v })}>
+                                <SelectTrigger><SelectValue placeholder="বই নির্বাচন করুন" /></SelectTrigger>
+                                <SelectContent>
+                                  {books.map((b) => (
+                                    <SelectItem key={b.id} value={b.id}>
+                                      {b.name} (স্টক: {b.totalStock})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {selected && (
+                                <p className="text-xs text-muted-foreground mt-1">মেইন স্টক: {selected.totalStock}</p>
+                              )}
+                            </div>
+                            <div className="w-24">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={row.quantity}
+                                onChange={(e) => updateRow(i, { quantity: +e.target.value })}
+                              />
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => removeRow(i)}
+                              disabled={rows.length === 1}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                      <Button variant="outline" size="sm" onClick={addRow}>
+                        <Plus className="w-3 h-3 mr-1" />আরও বই যোগ করুন
+                      </Button>
                     </div>
-                    <div><Label>পরিমাণ</Label><Input type="number" value={qty} onChange={(e) => setQty(+e.target.value)} /></div>
+
                     <Button onClick={submit}>স্থানান্তর করুন</Button>
                   </div>
                 </DialogContent>
@@ -308,7 +349,7 @@ function BranchStockTab() {
           </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {branchRows.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">কোনো স্টক নেই</p>
           ) : (
             <Table>
@@ -320,7 +361,7 @@ function BranchStockTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r, i) => (
+                {branchRows.map((r, i) => (
                   <TableRow key={i}>
                     <TableCell className="font-medium">{r.branch?.name}</TableCell>
                     <TableCell>{r.branch?.director}</TableCell>
@@ -362,16 +403,14 @@ function BranchStockTab() {
   );
 }
 
-/* ---------------- Distribute / Issue ---------------- */
+/* ---------------- Distribute / Issue (Multi-book, MAIN stock) ---------------- */
 function DistributeTab() {
-  const { books, branches, branchStock, issues, issueToStudent, returnFromStudent, getBranchStock } = useBooks();
+  const { books, issues, issueMultipleToStudent, returnFromStudent } = useBooks();
   const { students } = useStudents();
 
   const [search, setSearch] = useState("");
   const [studentId, setStudentId] = useState("");
-  const [branchId, setBranchId] = useState("");
-  const [bookId, setBookId] = useState("");
-  const [qty, setQty] = useState(1);
+  const [rows, setRows] = useState<Row[]>([{ bookId: "", quantity: 1 }]);
   const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
 
   const filteredStudents = useMemo(() => {
@@ -384,16 +423,25 @@ function DistributeTab() {
 
   const selectedStudent = students.find((s) => s.id === studentId);
 
+  const addRow = () => setRows([...rows, { bookId: "", quantity: 1 }]);
+  const removeRow = (i: number) => setRows(rows.filter((_, idx) => idx !== i));
+  const updateRow = (i: number, patch: Partial<Row>) =>
+    setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
   const submit = () => {
-    if (!studentId || !branchId || !bookId || qty <= 0) return toast.error("সব ফিল্ড পূরণ করুন");
-    const student = students.find((s) => s.id === studentId);
-    if (!student) return;
-    const ok = issueToStudent({
-      studentId, studentName: student.name, branchId, bookId, quantity: qty, issueDate,
+    if (!selectedStudent) return toast.error("শিক্ষার্থী নির্বাচন করুন");
+    const items = rows.filter((r) => r.bookId && r.quantity > 0);
+    if (items.length === 0) return toast.error("কমপক্ষে একটি বই যোগ করুন");
+    const res = issueMultipleToStudent({
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.name,
+      issueDate,
+      items,
     });
-    if (!ok) return toast.error("ব্রাঞ্চে যথেষ্ট স্টক নেই");
-    toast.success("বই বিতরণ সফল");
-    setBookId(""); setQty(1);
+    if (!res.ok) return toast.error("বিতরণ ব্যর্থ — মেইন স্টকে যথেষ্ট বই নেই");
+    if (res.failed?.length) toast.warning(`কিছু বই বিতরণ হয়নি: ${res.failed.join(", ")}`);
+    else toast.success("বই বিতরণ সফল");
+    setRows([{ bookId: "", quantity: 1 }]);
   };
 
   const handleReturn = (issueId: string, max: number) => {
@@ -406,10 +454,12 @@ function DistributeTab() {
     toast.success("ফেরত সম্পন্ন");
   };
 
+  const studentIssues = selectedStudent ? issues.filter((i) => i.studentId === selectedStudent.id) : [];
+
   return (
     <div className="grid lg:grid-cols-2 gap-4">
       <Card>
-        <CardHeader><CardTitle>শিক্ষার্থীকে বই বিতরণ</CardTitle></CardHeader>
+        <CardHeader><CardTitle>শিক্ষার্থীকে বই বিতরণ (মেইন স্টক থেকে)</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div>
             <Label>শিক্ষার্থী খুঁজুন (ID/নাম/মোবাইল)</Label>
@@ -435,68 +485,92 @@ function DistributeTab() {
               <div><span className="text-muted-foreground">ব্যাচ:</span> {selectedStudent.batch}</div>
             </div>
           )}
+
           <div>
-            <Label>ব্রাঞ্চ</Label>
-            <Select value={branchId} onValueChange={setBranchId}>
-              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-              <SelectContent>
-                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label>ইস্যু তারিখ</Label>
+            <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
           </div>
-          <div>
-            <Label>বই</Label>
-            <Select value={bookId} onValueChange={setBookId} disabled={!branchId}>
-              <SelectTrigger><SelectValue placeholder={branchId ? "নির্বাচন করুন" : "আগে ব্রাঞ্চ নির্বাচন করুন"} /></SelectTrigger>
-              <SelectContent>
-                {branchId && branchStock
-                  .filter((bs) => bs.branchId === branchId && bs.quantity > 0)
-                  .map((bs) => {
-                    const book = books.find((b) => b.id === bs.bookId);
-                    return book ? (
-                      <SelectItem key={bs.bookId} value={bs.bookId}>
-                        {book.name} (উপলব্ধ: {bs.quantity})
-                      </SelectItem>
-                    ) : null;
-                  })}
-              </SelectContent>
-            </Select>
+
+          <div className="space-y-2">
+            <Label>বইসমূহ (একাধিক)</Label>
+            {rows.map((row, i) => {
+              const selected = books.find((b) => b.id === row.bookId);
+              return (
+                <div key={i} className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Select value={row.bookId} onValueChange={(v) => updateRow(i, { bookId: v })}>
+                      <SelectTrigger><SelectValue placeholder="বই নির্বাচন করুন" /></SelectTrigger>
+                      <SelectContent>
+                        {books.map((b) => (
+                          <SelectItem key={b.id} value={b.id} disabled={b.totalStock <= 0}>
+                            {b.name} (স্টক: {b.totalStock})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selected && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        অবশিষ্ট স্টক: {selected.totalStock}
+                      </p>
+                    )}
+                  </div>
+                  <div className="w-20">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={row.quantity}
+                      onChange={(e) => updateRow(i, { quantity: +e.target.value })}
+                    />
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => removeRow(i)}
+                    disabled={rows.length === 1}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              );
+            })}
+            <Button variant="outline" size="sm" onClick={addRow}>
+              <Plus className="w-3 h-3 mr-1" />আরও বই যোগ করুন
+            </Button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>পরিমাণ</Label><Input type="number" value={qty} onChange={(e) => setQty(+e.target.value)} /></div>
-            <div><Label>ইস্যু তারিখ</Label><Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} /></div>
-          </div>
-          {bookId && branchId && (
-            <p className="text-xs text-muted-foreground">
-              ব্রাঞ্চ স্টক: {getBranchStock(branchId, bookId)}
-            </p>
-          )}
+
           <Button className="w-full" onClick={submit}>বিতরণ করুন</Button>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>চলমান ইস্যু</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>
+            {selectedStudent ? `${selectedStudent.name}-এর ইস্যু ইতিহাস` : "চলমান ইস্যু"}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
-          {issues.length === 0 ? (
+          {(selectedStudent ? studentIssues : issues).length === 0 ? (
             <p className="text-center text-muted-foreground py-8">কোনো ইস্যু নেই</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>শিক্ষার্থী</TableHead><TableHead>বই</TableHead>
+                  {!selectedStudent && <TableHead>শিক্ষার্থী</TableHead>}
+                  <TableHead>বই</TableHead>
                   <TableHead>পরি.</TableHead><TableHead>ফেরত</TableHead>
                   <TableHead>স্ট্যাটাস</TableHead><TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {issues.map((i) => {
+                {(selectedStudent ? studentIssues : issues).map((i) => {
                   const student = students.find((s) => s.id === i.studentId);
                   const book = books.find((b) => b.id === i.bookId);
                   const remaining = i.quantity - i.returnedQuantity;
                   return (
                     <TableRow key={i.id}>
-                      <TableCell className="text-xs">{student?.name || i.studentId}</TableCell>
+                      {!selectedStudent && (
+                        <TableCell className="text-xs">{student?.name || i.studentId}</TableCell>
+                      )}
                       <TableCell className="text-xs">{book?.name}</TableCell>
                       <TableCell>{i.quantity}</TableCell>
                       <TableCell>{i.returnedQuantity}</TableCell>
