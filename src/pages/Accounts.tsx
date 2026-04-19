@@ -655,6 +655,290 @@ function ReportsTab() {
   );
 }
 
+/* -------------------- Branch Ledger -------------------- */
+const ITEM_TYPES: BranchItemType[] = ["বই", "ভর্তি ফর্ম", "অন্যান্য"];
+
+function BranchLedgerTab() {
+  const { entries, deleteEntry } = useBranchLedger();
+  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<BranchLedgerEntry | null>(null);
+  const [defaultType, setDefaultType] = useState<"expense" | "income">("expense");
+
+  const filtered = useMemo(() => {
+    return entries.filter((e) => {
+      if (branchFilter !== "all" && e.branchId !== branchFilter) return false;
+      if (dateFilter && format(parseISO(e.date), "yyyy-MM-dd") !== format(dateFilter, "yyyy-MM-dd")) return false;
+      return true;
+    });
+  }, [entries, branchFilter, dateFilter]);
+
+  // Build running balance per branch (chronological)
+  const rowsWithBalance = useMemo(() => {
+    const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date));
+    const branchBal: Record<string, number> = {};
+    const out = sorted.map((e) => {
+      const prev = branchBal[e.branchId] || 0;
+      const next = prev + (e.type === "expense" ? e.amount : -e.amount);
+      branchBal[e.branchId] = next;
+      return { ...e, balance: next };
+    });
+    return out.reverse();
+  }, [filtered]);
+
+  // Branch summary across all entries (not filtered) — for accurate due
+  const branchSummary = useMemo(() => {
+    return ACCOUNT_BRANCHES.map((b) => {
+      const list = entries.filter((e) => e.branchId === b.id);
+      const totalExpense = list.filter((e) => e.type === "expense").reduce((s, e) => s + e.amount, 0);
+      const totalIncome = list.filter((e) => e.type === "income").reduce((s, e) => s + e.amount, 0);
+      return { ...b, totalExpense, totalIncome, due: totalExpense - totalIncome };
+    });
+  }, [entries]);
+
+  const openAdd = (type: "expense" | "income") => {
+    setEditing(null);
+    setDefaultType(type);
+    setOpen(true);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <CardTitle>শাখা হিসাব (লেজার)</CardTitle>
+            <Select value={branchFilter} onValueChange={setBranchFilter}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="শাখা" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">সব শাখা</SelectItem>
+                {ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <DateField value={dateFilter} onChange={setDateFilter} />
+            {dateFilter && (
+              <Button variant="ghost" size="sm" onClick={() => setDateFilter(undefined)}>তারিখ মুছুন</Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => openAdd("income")} variant="outline">
+              <Plus className="h-4 w-4" /> আয় যোগ
+            </Button>
+            <Button onClick={() => openAdd("expense")}>
+              <Plus className="h-4 w-4" /> ব্যয় যোগ
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>তারিখ</TableHead>
+                <TableHead>শাখা</TableHead>
+                <TableHead>ধরন</TableHead>
+                <TableHead>বিবরণ</TableHead>
+                <TableHead className="text-right">পরিমাণ</TableHead>
+                <TableHead className="text-right">ব্যালেন্স</TableHead>
+                <TableHead className="text-right">অ্যাকশন</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rowsWithBalance.length === 0 && (
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">কোনো লেনদেন নেই</TableCell></TableRow>
+              )}
+              {rowsWithBalance.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell>{fmtDate(r.date)}</TableCell>
+                  <TableCell>{r.branchName}</TableCell>
+                  <TableCell>
+                    {r.type === "expense"
+                      ? <Badge variant="destructive">ব্যয়</Badge>
+                      : <Badge className="bg-primary text-primary-foreground hover:bg-primary/90">আয়</Badge>}
+                  </TableCell>
+                  <TableCell className="max-w-xs">
+                    {r.type === "expense"
+                      ? `${r.itemType || "-"}${r.description ? " — " + r.description : ""}${r.quantity ? ` (${r.quantity})` : ""}`
+                      : `${r.method || "-"}${r.note ? " — " + r.note : ""}`}
+                  </TableCell>
+                  <TableCell className={cn("text-right font-semibold", r.type === "expense" ? "text-destructive" : "text-primary")}>
+                    {fmtBDT(r.amount)}
+                  </TableCell>
+                  <TableCell className={cn("text-right font-semibold", r.balance > 0 ? "text-destructive" : r.balance < 0 ? "text-primary" : "")}>
+                    {fmtBDT(r.balance)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="icon" variant="ghost" onClick={() => { setEditing(r); setDefaultType(r.type); setOpen(true); }}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => { deleteEntry(r.id); toast.success("মুছে ফেলা হয়েছে"); }}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>শাখাভিত্তিক সারসংক্ষেপ</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>শাখা</TableHead>
+                <TableHead className="text-right">মোট ব্যয়</TableHead>
+                <TableHead className="text-right">মোট আয়</TableHead>
+                <TableHead className="text-right">বাকি পাওনা</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {branchSummary.map((b) => (
+                <TableRow key={b.id}>
+                  <TableCell className="font-medium flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    {b.name}
+                  </TableCell>
+                  <TableCell className="text-right text-destructive">{fmtBDT(b.totalExpense)}</TableCell>
+                  <TableCell className="text-right text-primary">{fmtBDT(b.totalIncome)}</TableCell>
+                  <TableCell className={cn("text-right font-semibold", b.due > 0 ? "text-destructive" : b.due < 0 ? "text-primary" : "")}>
+                    {fmtBDT(b.due)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <BranchLedgerDialog open={open} onOpenChange={setOpen} editing={editing} defaultType={defaultType} />
+    </div>
+  );
+}
+
+function BranchLedgerDialog({
+  open, onOpenChange, editing, defaultType,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editing: BranchLedgerEntry | null;
+  defaultType: "expense" | "income";
+}) {
+  const { addEntry, updateEntry } = useBranchLedger();
+  const initial = editing;
+  const [type, setType] = useState<"expense" | "income">(initial?.type || defaultType);
+  const [date, setDate] = useState<Date>(initial ? parseISO(initial.date) : new Date());
+  const [branchId, setBranchId] = useState(initial?.branchId || ACCOUNT_BRANCHES[0].id);
+  const [amount, setAmount] = useState(String(initial?.amount || ""));
+  const [itemType, setItemType] = useState<BranchItemType>(initial?.itemType || "বই");
+  const [description, setDescription] = useState(initial?.description || "");
+  const [quantity, setQuantity] = useState(String(initial?.quantity || ""));
+  const [method, setMethod] = useState<PaymentMethod>(initial?.method || "নগদ");
+  const [note, setNote] = useState(initial?.note || "");
+
+  // Reset on open change
+  React.useEffect(() => {
+    if (open) {
+      setType(initial?.type || defaultType);
+      setDate(initial ? parseISO(initial.date) : new Date());
+      setBranchId(initial?.branchId || ACCOUNT_BRANCHES[0].id);
+      setAmount(String(initial?.amount || ""));
+      setItemType(initial?.itemType || "বই");
+      setDescription(initial?.description || "");
+      setQuantity(String(initial?.quantity || ""));
+      setMethod(initial?.method || "নগদ");
+      setNote(initial?.note || "");
+    }
+  }, [open, initial, defaultType]);
+
+  const submit = () => {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) { toast.error("সঠিক পরিমাণ লিখুন"); return; }
+    const branch = ACCOUNT_BRANCHES.find((b) => b.id === branchId)!;
+    const payload: Omit<BranchLedgerEntry, "id"> = {
+      date: date.toISOString(),
+      branchId,
+      branchName: branch.name,
+      type,
+      amount: amt,
+      note,
+      ...(type === "expense"
+        ? { itemType, description, quantity: quantity ? Number(quantity) : undefined }
+        : { method }),
+    };
+    if (editing) { updateEntry(editing.id, payload); toast.success("আপডেট হয়েছে"); }
+    else { addEntry(payload); toast.success(type === "expense" ? "ব্যয় যুক্ত হয়েছে" : "আয় যুক্ত হয়েছে"); }
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? "শাখা হিসাব সম্পাদনা" : type === "expense" ? "শাখায় প্রেরণ (ব্যয়)" : "শাখা থেকে প্রাপ্তি (আয়)"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="ধরন">
+            <Select value={type} onValueChange={(v) => setType(v as "expense" | "income")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="expense">ব্যয় (শাখায় প্রেরণ)</SelectItem>
+                <SelectItem value="income">আয় (শাখা থেকে প্রাপ্তি)</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="শাখা">
+            <Select value={branchId} onValueChange={setBranchId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <Field label="তারিখ"><DateField value={date} onChange={(d) => d && setDate(d)} /></Field>
+          <Field label="পরিমাণ (৳)"><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+
+          {type === "expense" ? (
+            <>
+              <Field label="ধরন (আইটেম)">
+                <Select value={itemType} onValueChange={(v) => setItemType(v as BranchItemType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{ITEM_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field label="পরিমাণ (সংখ্যা, ঐচ্ছিক)">
+                <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="বিবরণ">
+                  <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="যেমন: গণিত বই" />
+                </Field>
+              </div>
+            </>
+          ) : (
+            <Field label="পেমেন্ট পদ্ধতি">
+              <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{PAYMENT_METHODS_LIST.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+          )}
+
+          <div className="md:col-span-2"><Field label="নোট"><Textarea value={note} onChange={(e) => setNote(e.target.value)} /></Field></div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
+          <Button onClick={submit}>সংরক্ষণ</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* -------------------- Helpers -------------------- */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
