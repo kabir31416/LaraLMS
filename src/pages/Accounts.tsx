@@ -29,10 +29,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { StatCard } from "@/components/StatCard";
 import { useAccounts, ACCOUNT_BRANCHES } from "@/contexts/AccountsContext";
+import { useBranchLedger } from "@/contexts/BranchLedgerContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { PAYMENT_METHODS_LIST, PaymentMethod, IncomeEntry, ExpenseEntry } from "@/types/accounts";
+import { BranchLedgerEntry, BranchItemType } from "@/types/branchLedger";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Building2 } from "lucide-react";
 
 const fmtBDT = (n: number) => `৳${n.toLocaleString("bn-BD")}`;
 const fmtDate = (iso: string) => format(parseISO(iso), "dd MMM yyyy", { locale: bn });
@@ -50,10 +53,11 @@ export default function Accounts() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid grid-cols-3 md:grid-cols-6 h-auto">
+        <TabsList className="grid grid-cols-4 md:grid-cols-7 h-auto">
           <TabsTrigger value="summary">সারসংক্ষেপ</TabsTrigger>
           <TabsTrigger value="income">আয়</TabsTrigger>
           <TabsTrigger value="expense">ব্যয়</TabsTrigger>
+          <TabsTrigger value="branch-ledger">শাখা হিসাব</TabsTrigger>
           <TabsTrigger value="cashbook">ক্যাশবুক</TabsTrigger>
           <TabsTrigger value="categories">ক্যাটাগরি</TabsTrigger>
           <TabsTrigger value="reports">রিপোর্ট</TabsTrigger>
@@ -62,6 +66,7 @@ export default function Accounts() {
         <TabsContent value="summary" className="mt-6"><SummaryTab /></TabsContent>
         <TabsContent value="income" className="mt-6"><IncomeTab /></TabsContent>
         <TabsContent value="expense" className="mt-6"><ExpenseTab /></TabsContent>
+        <TabsContent value="branch-ledger" className="mt-6"><BranchLedgerTab /></TabsContent>
         <TabsContent value="cashbook" className="mt-6"><CashbookTab /></TabsContent>
         <TabsContent value="categories" className="mt-6"><CategoriesTab /></TabsContent>
         <TabsContent value="reports" className="mt-6"><ReportsTab /></TabsContent>
