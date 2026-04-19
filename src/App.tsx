@@ -17,6 +17,7 @@ import NotFound from "./pages/NotFound.tsx";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { AccountsAutoBridge } from "@/components/accounts/AccountsAutoBridge";
+import { BranchLedgerProvider } from "@/contexts/BranchLedgerContext";
 
 const queryClient = new QueryClient();
 
@@ -27,22 +28,24 @@ const App = () => (
         <RoutineProvider>
           <BookProvider>
             <AccountsProvider>
-              <AccountsAutoBridge />
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/students" element={<Students />} />
-                  <Route path="/students/:id" element={<StudentProfile />} />
-                  <Route path="/admission" element={<Admission />} />
-                  <Route path="/fees" element={<FeeManagement />} />
-                  <Route path="/routine" element={<Routine />} />
-                  <Route path="/books" element={<Books />} />
-                  <Route path="/accounts" element={<Accounts />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </BrowserRouter>
+              <BranchLedgerProvider>
+                <AccountsAutoBridge />
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
+                  <Routes>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/students" element={<Students />} />
+                    <Route path="/students/:id" element={<StudentProfile />} />
+                    <Route path="/admission" element={<Admission />} />
+                    <Route path="/fees" element={<FeeManagement />} />
+                    <Route path="/routine" element={<Routine />} />
+                    <Route path="/books" element={<Books />} />
+                    <Route path="/accounts" element={<Accounts />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </BrowserRouter>
+              </BranchLedgerProvider>
             </AccountsProvider>
           </BookProvider>
         </RoutineProvider>
