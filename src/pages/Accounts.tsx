@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { format, isToday, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { bn } from "date-fns/locale";
 import { CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -92,10 +92,10 @@ function SummaryTab() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-4">
-        <StatCard title="মোট আয়" value={fmtBDT(totalIncome)} icon={TrendingUp} />
-        <StatCard title="মোট ব্যয়" value={fmtBDT(totalExpense)} icon={TrendingDown} />
-        <StatCard title="বর্তমান ব্যালেন্স" value={fmtBDT(balance)} icon={Wallet} />
-        <StatCard title="আজকের কালেকশন" value={fmtBDT(todayIncome)} icon={Calculator} />
+        <StatCard title="মোট আয়" value={fmtBDT(totalIncome)} icon={TrendingUp} variant="success" />
+        <StatCard title="মোট ব্যয়" value={fmtBDT(totalExpense)} icon={TrendingDown} variant="warning" />
+        <StatCard title="বর্তমান ব্যালেন্স" value={fmtBDT(balance)} icon={Wallet} variant="primary" />
+        <StatCard title="আজকের কালেকশন" value={fmtBDT(todayIncome)} icon={Calculator} variant="info" />
       </div>
 
       <Card>
@@ -602,9 +602,9 @@ function ReportsTab() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard title="মোট আয়" value={fmtBDT(totalI)} icon={TrendingUp} />
-        <StatCard title="মোট ব্যয়" value={fmtBDT(totalE)} icon={TrendingDown} />
-        <StatCard title="নিট লাভ" value={fmtBDT(totalI - totalE)} icon={Wallet} />
+        <StatCard title="মোট আয়" value={fmtBDT(totalI)} icon={TrendingUp} variant="success" />
+        <StatCard title="মোট ব্যয়" value={fmtBDT(totalE)} icon={TrendingDown} variant="warning" />
+        <StatCard title="নিট লাভ" value={fmtBDT(totalI - totalE)} icon={Wallet} variant="primary" />
       </div>
 
       <Card>
