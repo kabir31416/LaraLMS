@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { format, isToday, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { bn } from "date-fns/locale";
 import { CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator } from "lucide-react";
