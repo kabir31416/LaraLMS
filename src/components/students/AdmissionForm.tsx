@@ -28,7 +28,6 @@ import { bn } from "date-fns/locale";
 import { useStudents } from "@/contexts/StudentContext";
 import {
   COURSES,
-  BATCHES,
   SECTIONS,
   GROUPS,
   CLASSES,
@@ -74,7 +73,6 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         guardianMobile: student.guardianMobile,
         address: student.address,
         course: student.course,
-        batch: student.batch,
         section: student.section,
         group: student.group,
         admissionType: student.admissionType,
@@ -100,7 +98,6 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       guardianMobile: "",
       address: "",
       course: "" as string,
-      batch: "" as string,
       section: "" as string,
       group: "" as string,
       admissionType: "নতুন" as string,
@@ -131,7 +128,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
   };
 
   const handleSubmit = () => {
-    if (!form.name || !form.mobile || !form.guardianName || !form.course || !form.batch) {
+    if (!form.name || !form.mobile || !form.guardianName || !form.course) {
       toast.error("অনুগ্রহ করে প্রয়োজনীয় তথ্য পূরণ করুন");
       return;
     }
@@ -150,7 +147,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       guardianMobile: form.guardianMobile,
       address: form.address,
       course: form.course,
-      batch: form.batch,
+      batch: editStudent?.batch || "",
       section: form.section,
       group: form.group,
       subjects: selectedSubjects,
@@ -295,13 +292,10 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>ব্যাচ *</Label>
-                  <Select value={form.batch} onValueChange={(v) => updateField("batch", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {BATCHES.map((b) => (<SelectItem key={b} value={b}>{b}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
+                  <Label>ব্যাচ</Label>
+                  <div className="h-10 px-3 flex items-center text-sm text-muted-foreground border rounded-md bg-muted/30">
+                    ব্যাচ মডিউল থেকে assign করুন
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>সেকশন</Label>

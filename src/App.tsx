@@ -13,11 +13,20 @@ import FeeManagement from "./pages/FeeManagement.tsx";
 import Routine from "./pages/Routine.tsx";
 import Books from "./pages/Books.tsx";
 import Accounts from "./pages/Accounts.tsx";
+import StaffPage from "./pages/Staff.tsx";
+import Batches from "./pages/Batches.tsx";
+import Login from "./pages/Login.tsx";
+import DirectorDashboard from "./pages/DirectorDashboard.tsx";
+import DirectorStudents from "./pages/DirectorStudents.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { AccountsAutoBridge } from "@/components/accounts/AccountsAutoBridge";
 import { BranchLedgerProvider } from "@/contexts/BranchLedgerContext";
+import { StaffProvider } from "@/contexts/StaffContext";
+import { BatchProvider } from "@/contexts/BatchContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -25,30 +34,46 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <StudentProvider>
-        <RoutineProvider>
-          <BookProvider>
-            <AccountsProvider>
-              <BranchLedgerProvider>
-                <AccountsAutoBridge />
-                <Toaster />
-                <Sonner />
-                <BrowserRouter>
-                  <Routes>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/students" element={<Students />} />
-                    <Route path="/students/:id" element={<StudentProfile />} />
-                    <Route path="/admission" element={<Admission />} />
-                    <Route path="/fees" element={<FeeManagement />} />
-                    <Route path="/routine" element={<Routine />} />
-                    <Route path="/books" element={<Books />} />
-                    <Route path="/accounts" element={<Accounts />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </BrowserRouter>
-              </BranchLedgerProvider>
-            </AccountsProvider>
-          </BookProvider>
-        </RoutineProvider>
+        <StaffProvider>
+          <BatchProvider>
+            <AuthProvider>
+              <RoutineProvider>
+                <BookProvider>
+                  <AccountsProvider>
+                    <BranchLedgerProvider>
+                      <AccountsAutoBridge />
+                      <Toaster />
+                      <Sonner />
+                      <BrowserRouter>
+                        <Routes>
+                          <Route path="/login" element={<Login />} />
+
+                          {/* Admin routes */}
+                          <Route path="/" element={<ProtectedRoute roles={["Admin"]}><Index /></ProtectedRoute>} />
+                          <Route path="/students" element={<ProtectedRoute roles={["Admin"]}><Students /></ProtectedRoute>} />
+                          <Route path="/students/:id" element={<ProtectedRoute><StudentProfile /></ProtectedRoute>} />
+                          <Route path="/admission" element={<ProtectedRoute roles={["Admin"]}><Admission /></ProtectedRoute>} />
+                          <Route path="/fees" element={<ProtectedRoute roles={["Admin"]}><FeeManagement /></ProtectedRoute>} />
+                          <Route path="/routine" element={<ProtectedRoute roles={["Admin"]}><Routine /></ProtectedRoute>} />
+                          <Route path="/books" element={<ProtectedRoute roles={["Admin"]}><Books /></ProtectedRoute>} />
+                          <Route path="/accounts" element={<ProtectedRoute roles={["Admin"]}><Accounts /></ProtectedRoute>} />
+                          <Route path="/staff" element={<ProtectedRoute roles={["Admin"]}><StaffPage /></ProtectedRoute>} />
+                          <Route path="/batches" element={<ProtectedRoute roles={["Admin"]}><Batches /></ProtectedRoute>} />
+
+                          {/* Director routes */}
+                          <Route path="/director" element={<ProtectedRoute roles={["Batch Director"]}><DirectorDashboard /></ProtectedRoute>} />
+                          <Route path="/director/students" element={<ProtectedRoute roles={["Batch Director"]}><DirectorStudents /></ProtectedRoute>} />
+
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
+                      </BrowserRouter>
+                    </BranchLedgerProvider>
+                  </AccountsProvider>
+                </BookProvider>
+              </RoutineProvider>
+            </AuthProvider>
+          </BatchProvider>
+        </StaffProvider>
       </StudentProvider>
     </TooltipProvider>
   </QueryClientProvider>

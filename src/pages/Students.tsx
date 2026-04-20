@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { UserPlus } from "lucide-react";
 import { useStudents } from "@/contexts/StudentContext";
+import { useBatches } from "@/contexts/BatchContext";
 import { StudentFilters } from "@/components/students/StudentFilters";
 import { StudentTable } from "@/components/students/StudentTable";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
@@ -12,10 +13,12 @@ import { toast } from "sonner";
 
 const Students = () => {
   const { students, deleteStudent } = useStudents();
+  const { batches } = useBatches();
   const [search, setSearch] = useState("");
   const [course, setCourse] = useState("all");
-  const [batch, setBatch] = useState("all");
+  const [batchFilter, setBatchFilter] = useState("all");
   const [section, setSection] = useState("all");
+  const [director, setDirector] = useState("all");
   const [dueOnly, setDueOnly] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
@@ -29,12 +32,20 @@ const Students = () => {
         s.studentId.toLowerCase().includes(q) ||
         s.mobile.includes(q);
       const matchCourse = course === "all" || s.course === course;
-      const matchBatch = batch === "all" || s.batch === batch;
       const matchSection = section === "all" || s.section === section;
       const matchDue = !dueOnly || s.due > 0;
-      return matchSearch && matchCourse && matchBatch && matchSection && matchDue;
+
+      const studentBatch = batches.find((b) => b.studentIds.includes(s.id));
+      let matchBatch = true;
+      if (batchFilter === "unassigned") matchBatch = !studentBatch;
+      else if (batchFilter !== "all") matchBatch = studentBatch?.id === batchFilter;
+
+      let matchDirector = true;
+      if (director !== "all") matchDirector = studentBatch?.directorId === director;
+
+      return matchSearch && matchCourse && matchBatch && matchSection && matchDue && matchDirector;
     });
-  }, [students, search, course, batch, section, dueOnly]);
+  }, [students, batches, search, course, batchFilter, section, dueOnly, director]);
 
   const handleEdit = (student: Student) => {
     setEditStudent(student);
@@ -64,10 +75,12 @@ const Students = () => {
           onSearchChange={setSearch}
           course={course}
           onCourseChange={setCourse}
-          batch={batch}
-          onBatchChange={setBatch}
+          batch={batchFilter}
+          onBatchChange={setBatchFilter}
           section={section}
           onSectionChange={setSection}
+          director={director}
+          onDirectorChange={setDirector}
           dueOnly={dueOnly}
           onDueOnlyChange={setDueOnly}
         />

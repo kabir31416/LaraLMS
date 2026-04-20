@@ -12,11 +12,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, Pencil, Phone, Mail, MapPin } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useState } from "react";
+import { useBatches } from "@/contexts/BatchContext";
+import { useStaff } from "@/contexts/StaffContext";
 
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getStudent, getPayments, getAttendance, getResults } = useStudents();
+  const { getBatchByStudent } = useBatches();
+  const { getStaff } = useStaff();
   const [editOpen, setEditOpen] = useState(false);
 
   const student = getStudent(id || "");
@@ -79,8 +83,20 @@ const StudentProfile = () => {
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Badge variant="outline">{student.class}</Badge>
                   <Badge variant="outline">{student.course}</Badge>
-                  <Badge variant="outline">{student.batch}</Badge>
-                  <Badge variant="outline">{student.section}</Badge>
+                  {(() => {
+                    const b = getBatchByStudent(student.id);
+                    return b ? (
+                      <>
+                        <Badge variant="outline">{b.name}</Badge>
+                        <Badge variant="outline" className="text-xs">{b.batchTime}</Badge>
+                        {b.roomNumber && <Badge variant="outline" className="text-xs">রুম {b.roomNumber}</Badge>}
+                        {b.directorId && <Badge variant="outline" className="text-xs">ডিরেক্টর: {getStaff(b.directorId)?.name}</Badge>}
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 italic">Batch assigned হয়নি</Badge>
+                    );
+                  })()}
+                  {student.section && <Badge variant="outline">{student.section}</Badge>}
                   <Badge variant="outline" className={student.feeType === "এককালীন" ? "bg-info/10 text-info border-info/20" : "bg-primary/10 text-primary border-primary/20"}>
                     {student.feeType}
                   </Badge>
