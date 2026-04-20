@@ -14,13 +14,16 @@ const DirectorDashboard = () => {
   const { batches } = useBatches();
   const { students } = useStudents();
 
+  const myBatches = useMemo(
+    () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    [batches, user],
+  );
+  const myStudentIds = useMemo(() => new Set(myBatches.flatMap((b) => b.studentIds)), [myBatches]);
+  const myStudents = students.filter((s) => myStudentIds.has(s.id));
+
   if (!user || user.role !== "Batch Director") {
     return <Navigate to="/login" replace />;
   }
-
-  const myBatches = batches.filter((b) => b.directorId === user.staffId);
-  const myStudentIds = useMemo(() => new Set(myBatches.flatMap((b) => b.studentIds)), [myBatches]);
-  const myStudents = students.filter((s) => myStudentIds.has(s.id));
 
   return (
     <DashboardLayout>

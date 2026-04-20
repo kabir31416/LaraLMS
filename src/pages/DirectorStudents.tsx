@@ -20,11 +20,10 @@ const DirectorStudents = () => {
   const [search, setSearch] = useState("");
   const [batchFilter, setBatchFilter] = useState("all");
 
-  if (!user || user.role !== "Batch Director") {
-    return <Navigate to="/login" replace />;
-  }
-
-  const myBatches = batches.filter((b) => b.directorId === user.staffId);
+  const myBatches = useMemo(
+    () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    [batches, user],
+  );
   const myStudentIds = useMemo(() => new Set(myBatches.flatMap((b) => b.studentIds)), [myBatches]);
 
   const list = useMemo(() => {
@@ -39,6 +38,10 @@ const DirectorStudents = () => {
         return !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q);
       });
   }, [students, myStudentIds, search, batchFilter, myBatches]);
+
+  if (!user || user.role !== "Batch Director") {
+    return <Navigate to="/login" replace />;
+  }
 
   const batchOf = (sid: string) => myBatches.find((b) => b.studentIds.includes(sid));
 
