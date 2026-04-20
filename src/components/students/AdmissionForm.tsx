@@ -292,13 +292,10 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>ব্যাচ *</Label>
-                  <Select value={form.batch} onValueChange={(v) => updateField("batch", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {BATCHES.map((b) => (<SelectItem key={b} value={b}>{b}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
+                  <Label>ব্যাচ</Label>
+                  <div className="h-10 px-3 flex items-center text-sm text-muted-foreground border rounded-md bg-muted/30">
+                    ব্যাচ মডিউল থেকে assign করুন
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>সেকশন</Label>
