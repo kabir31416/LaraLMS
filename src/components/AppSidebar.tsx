@@ -13,6 +13,8 @@ import {
   Calculator,
   BarChart3,
   Settings,
+  UserCog,
+  Layers,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -27,8 +29,9 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/contexts/AuthContext";
 
-const menuItems = [
+const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
   { title: "শিক্ষার্থী", url: "/students", icon: Users },
   { title: "ভর্তি", url: "/admission", icon: UserPlus },
@@ -37,6 +40,8 @@ const menuItems = [
   { title: "রুটিন", url: "/routine", icon: CalendarDays },
   { title: "পরীক্ষা", url: "/exams", icon: FileText },
   { title: "ফলাফল", url: "/results", icon: Award },
+  { title: "স্টাফ", url: "/staff", icon: UserCog },
+  { title: "ব্যাচ", url: "/batches", icon: Layers },
   { title: "শিক্ষক", url: "/teachers", icon: GraduationCap },
   { title: "বই", url: "/books", icon: BookOpen },
   { title: "ডকুমেন্ট", url: "/documents", icon: FolderOpen },
@@ -45,10 +50,18 @@ const menuItems = [
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
 
+const directorMenu = [
+  { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
+  { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
+];
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const { user } = useAuth();
+
+  const menuItems = user?.role === "Batch Director" ? directorMenu : adminMenu;
 
   return (
     <Sidebar collapsible="icon">
@@ -81,7 +94,7 @@ export function AppSidebar() {
                   >
                     <NavLink
                       to={item.url}
-                      end={item.url === "/"}
+                      end={item.url === "/" || item.url === "/director"}
                       className="hover:bg-sidebar-accent/50 transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                     >

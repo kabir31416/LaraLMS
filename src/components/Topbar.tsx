@@ -1,9 +1,23 @@
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 export function Topbar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const initial = user?.name?.charAt(0) || "অ";
+  const roleLabel = user?.role === "Batch Director" ? "ব্যাচ ডিরেক্টর" : "প্রশাসক";
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
   return (
     <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
       <div className="flex items-center gap-3">
@@ -26,13 +40,16 @@ export function Topbar() {
         <div className="flex items-center gap-2 pl-2 border-l border-border">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
-              অ
+              {initial}
             </AvatarFallback>
           </Avatar>
           <div className="hidden md:block">
-            <p className="text-sm font-medium leading-tight">অ্যাডমিন</p>
-            <p className="text-xs text-muted-foreground">প্রশাসক</p>
+            <p className="text-sm font-medium leading-tight">{user?.name || "অ্যাডমিন"}</p>
+            <p className="text-xs text-muted-foreground">{roleLabel}</p>
           </div>
+          <Button variant="ghost" size="icon" onClick={handleLogout} title="লগআউট">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </header>
