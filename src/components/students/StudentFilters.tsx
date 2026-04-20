@@ -7,7 +7,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search } from "lucide-react";
-import { COURSES, BATCHES, SECTIONS } from "@/types/student";
+import { COURSES, SECTIONS } from "@/types/student";
+import { useBatches } from "@/contexts/BatchContext";
+import { useStaff } from "@/contexts/StaffContext";
 
 interface StudentFiltersProps {
   search: string;
@@ -18,6 +20,8 @@ interface StudentFiltersProps {
   onBatchChange: (value: string) => void;
   section: string;
   onSectionChange: (value: string) => void;
+  director: string;
+  onDirectorChange: (value: string) => void;
   dueOnly: boolean;
   onDueOnlyChange: (value: boolean) => void;
 }
@@ -31,9 +35,15 @@ export function StudentFilters({
   onBatchChange,
   section,
   onSectionChange,
+  director,
+  onDirectorChange,
   dueOnly,
   onDueOnlyChange,
 }: StudentFiltersProps) {
+  const { batches } = useBatches();
+  const { staff } = useStaff();
+  const directors = staff.filter((s) => s.staffType === "Batch Director");
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="relative flex-1 min-w-[200px]">
@@ -57,13 +67,25 @@ export function StudentFilters({
         </SelectContent>
       </Select>
       <Select value={batch} onValueChange={onBatchChange}>
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-[180px]">
           <SelectValue placeholder="ব্যাচ" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">সকল ব্যাচ</SelectItem>
-          {BATCHES.map((b) => (
-            <SelectItem key={b} value={b}>{b}</SelectItem>
+          <SelectItem value="unassigned">Batch assigned হয়নি</SelectItem>
+          {batches.map((b) => (
+            <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={director} onValueChange={onDirectorChange}>
+        <SelectTrigger className="w-[180px]">
+          <SelectValue placeholder="ডিরেক্টর" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">সকল ডিরেক্টর</SelectItem>
+          {directors.map((d) => (
+            <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>
