@@ -1,0 +1,159 @@
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { bn } from "date-fns/locale";
+import { useStaff } from "@/contexts/StaffContext";
+import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff, type StaffType } from "@/types/staff";
+import { toast } from "sonner";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editStaff?: Staff | null;
+}
+
+export function StaffForm({ open, onOpenChange, editStaff }: Props) {
+  const { addStaff, updateStaff } = useStaff();
+  const isEdit = !!editStaff;
+
+  const [form, setForm] = useState(() => init(editStaff));
+  const [joinDate, setJoinDate] = useState<Date | undefined>(
+    editStaff?.joinDate ? new Date(editStaff.joinDate) : new Date(),
+  );
+
+  function init(s?: Staff | null) {
+    if (s) {
+      return {
+        name: s.name,
+        photo: s.photo || "",
+        mobile: s.mobile,
+        email: s.email || "",
+        address: s.address || "",
+        staffType: s.staffType as StaffType,
+        salary: s.salary,
+        status: s.status,
+      };
+    }
+    return {
+      name: "",
+      photo: "",
+      mobile: "",
+      email: "",
+      address: "",
+      staffType: "Teacher" as StaffType,
+      salary: 0,
+      status: "সক্রিয়" as Staff["status"],
+    };
+  }
+
+  const update = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: v }));
+
+  const handleSubmit = () => {
+    if (!form.name || !form.mobile) {
+      toast.error("নাম এবং মোবাইল প্রয়োজন");
+      return;
+    }
+    const data: Omit<Staff, "id"> = {
+      name: form.name,
+      photo: form.photo || undefined,
+      mobile: form.mobile,
+      email: form.email || undefined,
+      address: form.address || undefined,
+      staffType: form.staffType,
+      salary: Number(form.salary) || 0,
+      joinDate: joinDate ? format(joinDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
+      status: form.status,
+    };
+    if (isEdit && editStaff) {
+      updateStaff(editStaff.id, data);
+      toast.success("স্টাফ আপডেট হয়েছে");
+    } else {
+      addStaff(data);
+      toast.success("স্টাফ যোগ হয়েছে");
+    }
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "স্টাফ সম্পাদনা" : "নতুন স্টাফ"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          <div className="space-y-1.5">
+            <Label>নাম *</Label>
+            <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="পূর্ণ নাম" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>মোবাইল *</Label>
+            <Input value={form.mobile} onChange={(e) => update("mobile", e.target.value)} placeholder="01XXXXXXXXX" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>ইমেইল</Label>
+            <Input value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="email@example.com" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>ছবি (URL)</Label>
+            <Input value={form.photo} onChange={(e) => update("photo", e.target.value)} placeholder="https://..." />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>ঠিকানা</Label>
+            <Input value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="ঠিকানা" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>স্টাফ টাইপ</Label>
+            <Select value={form.staffType} onValueChange={(v) => update("staffType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STAFF_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>{STAFF_TYPE_LABELS[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>বেতন (৳)</Label>
+            <Input type="number" value={form.salary} onChange={(e) => update("salary", Number(e.target.value))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>যোগদান তারিখ</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !joinDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {joinDate ? format(joinDate, "dd MMMM yyyy", { locale: bn }) : "তারিখ"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar mode="single" selected={joinDate} onSelect={setJoinDate} initialFocus className="p-3 pointer-events-auto" />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="space-y-1.5">
+            <Label>স্ট্যাটাস</Label>
+            <Select value={form.status} onValueChange={(v) => update("status", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="সক্রিয়">সক্রিয়</SelectItem>
+                <SelectItem value="নিষ্ক্রিয়">নিষ্ক্রিয়</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
+          <Button onClick={handleSubmit}>{isEdit ? "আপডেট" : "সংরক্ষণ"}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
