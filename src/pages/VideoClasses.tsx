@@ -25,7 +25,7 @@ function ytId(url: string): string | null {
 
 export default function VideoClasses() {
   const { user } = useAuth();
-  const { courses, getSubjectsByCourse, getLecturesBySubject, videos, addVideo, updateVideo, deleteVideo } = useAcademic();
+  const { courses, getSubjectsByCourse, getLecturesBySubject, lectures: allLectures, videos, addVideo, updateVideo, deleteVideo } = useAcademic();
   const { batches } = useBatches();
   const [courseId, setCourseId] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -152,7 +152,7 @@ export default function VideoClasses() {
               <div><Label>লেকচার *</Label>
                 <Select value={form.lectureId} onValueChange={(v) => setForm({ ...form, lectureId: v })}>
                   <SelectTrigger><SelectValue placeholder="লেকচার" /></SelectTrigger>
-                  <SelectContent>{useAcademic().lectures.map((l) => (<SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>))}</SelectContent>
+                  <SelectContent>{allLectures.map((l) => (<SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
               <div><Label>সময়কাল</Label><Input value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="৪৫ মিনিট" /></div>
