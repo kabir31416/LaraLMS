@@ -13,8 +13,8 @@ import { format } from "date-fns";
 import { bn } from "date-fns/locale";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { WEEK_DAYS, type Batch, type WeekDay } from "@/types/batch";
-import { COURSES } from "@/types/student";
 import { toast } from "sonner";
 
 interface Props {
@@ -26,6 +26,7 @@ interface Props {
 export function BatchForm({ open, onOpenChange, editBatch }: Props) {
   const { addBatch, updateBatch } = useBatches();
   const { getDirectors } = useStaff();
+  const { courses } = useAcademic();
   const directors = getDirectors();
   const isEdit = !!editBatch;
 
@@ -89,7 +90,11 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
             <Select value={form.course} onValueChange={(v) => update("course", v)}>
               <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
               <SelectContent>
-                {COURSES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
+                {courses.length === 0 ? (
+                  <SelectItem value="__empty" disabled>প্রথমে সেটিংস থেকে কোর্স যোগ করুন</SelectItem>
+                ) : (
+                  courses.map((c) => (<SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>))
+                )}
               </SelectContent>
             </Select>
           </div>

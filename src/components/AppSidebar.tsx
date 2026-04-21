@@ -15,6 +15,7 @@ import {
   Settings,
   UserCog,
   Layers,
+  Video,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -38,7 +39,8 @@ const adminMenu = [
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "রুটিন", url: "/routine", icon: CalendarDays },
-  { title: "পরীক্ষা", url: "/exams", icon: FileText },
+  { title: "এক্সাম", url: "/exams", icon: FileText },
+  { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
   { title: "ফলাফল", url: "/results", icon: Award },
   { title: "স্টাফ", url: "/staff", icon: UserCog },
   { title: "ব্যাচ", url: "/batches", icon: Layers },
@@ -53,6 +55,8 @@ const adminMenu = [
 const directorMenu = [
   { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
+  { title: "এক্সাম", url: "/exams", icon: FileText },
+  { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];
 
 export function AppSidebar() {

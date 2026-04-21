@@ -18,6 +18,9 @@ import Batches from "./pages/Batches.tsx";
 import Login from "./pages/Login.tsx";
 import DirectorDashboard from "./pages/DirectorDashboard.tsx";
 import DirectorStudents from "./pages/DirectorStudents.tsx";
+import Settings from "./pages/Settings.tsx";
+import Exams from "./pages/Exams.tsx";
+import VideoClasses from "./pages/VideoClasses.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
@@ -26,6 +29,7 @@ import { BranchLedgerProvider } from "@/contexts/BranchLedgerContext";
 import { StaffProvider } from "@/contexts/StaffContext";
 import { BatchProvider } from "@/contexts/BatchContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { AcademicProvider } from "@/contexts/AcademicContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -35,12 +39,13 @@ const App = () => (
     <TooltipProvider>
       <StudentProvider>
         <StaffProvider>
-          <BatchProvider>
-            <AuthProvider>
-              <RoutineProvider>
-                <BookProvider>
-                  <AccountsProvider>
-                    <BranchLedgerProvider>
+          <AcademicProvider>
+            <BatchProvider>
+              <AuthProvider>
+                <RoutineProvider>
+                  <BookProvider>
+                    <AccountsProvider>
+                      <BranchLedgerProvider>
                       <AccountsAutoBridge />
                       <Toaster />
                       <Sonner />
@@ -59,6 +64,11 @@ const App = () => (
                           <Route path="/accounts" element={<ProtectedRoute roles={["Admin"]}><Accounts /></ProtectedRoute>} />
                           <Route path="/staff" element={<ProtectedRoute roles={["Admin"]}><StaffPage /></ProtectedRoute>} />
                           <Route path="/batches" element={<ProtectedRoute roles={["Admin"]}><Batches /></ProtectedRoute>} />
+                          <Route path="/settings" element={<ProtectedRoute roles={["Admin"]}><Settings /></ProtectedRoute>} />
+
+                          {/* Shared (Admin + Director) */}
+                          <Route path="/exams" element={<ProtectedRoute><Exams /></ProtectedRoute>} />
+                          <Route path="/videos" element={<ProtectedRoute><VideoClasses /></ProtectedRoute>} />
 
                           {/* Director routes */}
                           <Route path="/director" element={<ProtectedRoute roles={["Batch Director"]}><DirectorDashboard /></ProtectedRoute>} />
@@ -67,12 +77,13 @@ const App = () => (
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </BrowserRouter>
-                    </BranchLedgerProvider>
-                  </AccountsProvider>
-                </BookProvider>
-              </RoutineProvider>
-            </AuthProvider>
-          </BatchProvider>
+                      </BranchLedgerProvider>
+                    </AccountsProvider>
+                  </BookProvider>
+                </RoutineProvider>
+              </AuthProvider>
+            </BatchProvider>
+          </AcademicProvider>
         </StaffProvider>
       </StudentProvider>
     </TooltipProvider>
