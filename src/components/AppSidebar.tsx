@@ -16,6 +16,7 @@ import {
   UserCog,
   Layers,
   Video,
+  ClipboardList,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -55,6 +56,8 @@ const adminMenu = [
 const directorMenu = [
   { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
+  { title: "রেজাল্ট", url: "/director/results", icon: ClipboardList },
+  { title: "উপস্থিতি", url: "/director/attendance", icon: ClipboardCheck },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];
