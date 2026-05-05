@@ -21,6 +21,9 @@ import DirectorStudents from "./pages/DirectorStudents.tsx";
 import Settings from "./pages/Settings.tsx";
 import Exams from "./pages/Exams.tsx";
 import VideoClasses from "./pages/VideoClasses.tsx";
+import Attendance from "./pages/Attendance.tsx";
+import DirectorResults from "./pages/DirectorResults.tsx";
+import DirectorAttendance from "./pages/DirectorAttendance.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
@@ -30,6 +33,7 @@ import { StaffProvider } from "@/contexts/StaffContext";
 import { BatchProvider } from "@/contexts/BatchContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AcademicProvider } from "@/contexts/AcademicContext";
+import { AttendanceProvider } from "@/contexts/AttendanceContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -46,6 +50,7 @@ const App = () => (
                   <BookProvider>
                     <AccountsProvider>
                       <BranchLedgerProvider>
+                      <AttendanceProvider>
                       <AccountsAutoBridge />
                       <Toaster />
                       <Sonner />
@@ -65,6 +70,7 @@ const App = () => (
                           <Route path="/staff" element={<ProtectedRoute roles={["Admin"]}><StaffPage /></ProtectedRoute>} />
                           <Route path="/batches" element={<ProtectedRoute roles={["Admin"]}><Batches /></ProtectedRoute>} />
                           <Route path="/settings" element={<ProtectedRoute roles={["Admin"]}><Settings /></ProtectedRoute>} />
+                          <Route path="/attendance" element={<ProtectedRoute roles={["Admin"]}><Attendance /></ProtectedRoute>} />
 
                           {/* Shared (Admin + Director) */}
                           <Route path="/exams" element={<ProtectedRoute><Exams /></ProtectedRoute>} />
@@ -73,10 +79,13 @@ const App = () => (
                           {/* Director routes */}
                           <Route path="/director" element={<ProtectedRoute roles={["Batch Director"]}><DirectorDashboard /></ProtectedRoute>} />
                           <Route path="/director/students" element={<ProtectedRoute roles={["Batch Director"]}><DirectorStudents /></ProtectedRoute>} />
+                          <Route path="/director/results" element={<ProtectedRoute roles={["Batch Director"]}><DirectorResults /></ProtectedRoute>} />
+                          <Route path="/director/attendance" element={<ProtectedRoute roles={["Batch Director"]}><DirectorAttendance /></ProtectedRoute>} />
 
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </BrowserRouter>
+                      </AttendanceProvider>
                       </BranchLedgerProvider>
                     </AccountsProvider>
                   </BookProvider>
