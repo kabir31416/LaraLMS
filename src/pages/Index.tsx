@@ -1,12 +1,19 @@
-import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp } from "lucide-react";
+import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp, UserCheck, UserX, Layers, ClipboardCheck } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStudents } from "@/contexts/StudentContext";
-import { format } from "date-fns";
+import { useAttendance } from "@/contexts/AttendanceContext";
+import { useBatches } from "@/contexts/BatchContext";
+import { format, subDays } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { useMemo } from "react";
 
 const Index = () => {
   const { students, payments } = useStudents();
+  const { entries, attendancePercent } = useAttendance();
+  const { batches } = useBatches();
 
   const totalStudents = students.length;
   const today = format(new Date(), "yyyy-MM-dd");
@@ -15,6 +22,30 @@ const Index = () => {
   const totalDue = students.reduce((sum, s) => sum + s.due, 0);
   const packageDue = students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
   const monthlyDue = students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+
+  // Attendance stats
+  const todayEntries = entries.filter((e) => e.date === today);
+  const todayPresent = todayEntries.filter((e) => e.status === "Present").length;
+  const todayAbsent = todayEntries.filter((e) => e.status === "Absent").length;
+  const todayPct = todayEntries.length ? Math.round((todayPresent / todayEntries.length) * 100) : 0;
+
+  // Last 7 days trend
+  const trend = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
+      const day = entries.filter((e) => e.date === d);
+      const pct = day.length ? Math.round((day.filter((e) => e.status === "Present").length / day.length) * 100) : 0;
+      return { date: d.slice(5), pct };
+    });
+  }, [entries]);
+
+  // Top 10 by attendance %
+  const monthStart = format(subDays(new Date(), 30), "yyyy-MM-dd");
+  const ranked = useMemo(() => students
+    .map((s) => ({ s, pct: attendancePercent(s.id, monthStart, today) }))
+    .sort((a, b) => b.pct - a.pct), [students, attendancePercent, monthStart, today]);
+  const top10 = ranked.slice(0, 10);
+  const lowAttendance = ranked.filter((x) => x.pct > 0 && x.pct < 60).slice(0, 8);
 
   const recentAdmissions = [...students]
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
@@ -34,10 +65,75 @@ const Index = () => {
           <StatCard title="আজকের আদায়" value={`৳ ${todayCollection.toLocaleString()}`} icon={DollarSign} variant="info" />
         </div>
 
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard title="আজকের উপস্থিতি %" value={`${todayPct}%`} icon={ClipboardCheck} variant="success" />
+          <StatCard title="মোট উপস্থিত" value={String(todayPresent)} icon={UserCheck} variant="info" />
+          <StatCard title="অনুপস্থিত" value={String(todayAbsent)} icon={UserX} variant="warning" />
+          <StatCard title="মোট ব্যাচ" value={String(batches.length)} icon={Layers} variant="primary" />
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard title="মোট বকেয়া" value={`৳ ${totalDue.toLocaleString()}`} icon={AlertCircle} variant="warning" />
           <StatCard title="প্যাকেজ বকেয়া" value={`৳ ${packageDue.toLocaleString()}`} icon={Package} variant="info" />
           <StatCard title="মাসিক বকেয়া" value={`৳ ${monthlyDue.toLocaleString()}`} icon={TrendingUp} variant="primary" />
+        </div>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">দৈনিক উপস্থিতি (গত ৭ দিন)</CardTitle>
+          </CardHeader>
+          <CardContent className="h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis domain={[0, 100]} stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                <Line type="monotone" dataKey="pct" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="border-none shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base font-semibold">টপ ১০ শিক্ষার্থী (উপস্থিতি)</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {top10.map((x, i) => (
+                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-muted-foreground w-5">{i + 1}</span>
+                      <div>
+                        <p className="text-sm font-medium">{x.s.name}</p>
+                        <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-success/10 text-success border-success/20">{x.pct}%</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base font-semibold">কম উপস্থিতি (৬০% এর নিচে)</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {lowAttendance.length === 0 ? (
+                  <p className="px-5 py-6 text-sm text-muted-foreground text-center">কেউ নেই</p>
+                ) : lowAttendance.map((x) => (
+                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                    <div>
+                      <p className="text-sm font-medium">{x.s.name}</p>
+                      <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                    </div>
+                    <Badge className="bg-destructive/10 text-destructive border-destructive/20">{x.pct}%</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
