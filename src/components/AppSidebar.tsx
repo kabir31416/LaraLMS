@@ -17,6 +17,9 @@ import {
   Layers,
   Video,
   ClipboardList,
+  Bell,
+  BarChart3 as ReportIcon,
+  User,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -42,14 +45,14 @@ const adminMenu = [
   { title: "রুটিন", url: "/routine", icon: CalendarDays },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
-  { title: "ফলাফল", url: "/results", icon: Award },
+  { title: "নোটিশ", url: "/notices", icon: Bell },
+  { title: "রিপোর্ট", url: "/reports", icon: ReportIcon },
   { title: "স্টাফ", url: "/staff", icon: UserCog },
   { title: "ব্যাচ", url: "/batches", icon: Layers },
   { title: "শিক্ষক", url: "/teachers", icon: GraduationCap },
   { title: "বই", url: "/books", icon: BookOpen },
   { title: "ডকুমেন্ট", url: "/documents", icon: FolderOpen },
   { title: "হিসাব", url: "/accounts", icon: Calculator },
-  { title: "রিপোর্ট", url: "/reports", icon: BarChart3 },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
 
@@ -62,13 +65,26 @@ const directorMenu = [
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];
 
+const studentMenu = [
+  { title: "ড্যাশবোর্ড", url: "/student", icon: LayoutDashboard },
+  { title: "প্রোফাইল", url: "/student/profile", icon: User },
+  { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck },
+  { title: "ফলাফল", url: "/student/results", icon: Award },
+  { title: "পেমেন্ট", url: "/student/payments", icon: DollarSign },
+  { title: "বই", url: "/student/books", icon: BookOpen },
+  { title: "নোটিশ", url: "/student/notices", icon: Bell },
+  { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video },
+];
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const { user } = useAuth();
 
-  const menuItems = user?.role === "Batch Director" ? directorMenu : adminMenu;
+  const menuItems = user?.role === "Batch Director" ? directorMenu
+    : user?.role === "Student" ? studentMenu
+    : adminMenu;
 
   return (
     <Sidebar collapsible="icon">
@@ -101,7 +117,7 @@ export function AppSidebar() {
                   >
                     <NavLink
                       to={item.url}
-                      end={item.url === "/" || item.url === "/director"}
+                      end={item.url === "/" || item.url === "/director" || item.url === "/student"}
                       className="hover:bg-sidebar-accent/50 transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                     >

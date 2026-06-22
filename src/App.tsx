@@ -24,6 +24,16 @@ import VideoClasses from "./pages/VideoClasses.tsx";
 import Attendance from "./pages/Attendance.tsx";
 import DirectorResults from "./pages/DirectorResults.tsx";
 import DirectorAttendance from "./pages/DirectorAttendance.tsx";
+import Notices from "./pages/Notices.tsx";
+import Reports from "./pages/Reports.tsx";
+import StudentDashboard from "./pages/student/StudentDashboard.tsx";
+import StudentProfileSelf from "./pages/student/StudentProfile.tsx";
+import StudentAttendance from "./pages/student/StudentAttendance.tsx";
+import StudentResults from "./pages/student/StudentResults.tsx";
+import StudentPayments from "./pages/student/StudentPayments.tsx";
+import StudentBooks from "./pages/student/StudentBooks.tsx";
+import StudentVideos from "./pages/student/StudentVideos.tsx";
+import StudentNotices from "./pages/student/StudentNotices.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
@@ -34,6 +44,7 @@ import { BatchProvider } from "@/contexts/BatchContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AcademicProvider } from "@/contexts/AcademicContext";
 import { AttendanceProvider } from "@/contexts/AttendanceContext";
+import { NoticeProvider } from "@/contexts/NoticeContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -51,6 +62,7 @@ const App = () => (
                     <AccountsProvider>
                       <BranchLedgerProvider>
                       <AttendanceProvider>
+                      <NoticeProvider>
                       <AccountsAutoBridge />
                       <Toaster />
                       <Sonner />
@@ -71,6 +83,8 @@ const App = () => (
                           <Route path="/batches" element={<ProtectedRoute roles={["Admin"]}><Batches /></ProtectedRoute>} />
                           <Route path="/settings" element={<ProtectedRoute roles={["Admin"]}><Settings /></ProtectedRoute>} />
                           <Route path="/attendance" element={<ProtectedRoute roles={["Admin"]}><Attendance /></ProtectedRoute>} />
+                          <Route path="/notices" element={<ProtectedRoute roles={["Admin"]}><Notices /></ProtectedRoute>} />
+                          <Route path="/reports" element={<ProtectedRoute roles={["Admin"]}><Reports /></ProtectedRoute>} />
 
                           {/* Shared (Admin + Director) */}
                           <Route path="/exams" element={<ProtectedRoute><Exams /></ProtectedRoute>} />
@@ -82,9 +96,20 @@ const App = () => (
                           <Route path="/director/results" element={<ProtectedRoute roles={["Batch Director"]}><DirectorResults /></ProtectedRoute>} />
                           <Route path="/director/attendance" element={<ProtectedRoute roles={["Batch Director"]}><DirectorAttendance /></ProtectedRoute>} />
 
+                          {/* Student routes */}
+                          <Route path="/student" element={<ProtectedRoute roles={["Student"]}><StudentDashboard /></ProtectedRoute>} />
+                          <Route path="/student/profile" element={<ProtectedRoute roles={["Student"]}><StudentProfileSelf /></ProtectedRoute>} />
+                          <Route path="/student/attendance" element={<ProtectedRoute roles={["Student"]}><StudentAttendance /></ProtectedRoute>} />
+                          <Route path="/student/results" element={<ProtectedRoute roles={["Student"]}><StudentResults /></ProtectedRoute>} />
+                          <Route path="/student/payments" element={<ProtectedRoute roles={["Student"]}><StudentPayments /></ProtectedRoute>} />
+                          <Route path="/student/books" element={<ProtectedRoute roles={["Student"]}><StudentBooks /></ProtectedRoute>} />
+                          <Route path="/student/notices" element={<ProtectedRoute roles={["Student"]}><StudentNotices /></ProtectedRoute>} />
+                          <Route path="/student/videos" element={<ProtectedRoute roles={["Student"]}><StudentVideos /></ProtectedRoute>} />
+
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </BrowserRouter>
+                      </NoticeProvider>
                       </AttendanceProvider>
                       </BranchLedgerProvider>
                     </AccountsProvider>

@@ -1,19 +1,21 @@
-import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp, UserCheck, UserX, Layers, ClipboardCheck } from "lucide-react";
+import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp, UserCheck, UserX, Layers, ClipboardCheck, Bell, Pin } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
 import { format, subDays } from "date-fns";
 import { Badge } from "@/components/ui/badge";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 import { useMemo } from "react";
 
 const Index = () => {
   const { students, payments } = useStudents();
   const { entries, attendancePercent } = useAttendance();
   const { batches } = useBatches();
+  const { notices } = useNotices();
 
   const totalStudents = students.length;
   const today = format(new Date(), "yyyy-MM-dd");
@@ -50,6 +52,24 @@ const Index = () => {
   const recentAdmissions = [...students]
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
     .slice(0, 5);
+
+  const recentPayments = [...payments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const latestNotices = filterNoticesFor(notices, { role: "Admin" }).slice(0, 5);
+
+  // Monthly collection (last 6 months)
+  const monthly = useMemo(() => {
+    const m = new Map<string, number>();
+    for (let i = 5; i >= 0; i--) {
+      const d = subDays(new Date(), i * 30);
+      const key = format(d, "yyyy-MM");
+      m.set(key, 0);
+    }
+    payments.forEach((p) => {
+      const key = p.date.slice(0, 7);
+      if (m.has(key)) m.set(key, (m.get(key) || 0) + p.paidAmount);
+    });
+    return Array.from(m.entries()).map(([month, total]) => ({ month: month.slice(5), total }));
+  }, [payments]);
 
   return (
     <DashboardLayout>
@@ -91,6 +111,23 @@ const Index = () => {
                 <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
                 <Line type="monotone" dataKey="pct" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">মাসিক কালেকশন (৬ মাস)</CardTitle>
+          </CardHeader>
+          <CardContent className="h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthly}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+                <Bar dataKey="total" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
@@ -158,23 +195,45 @@ const Index = () => {
 
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">বকেয়া শিক্ষার্থী</CardTitle>
+              <CardTitle className="text-base font-semibold">সাম্প্রতিক পেমেন্ট</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {students.filter((s) => s.due > 0).slice(0, 5).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between px-5 py-3">
-                    <div>
-                      <p className="text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.feeType} — {item.course}</p>
-                    </div>
-                    <span className="text-xs text-destructive font-semibold">৳ {item.due.toLocaleString()}</span>
-                  </div>
-                ))}
+                {recentPayments.length === 0 ? <p className="px-5 py-6 text-sm text-muted-foreground text-center">কোনো পেমেন্ট নেই</p> :
+                  recentPayments.map((p) => {
+                    const s = students.find((x) => x.id === p.studentId);
+                    return <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{s?.name || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{p.receiptNo} • {p.date}</p>
+                      </div>
+                      <span className="text-xs text-success font-semibold">৳ {p.paidAmount.toLocaleString()}</span>
+                    </div>;
+                  })}
               </div>
             </CardContent>
           </Card>
         </div>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2"><Bell className="h-4 w-4" /> সর্বশেষ নোটিশ</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {latestNotices.length === 0 ? <p className="px-5 py-6 text-sm text-muted-foreground text-center">কোনো নোটিশ নেই</p> :
+                latestNotices.map((n) => (
+                  <div key={n.id} className="px-5 py-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium flex items-center gap-1">{n.pinned && <Pin className="h-3 w-3 text-primary" />}{n.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{n.description}</p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0">{n.publishDate}</Badge>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );
