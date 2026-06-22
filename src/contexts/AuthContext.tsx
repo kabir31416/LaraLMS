@@ -1,17 +1,19 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-export type Role = "Admin" | "Batch Director";
+export type Role = "Admin" | "Batch Director" | "Student";
 
 export interface AuthUser {
   staffId: string;
   name: string;
   role: Role;
+  studentId?: string; // internal student.id when role === "Student"
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   loginAsAdmin: (name?: string) => void;
   loginAsDirector: (staffId: string, name: string) => void;
+  loginAsStudent: (studentInternalId: string, name: string) => void;
   logout: () => void;
 }
 
@@ -41,9 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser({ staffId, name, role: "Batch Director" });
   }, []);
 
+  const loginAsStudent = useCallback((studentInternalId: string, name: string) => {
+    setUser({ staffId: `stu-${studentInternalId}`, name, role: "Student", studentId: studentInternalId });
+  }, []);
+
   const logout = useCallback(() => setUser(null), []);
 
-  const value = useMemo(() => ({ user, loginAsAdmin, loginAsDirector, logout }), [user, loginAsAdmin, loginAsDirector, logout]);
+  const value = useMemo(() => ({ user, loginAsAdmin, loginAsDirector, loginAsStudent, logout }), [user, loginAsAdmin, loginAsDirector, loginAsStudent, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
