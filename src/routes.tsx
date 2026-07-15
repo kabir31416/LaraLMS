@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -97,6 +97,3 @@ export function AppRoutes() {
     </Routes>
   );
 }
-
-// Local import to avoid an extra top-level line change
-import { Outlet } from "react-router-dom";
