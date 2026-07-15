@@ -11,7 +11,6 @@ import {
   BookOpen,
   FolderOpen,
   Calculator,
-  BarChart3,
   Settings,
   UserCog,
   Layers,
