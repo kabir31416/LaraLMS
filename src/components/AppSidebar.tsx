@@ -9,7 +9,6 @@ import {
   Award,
   GraduationCap,
   BookOpen,
-  FolderOpen,
   Calculator,
   Settings,
   UserCog,
@@ -50,7 +49,6 @@ const adminMenu = [
   { title: "ব্যাচ", url: "/batches", icon: Layers },
   { title: "শিক্ষক", url: "/teachers", icon: GraduationCap },
   { title: "বই", url: "/books", icon: BookOpen },
-  { title: "ডকুমেন্ট", url: "/documents", icon: FolderOpen },
   { title: "হিসাব", url: "/accounts", icon: Calculator },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
