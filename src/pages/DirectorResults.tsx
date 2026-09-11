@@ -34,11 +34,32 @@ const DirectorResults = () => {
   }, [myBatches, batchId]);
 
   const batch = myBatches.find((b) => b.id === batchId);
-  const batchCourse = courses.find((c) => c.name === batch?.course);
-  const courseSubjects = subjects.filter((s) => batchCourse && s.courseId === batchCourse.id);
+  // Batch.course may hold either the course id or the course name — match both,
+  // so the subject list always stays in sync with একাডেমিক সেটিংস.
+  const batchCourse = useMemo(() => {
+    if (!batch?.course) return undefined;
+    const key = String(batch.course).trim().toLowerCase();
+    return courses.find((c) => c.id === batch.course) || courses.find((c) => c.name.trim().toLowerCase() === key);
+  }, [courses, batch]);
+  const courseSubjects = useMemo(
+    () => (batchCourse ? subjects.filter((s) => s.courseId === batchCourse.id) : []),
+    [subjects, batchCourse],
+  );
   const [subjectId, setSubjectId] = useState<string>("");
-  const subjectLectures = lectures.filter((l) => l.subjectId === subjectId);
   const [lectureId, setLectureId] = useState<string>("");
+  // Clear a stale subject if it no longer belongs to the selected batch's course.
+  useEffect(() => {
+    if (subjectId && !courseSubjects.some((s) => s.id === subjectId)) {
+      setSubjectId("");
+      setLectureId("");
+    }
+  }, [courseSubjects, subjectId]);
+  const subjectLectures = useMemo(
+    () => lectures.filter((l) => l.subjectId === subjectId).sort((a, b) => a.lectureNumber - b.lectureNumber),
+    [lectures, subjectId],
+  );
+
+
 
   const [title, setTitle] = useState("");
   const [fullMarks, setFullMarks] = useState<number>(50);
@@ -104,26 +125,40 @@ const DirectorResults = () => {
             )}
             <div>
               <Label>কোর্স</Label>
-              <Input value={batch?.course || "—"} disabled />
+              <Input value={batchCourse?.name || batch?.course || "—"} disabled />
             </div>
             <div>
               <Label>সাবজেক্ট</Label>
-              <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setLectureId(""); }}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন" /></SelectTrigger>
+              <Select
+                value={subjectId}
+                onValueChange={(v) => { setSubjectId(v); setLectureId(""); }}
+                disabled={courseSubjects.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={courseSubjects.length === 0 ? "সাবজেক্ট নেই" : "নির্বাচন"} />
+                </SelectTrigger>
                 <SelectContent>
                   {courseSubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {courseSubjects.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  এই কোর্সে কোনো সাবজেক্ট নেই — একাডেমিক সেটিংস থেকে যোগ করুন।
+                </p>
+              )}
             </div>
             <div>
               <Label>লেকচার</Label>
-              <Select value={lectureId} onValueChange={setLectureId}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন" /></SelectTrigger>
+              <Select value={lectureId} onValueChange={setLectureId} disabled={!subjectId || subjectLectures.length === 0}>
+                <SelectTrigger>
+                  <SelectValue placeholder={subjectId && subjectLectures.length === 0 ? "লেকচার নেই" : "নির্বাচন"} />
+                </SelectTrigger>
                 <SelectContent>
                   {subjectLectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.lectureNumber}. {l.title}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+
             <div>
               <Label>এক্সাম শিরোনাম</Label>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="সাপ্তাহিক টেস্ট" />
