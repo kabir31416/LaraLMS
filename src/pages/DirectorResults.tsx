@@ -125,26 +125,40 @@ const DirectorResults = () => {
             )}
             <div>
               <Label>কোর্স</Label>
-              <Input value={batch?.course || "—"} disabled />
+              <Input value={batchCourse?.name || batch?.course || "—"} disabled />
             </div>
             <div>
               <Label>সাবজেক্ট</Label>
-              <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); setLectureId(""); }}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন" /></SelectTrigger>
+              <Select
+                value={subjectId}
+                onValueChange={(v) => { setSubjectId(v); setLectureId(""); }}
+                disabled={courseSubjects.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={courseSubjects.length === 0 ? "সাবজেক্ট নেই" : "নির্বাচন"} />
+                </SelectTrigger>
                 <SelectContent>
                   {courseSubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {courseSubjects.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  এই কোর্সে কোনো সাবজেক্ট নেই — একাডেমিক সেটিংস থেকে যোগ করুন।
+                </p>
+              )}
             </div>
             <div>
               <Label>লেকচার</Label>
-              <Select value={lectureId} onValueChange={setLectureId}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন" /></SelectTrigger>
+              <Select value={lectureId} onValueChange={setLectureId} disabled={!subjectId || subjectLectures.length === 0}>
+                <SelectTrigger>
+                  <SelectValue placeholder={subjectId && subjectLectures.length === 0 ? "লেকচার নেই" : "নির্বাচন"} />
+                </SelectTrigger>
                 <SelectContent>
                   {subjectLectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.lectureNumber}. {l.title}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+
             <div>
               <Label>এক্সাম শিরোনাম</Label>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="সাপ্তাহিক টেস্ট" />
