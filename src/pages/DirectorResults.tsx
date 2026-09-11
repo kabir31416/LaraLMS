@@ -46,6 +46,7 @@ const DirectorResults = () => {
     [subjects, batchCourse],
   );
   const [subjectId, setSubjectId] = useState<string>("");
+  const [lectureId, setLectureId] = useState<string>("");
   // Clear a stale subject if it no longer belongs to the selected batch's course.
   useEffect(() => {
     if (subjectId && !courseSubjects.some((s) => s.id === subjectId)) {
@@ -57,7 +58,7 @@ const DirectorResults = () => {
     () => lectures.filter((l) => l.subjectId === subjectId).sort((a, b) => a.lectureNumber - b.lectureNumber),
     [lectures, subjectId],
   );
-  const [lectureId, setLectureId] = useState<string>("");
+
 
 
   const [title, setTitle] = useState("");
