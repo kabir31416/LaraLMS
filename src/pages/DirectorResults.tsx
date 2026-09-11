@@ -34,11 +34,31 @@ const DirectorResults = () => {
   }, [myBatches, batchId]);
 
   const batch = myBatches.find((b) => b.id === batchId);
-  const batchCourse = courses.find((c) => c.name === batch?.course);
-  const courseSubjects = subjects.filter((s) => batchCourse && s.courseId === batchCourse.id);
+  // Batch.course may hold either the course id or the course name — match both,
+  // so the subject list always stays in sync with একাডেমিক সেটিংস.
+  const batchCourse = useMemo(() => {
+    if (!batch?.course) return undefined;
+    const key = String(batch.course).trim().toLowerCase();
+    return courses.find((c) => c.id === batch.course) || courses.find((c) => c.name.trim().toLowerCase() === key);
+  }, [courses, batch]);
+  const courseSubjects = useMemo(
+    () => (batchCourse ? subjects.filter((s) => s.courseId === batchCourse.id) : []),
+    [subjects, batchCourse],
+  );
   const [subjectId, setSubjectId] = useState<string>("");
-  const subjectLectures = lectures.filter((l) => l.subjectId === subjectId);
+  // Clear a stale subject if it no longer belongs to the selected batch's course.
+  useEffect(() => {
+    if (subjectId && !courseSubjects.some((s) => s.id === subjectId)) {
+      setSubjectId("");
+      setLectureId("");
+    }
+  }, [courseSubjects, subjectId]);
+  const subjectLectures = useMemo(
+    () => lectures.filter((l) => l.subjectId === subjectId).sort((a, b) => a.lectureNumber - b.lectureNumber),
+    [lectures, subjectId],
+  );
   const [lectureId, setLectureId] = useState<string>("");
+
 
   const [title, setTitle] = useState("");
   const [fullMarks, setFullMarks] = useState<number>(50);
