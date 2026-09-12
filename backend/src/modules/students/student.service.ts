@@ -7,12 +7,12 @@ import { generateRegistrationId } from "../../common/utils/idGenerators";
 import * as guardianService from "../guardians/guardian.service";
 
 /**
- * No student-create/update path here provisions a Portal login anymore.
- * The Student Portal authenticates by matching phone + Roll Number
- * directly against the live Student record (auth.service.ts's
- * studentLogin) and creates its own linked User account lazily, on first
- * successful login — so nothing here needs to keep a separate account or
- * password in sync with this collection at all.
+ * No student-create/update path here provisions a Portal login — there is
+ * no login account for a student at all. The Student Portal authenticates
+ * by matching phone + Roll Number directly against the live Student record
+ * on every login attempt (auth.service.ts's studentLogin, a pure read-only
+ * lookup), so nothing here needs to keep a separate account or password in
+ * sync with this collection.
  */
 interface GuardianInline {
   guardianName?: string;

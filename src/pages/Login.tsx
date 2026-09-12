@@ -11,12 +11,12 @@ import { toast } from "sonner";
 
 /**
  * Two tabs, two different auth calls underneath. Staff/Admin still use
- * identifier+password (/auth/login). The Student tab uses a dedicated
+ * identifier+password (/auth/login) and land on "/" (Admin) or "/director"
+ * (Batch Director) after login. The Student tab uses a dedicated
  * /auth/student-login that checks phone + Roll Number directly against the
- * live Student record instead of a separately-maintained password — no
- * login account has to be created/kept in sync ahead of time by an admin
- * at all (auth.service.ts's studentLogin creates one transparently on
- * first successful match, purely to reuse the same session machinery).
+ * live Student record — no password, no login account at all
+ * (auth.service.ts's studentLogin is a pure read-only lookup) — and lands
+ * on "/student", the only route a Student role is allowed into.
  */
 const Login = () => {
   const navigate = useNavigate();
@@ -59,7 +59,7 @@ const Login = () => {
     try {
       await studentLogin(studentPhone.trim(), studentRoll.trim());
       toast.success("লগইন সফল");
-      navigate("/");
+      navigate("/student");
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
     } finally {
