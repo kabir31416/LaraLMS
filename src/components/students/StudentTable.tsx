@@ -21,9 +21,7 @@ import { Eye, Pencil, Trash2, MoreVertical, KeyRound } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
-import { api } from "@/lib/apiClient";
-import { ApiClientError } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { StudentLoginDialog } from "./StudentLoginDialog";
 
 interface StudentTableProps {
   students: Student[];
@@ -36,63 +34,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
-  const [creatingLoginId, setCreatingLoginId] = useState<string | null>(null);
-
-  // Login credential convention for the Student Portal: identifier = phone
-  // number, password = Roll Number — both already assigned during
-  // admission, so no separate credential needs to be communicated.
-  //
-  // If a login already exists for this student (e.g. it was created
-  // earlier and the Roll Number has since changed, leaving a stale
-  // password), this resets it to match the student's current mobile/roll
-  // number instead of just failing with "already exists" — that was a real
-  // bug: the button could only create, never fix, a login.
-  const handleCreateLogin = async (student: Student) => {
-    if (!student.mobile || !student.rollNumber) {
-      toast.error("লগইন তৈরির জন্য মোবাইল নম্বর ও রোল নম্বর থাকা আবশ্যক");
-      return;
-    }
-    setCreatingLoginId(student.id);
-    try {
-      const existing = await api.get<{ _id: string }[]>(`/users?linkedStudentId=${student.id}&limit=1`);
-      if (existing.length > 0) {
-        await api.patch(`/users/${existing[0]._id}/reset-credentials`, {
-          identifier: student.mobile,
-          password: student.rollNumber,
-        });
-        toast.success(
-          `লগইন আপডেট হয়েছে — মোবাইল: ${student.mobile}, পাসওয়ার্ড: ${student.rollNumber}`,
-          { duration: 15000 },
-        );
-        return;
-      }
-
-      const roles = await api.get<{ _id: string; name: string }[]>("/roles");
-      const studentRoleId = roles.find((r) => r.name === "student")?._id;
-      if (!studentRoleId) {
-        toast.error("Student role খুঁজে পাওয়া যায়নি");
-        return;
-      }
-      await api.post("/users", {
-        identifier: student.mobile,
-        password: student.rollNumber,
-        roleId: studentRoleId,
-        linkedStudentId: student.id,
-      });
-      toast.success(
-        `লগইন তৈরি হয়েছে — মোবাইল: ${student.mobile}, পাসওয়ার্ড: ${student.rollNumber}`,
-        { duration: 15000 },
-      );
-    } catch (err) {
-      if (err instanceof ApiClientError && err.code === "CONFLICT") {
-        toast.error("এই মোবাইল নম্বরে অন্য একটি অ্যাকাউন্ট আগে থেকেই আছে");
-      } else {
-        toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি/আপডেট ব্যর্থ হয়েছে");
-      }
-    } finally {
-      setCreatingLoginId(null);
-    }
-  };
+  const [loginStudent, setLoginStudent] = useState<Student | null>(null);
 
   if (students.length === 0) {
     return (
@@ -183,12 +125,8 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(student); }}>
                         <Pencil className="mr-2 h-4 w-4" /> সম্পাদনা
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={creatingLoginId === student.id}
-                        onClick={(e) => { e.stopPropagation(); handleCreateLogin(student); }}
-                      >
-                        <KeyRound className="mr-2 h-4 w-4" />
-                        {creatingLoginId === student.id ? "প্রসেস হচ্ছে..." : "লগইন তৈরি/রিসেট করুন"}
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLoginStudent(student); }}>
+                        <KeyRound className="mr-2 h-4 w-4" /> লগইন তথ্য
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
@@ -204,6 +142,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
           })}
         </TableBody>
       </Table>
+      <StudentLoginDialog student={loginStudent} onOpenChange={(open) => !open && setLoginStudent(null)} />
     </div>
   );
 }
