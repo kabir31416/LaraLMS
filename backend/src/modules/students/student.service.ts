@@ -107,6 +107,44 @@ export async function getById(id: string): Promise<Record<string, unknown>> {
   return withGuardian(doc);
 }
 
+/**
+ * Self-service "my profile" for the Student Portal (Phase 3, Module 27).
+ * A student holds neither STUDENTS_READ nor BATCHES_READ_OWN / STAFF_MANAGE,
+ * so the frontend can't resolve its own batch/director the way admin/director
+ * screens do (via the full Batch/Staff list contexts) — this denormalizes
+ * both onto the response, the same read-time-join pattern withGuardian()
+ * already uses, so the student portal needs exactly one authorized call.
+ */
+export async function getMyProfile(req: Request): Promise<Record<string, unknown>> {
+  const studentId = req.user?.studentId;
+  if (!studentId) throw ApiError.forbidden("No linked student record");
+  const doc = await getDocOrThrow(studentId);
+  const withG = await withGuardian(doc);
+
+  let batch: Record<string, unknown> | null = null;
+  let director: Record<string, unknown> | null = null;
+  if (doc.currentBatchId) {
+    const { Batch } = await import("../batches/batch.model");
+    const batchDoc = await Batch.findById(doc.currentBatchId);
+    if (batchDoc) {
+      batch = {
+        id: String(batchDoc._id),
+        name: batchDoc.name,
+        batchTime: batchDoc.batchTime,
+        roomNumber: batchDoc.roomNumber,
+        days: batchDoc.days,
+      };
+      if (batchDoc.directorId) {
+        const { Staff } = await import("../staff/staff.model");
+        const staffDoc = await Staff.findById(batchDoc.directorId);
+        if (staffDoc) director = { id: String(staffDoc._id), name: staffDoc.name };
+      }
+    }
+  }
+
+  return { ...withG, batch, director };
+}
+
 async function getDocOrThrow(id: string): Promise<StudentDoc> {
   const doc = await Student.findById(id);
   if (!doc) throw ApiError.notFound("Student not found");

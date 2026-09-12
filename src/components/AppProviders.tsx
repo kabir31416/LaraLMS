@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { StudentSelfProvider } from "@/contexts/StudentSelfContext";
 import { AcademicProvider } from "@/contexts/AcademicContext";
 import { StaffProvider } from "@/contexts/StaffContext";
 import { StudentProvider } from "@/contexts/StudentContext";
@@ -20,7 +21,8 @@ const queryClient = new QueryClient();
 
 /**
  * Single flattened provider tree. Order matters:
- *   Auth → Academic (master data) → Staff → Student → Payment (needs Student)
+ *   Auth → StudentSelf (needs only Auth; the Student Portal's one call) →
+ *   Academic (master data) → Staff → Student → Payment (needs Student)
  *   → Batch (needs staff+student) → Routine/Branch/Book/Accounts/
  *   BranchLedger (need Branch) → Attendance/Notice (feature layers)
  *
@@ -33,33 +35,35 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <AcademicProvider>
-            <StaffProvider>
-              <StudentProvider>
-                <PaymentProvider>
-                  <BatchProvider>
-                    <RoutineProvider>
-                      <BranchProvider>
-                        <BookProvider>
-                          <AccountsProvider>
-                            <BranchLedgerProvider>
-                              <AttendanceProvider>
-                                <NoticeProvider>
-                                  <Toaster />
-                                  <Sonner />
-                                  {children}
-                                </NoticeProvider>
-                              </AttendanceProvider>
-                            </BranchLedgerProvider>
-                          </AccountsProvider>
-                        </BookProvider>
-                      </BranchProvider>
-                    </RoutineProvider>
-                  </BatchProvider>
-                </PaymentProvider>
-              </StudentProvider>
-            </StaffProvider>
-          </AcademicProvider>
+          <StudentSelfProvider>
+            <AcademicProvider>
+              <StaffProvider>
+                <StudentProvider>
+                  <PaymentProvider>
+                    <BatchProvider>
+                      <RoutineProvider>
+                        <BranchProvider>
+                          <BookProvider>
+                            <AccountsProvider>
+                              <BranchLedgerProvider>
+                                <AttendanceProvider>
+                                  <NoticeProvider>
+                                    <Toaster />
+                                    <Sonner />
+                                    {children}
+                                  </NoticeProvider>
+                                </AttendanceProvider>
+                              </BranchLedgerProvider>
+                            </AccountsProvider>
+                          </BookProvider>
+                        </BranchProvider>
+                      </RoutineProvider>
+                    </BatchProvider>
+                  </PaymentProvider>
+                </StudentProvider>
+              </StaffProvider>
+            </AcademicProvider>
+          </StudentSelfProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

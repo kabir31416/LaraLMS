@@ -3,7 +3,12 @@ import { z } from "zod";
 export const createUserSchema = z.object({
   body: z.object({
     identifier: z.string().trim().min(3),
-    password: z.string().min(6).optional(), // if omitted, a temp password is generated (Phase 2 §13)
+    // No lower bound beyond "non-empty": a Student login's password is
+    // often set to the student's Roll Number, which can be as short as one
+    // or two digits — the real defenses are bcrypt hashing + authLimiter's
+    // brute-force throttling, not string length. Omit entirely for a
+    // server-generated temp password (Phase 2 §13).
+    password: z.string().min(1).optional(),
     roleId: z.string().length(24),
     linkedStaffId: z.string().length(24).optional(),
     linkedStudentId: z.string().length(24).optional(),

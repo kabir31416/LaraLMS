@@ -10,6 +10,8 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 
 export const getById = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getById(req.params.id)));
 
+export const getMyProfile = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getMyProfile(req)));
+
 export const quickCreate = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.quickCreate(req, req.body), 201));
 
 export const create = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.create(req, req.body), 201));
