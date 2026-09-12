@@ -12,14 +12,14 @@ import guardianRoutes from "../modules/guardians/guardian.routes";
 import batchRoutes from "../modules/batches/batch.routes";
 import staffRoutes from "../modules/staff/staff.routes";
 import dashboardRoutes from "../modules/dashboard/dashboard.routes";
+import paymentRoutes from "../modules/payments/payment.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
- * Modules still pending (Fees, Attendance, ...) are added to this same
- * list as each is implemented; see the task tracker. Dashboard only
- * aggregates the stat cards backed by Student/Batch so far — today's
- * collection, attendance stats, and notices stay on the frontend's mock
- * sources until Modules 15-20 and 25 land.
+ * Modules still pending (Attendance, Exam, ...) are added to this same
+ * list as each is implemented; see the task tracker. Dashboard's admin
+ * summary aggregates Student/Batch/Payment; attendance stats and notices
+ * still stay on the frontend's mock sources until Modules 18-20 and 25 land.
  */
 const router = Router();
 
@@ -36,5 +36,6 @@ router.use("/guardians", guardianRoutes);
 router.use("/batches", batchRoutes);
 router.use("/staff", staffRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/payments", paymentRoutes);
 
 export default router;

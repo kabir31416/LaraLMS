@@ -5,12 +5,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function FeeCollectionReport() {
-  const { payments, students } = useStudents();
+  const { payments } = usePayments();
+  const { students } = useStudents();
   const { courses } = useAcademic();
   const { batches } = useBatches();
   const [from, setFrom] = useState("");

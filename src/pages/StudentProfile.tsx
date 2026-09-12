@@ -14,11 +14,13 @@ import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePayments } from "@/contexts/PaymentContext";
 
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudent, getPayments, getAttendance, getResults } = useStudents();
+  const { getStudent, getAttendance, getResults } = useStudents();
+  const { getPayments } = usePayments();
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const [editOpen, setEditOpen] = useState(false);

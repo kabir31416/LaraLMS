@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useAccounts } from "@/contexts/AccountsContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { ACCOUNT_BRANCHES } from "@/types/accounts";
 import type { PaymentMethod } from "@/types/accounts";
 
 // Bridges student payments → income entries (auto)
 export function AccountsAutoBridge() {
-  const { payments, students } = useStudents();
+  const { payments } = usePayments();
+  const { students } = useStudents();
   const { addAutoIncome } = useAccounts();
   const seenRef = useRef<Set<string>>(new Set());
 

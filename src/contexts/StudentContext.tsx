@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { Student, ProfileCompletion } from "@/types/student";
-import { mockPayments, mockAttendance, mockResults, generateReceiptNo } from "@/data/students";
-import type { Payment, AttendanceRecord, ExamResult } from "@/types/student";
+import { mockAttendance, mockResults } from "@/data/students";
+import type { AttendanceRecord, ExamResult } from "@/types/student";
 import { api } from "@/lib/apiClient";
 
 /**
  * Students are now backed by the real API (Phase 3, Modules 10-12).
- * Payments/Attendance/Results stay on the old mock data until their own
- * modules (15-20) exist — this is the same phased approach already used for
- * Academic's classExams/videos.
+ * Payments moved to their own PaymentContext (Modules 15-17). Attendance/
+ * Results stay on the old mock data until their own modules (18-20) exist —
+ * the same phased approach already used for Academic's classExams/videos.
  *
  * Field names are translated at this boundary (phone <-> mobile, photoUrl <->
  * photo, registrationId <-> studentId, currentRollNumber <-> rollNumber,
@@ -108,7 +108,6 @@ function toApiBody(data: Partial<Student> & { rollNumber?: string }): Record<str
 
 interface StudentContextType {
   students: Student[];
-  payments: Payment[];
   loading: boolean;
   addStudent: (student: Omit<Student, "id" | "studentId" | "status">) => Promise<Student>;
   addStudentQuick: (data: { rollNumber: string; name: string; mobile: string }) => Promise<Student>;
@@ -116,8 +115,6 @@ interface StudentContextType {
   updateRoll: (id: string, rollNumber: string) => Promise<Student>;
   deleteStudent: (id: string) => Promise<void>;
   getStudent: (id: string) => Student | undefined;
-  getPayments: (studentId: string) => Payment[];
-  addPayment: (payment: Omit<Payment, "id" | "receiptNo">) => Payment;
   getAttendance: (studentId: string) => AttendanceRecord[];
   getResults: (studentId: string) => ExamResult[];
   // Batch enrollment — Phase 1 §14
@@ -133,7 +130,6 @@ const LIST_LIMIT = "?limit=100";
 
 export function StudentProvider({ children }: { children: React.ReactNode }) {
   const [students, setStudents] = useState<Student[]>([]);
-  const [payments, setPayments] = useState<Payment[]>(mockPayments);
   const [loading, setLoading] = useState(true);
 
   const refreshStudents = useCallback(async () => {
@@ -180,23 +176,6 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
 
   const getStudent = useCallback((id: string) => students.find((s) => s.id === id), [students]);
 
-  const getPayments = useCallback((studentId: string) => payments.filter((p) => p.studentId === studentId), [payments]);
-
-  const addPayment = useCallback((payment: Omit<Payment, "id" | "receiptNo">): Payment => {
-    const newPayment: Payment = { ...payment, id: `p${Date.now()}`, receiptNo: generateReceiptNo() };
-    setPayments((prev) => [newPayment, ...prev]);
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id === payment.studentId) {
-          const newPaid = s.paid + payment.paidAmount;
-          return { ...s, paid: newPaid, due: s.totalFee - newPaid };
-        }
-        return s;
-      }),
-    );
-    return newPayment;
-  }, []);
-
   const getAttendance = useCallback((studentId: string) => mockAttendance[studentId] || [], []);
   const getResults = useCallback((studentId: string) => mockResults[studentId] || [], []);
 
@@ -217,13 +196,13 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      students, payments, loading,
+      students, loading,
       addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
-      getPayments, addPayment, getAttendance, getResults,
+      getAttendance, getResults,
       enrollStudent, transferStudent, withdrawStudent, refreshStudents,
     }),
-    [students, payments, loading, addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
-      getPayments, addPayment, getAttendance, getResults, enrollStudent, transferStudent, withdrawStudent, refreshStudents],
+    [students, loading, addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
+      getAttendance, getResults, enrollStudent, transferStudent, withdrawStudent, refreshStudents],
   );
 
   return <StudentContext.Provider value={value}>{children}</StudentContext.Provider>;

@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
@@ -20,21 +21,26 @@ interface AdminDashboardSummary {
   totalDue: number;
   packageDue: number;
   monthlyDue: number;
+  todayCollection: number;
+  monthlyCollection: { month: string; total: number }[];
   recentAdmissions: { id: string; name: string; class?: string; course?: string; admissionDate: string; registrationId: string }[];
+  recentPayments: { id: string; receiptNo: string; studentName?: string; date: string; paidAmount: number; method: string }[];
 }
 
 const Index = () => {
-  const { students, payments } = useStudents();
+  const { students } = useStudents();
+  const { payments } = usePayments();
   const { entries, attendancePercent } = useAttendance();
   const { batches } = useBatches();
   const { notices } = useNotices();
 
-  // Module 4: server-side aggregation for the counts/sums that already have a
-  // real collection (Student, Batch) — StudentContext/BatchContext cap their
-  // list fetch at 100 rows for the table views, which would silently
-  // under-count these once a coaching center passes 100 students. Today's
-  // collection, attendance stats, and notices stay on the mock sources below
-  // until Payment/Attendance/Notice (Modules 15-20, 25) exist.
+  // Module 4 (extended in Modules 15-17): server-side aggregation for the
+  // counts/sums that already have a real collection (Student, Batch,
+  // Payment) — StudentContext/BatchContext/PaymentContext cap their list
+  // fetch at 100 rows for the table views, which would silently under-count
+  // these once a coaching center passes 100 records. Attendance stats and
+  // notices stay on the mock sources below until Attendance/Notice
+  // (Modules 18-20, 25) exist.
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +56,7 @@ const Index = () => {
   const today = format(new Date(), "yyyy-MM-dd");
   const totalStudents = summary?.totalStudents ?? students.length;
   const todayAdmissions = summary?.todayAdmissions ?? students.filter((s) => s.admissionDate === today).length;
-  const todayCollection = payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
+  const todayCollection = summary?.todayCollection ?? payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
   const totalDue = summary?.totalDue ?? students.reduce((sum, s) => sum + s.due, 0);
   const packageDue = summary?.packageDue ?? students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
   const monthlyDue = summary?.monthlyDue ?? students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
@@ -84,11 +90,22 @@ const Index = () => {
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
     .slice(0, 5);
 
-  const recentPayments = [...payments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const recentPayments = summary?.recentPayments ?? [...payments]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
+    .map((p) => ({
+      id: p.id,
+      receiptNo: p.receiptNo,
+      studentName: students.find((s) => s.id === p.studentId)?.name,
+      date: p.date,
+      paidAmount: p.paidAmount,
+      method: p.method,
+    }));
   const latestNotices = filterNoticesFor(notices, { role: "Admin" }).slice(0, 5);
 
   // Monthly collection (last 6 months)
   const monthly = useMemo(() => {
+    if (summary?.monthlyCollection) return summary.monthlyCollection;
     const m = new Map<string, number>();
     for (let i = 5; i >= 0; i--) {
       const d = subDays(new Date(), i * 30);
@@ -100,7 +117,7 @@ const Index = () => {
       if (m.has(key)) m.set(key, (m.get(key) || 0) + p.paidAmount);
     });
     return Array.from(m.entries()).map(([month, total]) => ({ month: month.slice(5), total }));
-  }, [payments]);
+  }, [payments, summary]);
 
   return (
     <DashboardLayout>
@@ -231,16 +248,15 @@ const Index = () => {
             <CardContent className="p-0">
               <div className="divide-y divide-border">
                 {recentPayments.length === 0 ? <p className="px-5 py-6 text-sm text-muted-foreground text-center">কোনো পেমেন্ট নেই</p> :
-                  recentPayments.map((p) => {
-                    const s = students.find((x) => x.id === p.studentId);
-                    return <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                  recentPayments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between px-5 py-3">
                       <div>
-                        <p className="text-sm font-medium">{s?.name || "—"}</p>
+                        <p className="text-sm font-medium">{p.studentName || "—"}</p>
                         <p className="text-xs text-muted-foreground">{p.receiptNo} • {p.date}</p>
                       </div>
                       <span className="text-xs text-success font-semibold">৳ {p.paidAmount.toLocaleString()}</span>
-                    </div>;
-                  })}
+                    </div>
+                  ))}
               </div>
             </CardContent>
           </Card>

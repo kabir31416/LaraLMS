@@ -1,13 +1,13 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
 
 export default function StudentPayments() {
   const { user, student } = useStudentSelf();
-  const { getPayments } = useStudents();
+  const { getPayments } = usePayments();
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
   const payments = getPayments(student.id);

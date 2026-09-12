@@ -4,6 +4,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AcademicProvider } from "@/contexts/AcademicContext";
 import { StaffProvider } from "@/contexts/StaffContext";
 import { StudentProvider } from "@/contexts/StudentContext";
+import { PaymentProvider } from "@/contexts/PaymentContext";
 import { BatchProvider } from "@/contexts/BatchContext";
 import { RoutineProvider } from "@/contexts/RoutineContext";
 import { BookProvider } from "@/contexts/BookContext";
@@ -19,8 +20,9 @@ const queryClient = new QueryClient();
 
 /**
  * Single flattened provider tree. Order matters:
- *   Auth → Academic (master data) → Staff → Student → Batch (needs staff+student)
- *   → Routine/Book/Accounts/BranchLedger/Attendance/Notice (feature layers)
+ *   Auth → Academic (master data) → Staff → Student → Payment (needs Student)
+ *   → Batch (needs staff+student) → Routine/Book/Accounts/BranchLedger/
+ *   Attendance/Notice (feature layers)
  */
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -30,24 +32,26 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <AcademicProvider>
             <StaffProvider>
               <StudentProvider>
-                <BatchProvider>
-                  <RoutineProvider>
-                    <BookProvider>
-                      <AccountsProvider>
-                        <BranchLedgerProvider>
-                          <AttendanceProvider>
-                            <NoticeProvider>
-                              <AccountsAutoBridge />
-                              <Toaster />
-                              <Sonner />
-                              {children}
-                            </NoticeProvider>
-                          </AttendanceProvider>
-                        </BranchLedgerProvider>
-                      </AccountsProvider>
-                    </BookProvider>
-                  </RoutineProvider>
-                </BatchProvider>
+                <PaymentProvider>
+                  <BatchProvider>
+                    <RoutineProvider>
+                      <BookProvider>
+                        <AccountsProvider>
+                          <BranchLedgerProvider>
+                            <AttendanceProvider>
+                              <NoticeProvider>
+                                <AccountsAutoBridge />
+                                <Toaster />
+                                <Sonner />
+                                {children}
+                              </NoticeProvider>
+                            </AttendanceProvider>
+                          </BranchLedgerProvider>
+                        </AccountsProvider>
+                      </BookProvider>
+                    </RoutineProvider>
+                  </BatchProvider>
+                </PaymentProvider>
               </StudentProvider>
             </StaffProvider>
           </AcademicProvider>
