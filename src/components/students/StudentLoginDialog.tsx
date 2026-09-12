@@ -32,36 +32,33 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
     }
   };
 
+  // POST /users is idempotent per student now — the backend resets the
+  // existing login when one is already linked to this student, so there's
+  // no need to look it up here first (that separate lookup-then-branch was
+  // itself a source of bugs: any miss on the lookup fell through to a
+  // plain create, which used to fail with a raw, unhelpful duplicate-key
+  // error instead of just fixing the existing login).
   const handleCreateOrReset = async () => {
     if (!student || !student.mobile || !student.rollNumber) return;
     setSubmitting(true);
     try {
-      const existing = await api.get<{ _id: string }[]>(`/users?linkedStudentId=${student.id}&limit=1`);
-      if (existing.length > 0) {
-        await api.patch(`/users/${existing[0]._id}/reset-credentials`, {
-          identifier: student.mobile,
-          password: student.rollNumber,
-        });
-        toast.success("লগইন আপডেট হয়েছে — শিক্ষার্থীর মোবাইলে SMS পাঠানো হয়েছে", { duration: 8000 });
-      } else {
-        const roles = await api.get<{ _id: string; name: string }[]>("/roles");
-        const studentRoleId = roles.find((r) => r.name === "student")?._id;
-        if (!studentRoleId) {
-          toast.error("Student role খুঁজে পাওয়া যায়নি");
-          return;
-        }
-        await api.post("/users", {
-          identifier: student.mobile,
-          password: student.rollNumber,
-          roleId: studentRoleId,
-          linkedStudentId: student.id,
-        });
-        toast.success("লগইন তৈরি হয়েছে — শিক্ষার্থীর মোবাইলে SMS পাঠানো হয়েছে", { duration: 8000 });
+      const roles = await api.get<{ _id: string; name: string }[]>("/roles");
+      const studentRoleId = roles.find((r) => r.name === "student")?._id;
+      if (!studentRoleId) {
+        toast.error("Student role খুঁজে পাওয়া যায়নি");
+        return;
       }
+      await api.post("/users", {
+        identifier: student.mobile,
+        password: student.rollNumber,
+        roleId: studentRoleId,
+        linkedStudentId: student.id,
+      });
+      toast.success("লগইন তৈরি/আপডেট হয়েছে — শিক্ষার্থীর মোবাইলে SMS পাঠানো হয়েছে", { duration: 8000 });
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "CONFLICT") {
-        toast.error("এই মোবাইল নম্বরে অন্য একটি অ্যাকাউন্ট আগে থেকেই আছে");
+        toast.error("এই মোবাইল নম্বরে অন্য একটি অ্যাকাউন্ট (অন্য শিক্ষার্থী/স্টাফ) আগে থেকেই আছে");
       } else {
         toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি/আপডেট ব্যর্থ হয়েছে");
       }
