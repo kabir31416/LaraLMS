@@ -9,7 +9,19 @@ import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
 import { format, subDays } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/apiClient";
+import { ApiClientError } from "@/contexts/AuthContext";
+
+interface AdminDashboardSummary {
+  totalStudents: number;
+  todayAdmissions: number;
+  totalBatches: number;
+  totalDue: number;
+  packageDue: number;
+  monthlyDue: number;
+  recentAdmissions: { id: string; name: string; class?: string; course?: string; admissionDate: string; registrationId: string }[];
+}
 
 const Index = () => {
   const { students, payments } = useStudents();
@@ -17,13 +29,32 @@ const Index = () => {
   const { batches } = useBatches();
   const { notices } = useNotices();
 
-  const totalStudents = students.length;
+  // Module 4: server-side aggregation for the counts/sums that already have a
+  // real collection (Student, Batch) — StudentContext/BatchContext cap their
+  // list fetch at 100 rows for the table views, which would silently
+  // under-count these once a coaching center passes 100 students. Today's
+  // collection, attendance stats, and notices stay on the mock sources below
+  // until Payment/Attendance/Notice (Modules 15-20, 25) exist.
+  const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<AdminDashboardSummary>("/dashboard/admin")
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch((err) => {
+        if (!(err instanceof ApiClientError)) console.error(err);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const today = format(new Date(), "yyyy-MM-dd");
-  const todayAdmissions = students.filter((s) => s.admissionDate === today).length;
+  const totalStudents = summary?.totalStudents ?? students.length;
+  const todayAdmissions = summary?.todayAdmissions ?? students.filter((s) => s.admissionDate === today).length;
   const todayCollection = payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
-  const totalDue = students.reduce((sum, s) => sum + s.due, 0);
-  const packageDue = students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
-  const monthlyDue = students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+  const totalDue = summary?.totalDue ?? students.reduce((sum, s) => sum + s.due, 0);
+  const packageDue = summary?.packageDue ?? students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
+  const monthlyDue = summary?.monthlyDue ?? students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+  const totalBatches = summary?.totalBatches ?? batches.length;
 
   // Attendance stats
   const todayEntries = entries.filter((e) => e.date === today);
@@ -49,7 +80,7 @@ const Index = () => {
   const top10 = ranked.slice(0, 10);
   const lowAttendance = ranked.filter((x) => x.pct > 0 && x.pct < 60).slice(0, 8);
 
-  const recentAdmissions = [...students]
+  const recentAdmissions = summary?.recentAdmissions ?? [...students]
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
     .slice(0, 5);
 
@@ -89,7 +120,7 @@ const Index = () => {
           <StatCard title="আজকের উপস্থিতি %" value={`${todayPct}%`} icon={ClipboardCheck} variant="success" />
           <StatCard title="মোট উপস্থিত" value={String(todayPresent)} icon={UserCheck} variant="info" />
           <StatCard title="অনুপস্থিত" value={String(todayAbsent)} icon={UserX} variant="warning" />
-          <StatCard title="মোট ব্যাচ" value={String(batches.length)} icon={Layers} variant="primary" />
+          <StatCard title="মোট ব্যাচ" value={String(totalBatches)} icon={Layers} variant="primary" />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

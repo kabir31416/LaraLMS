@@ -11,13 +11,15 @@ import studentRoutes from "../modules/students/student.routes";
 import guardianRoutes from "../modules/guardians/guardian.routes";
 import batchRoutes from "../modules/batches/batch.routes";
 import staffRoutes from "../modules/staff/staff.routes";
+import dashboardRoutes from "../modules/dashboard/dashboard.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
- * Modules still pending (Dashboard's real aggregation, Students, Batches,
- * Fees, ...) are added to this same list as each is implemented; see the
- * task tracker. Dashboard is deliberately built last among Modules 4-9
- * since it aggregates data owned by modules that don't exist yet.
+ * Modules still pending (Fees, Attendance, ...) are added to this same
+ * list as each is implemented; see the task tracker. Dashboard only
+ * aggregates the stat cards backed by Student/Batch so far — today's
+ * collection, attendance stats, and notices stay on the frontend's mock
+ * sources until Modules 15-20 and 25 land.
  */
 const router = Router();
 
@@ -33,5 +35,6 @@ router.use("/students", studentRoutes);
 router.use("/guardians", guardianRoutes);
 router.use("/batches", batchRoutes);
 router.use("/staff", staffRoutes);
+router.use("/dashboard", dashboardRoutes);
 
 export default router;

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { format } from "date-fns";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -11,6 +11,23 @@ import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
+import { api } from "@/lib/apiClient";
+import { ApiClientError } from "@/contexts/AuthContext";
+
+interface DirectorDashboardSummary {
+  totalBatches: number;
+  totalStudents: number;
+  batches: {
+    id: string;
+    name: string;
+    courseId?: string;
+    courseName?: string;
+    batchTime: string;
+    days: string[];
+    roomNumber?: string;
+    studentCount: number;
+  }[];
+}
 
 const DirectorDashboard = () => {
   const { user } = useAuth();
@@ -19,13 +36,40 @@ const DirectorDashboard = () => {
   const { getCourse } = useAcademic();
   const { entries, exams, attendancePercent } = useAttendance();
 
+  // Module 4: server-side aggregation, scoped to this director's own batches
+  // — accurate roster counts beyond BatchContext/StudentContext's 100-row
+  // list cap. Attendance/exam sections below stay on the mock sources until
+  // Attendance/Exam (Modules 18-20) exist.
+  const [summary, setSummary] = useState<DirectorDashboardSummary | null>(null);
+  useEffect(() => {
+    if (!user || user.role !== "Batch Director") return;
+    let cancelled = false;
+    api
+      .get<DirectorDashboardSummary>("/dashboard/director")
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch((err) => {
+        if (!(err instanceof ApiClientError)) console.error(err);
+      });
+    return () => { cancelled = true; };
+  }, [user]);
+
   const myBatches = useMemo(
     () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
     [batches, user],
   );
   const myBatchIds = new Set(myBatches.map((b) => b.id));
   const myStudents = students.filter((s) => s.batchId && myBatchIds.has(s.batchId));
-  const studentCountByBatch = (batchId: string) => students.filter((s) => s.batchId === batchId).length;
+  const totalBatches = summary?.totalBatches ?? myBatches.length;
+  const totalStudents = summary?.totalStudents ?? myStudents.length;
+  const rosterBatches = summary?.batches ?? myBatches.map((b) => ({
+    id: b.id,
+    name: b.name,
+    courseName: getCourse(b.courseId)?.name,
+    batchTime: b.batchTime,
+    days: b.days,
+    roomNumber: b.roomNumber,
+    studentCount: students.filter((s) => s.batchId === b.id).length,
+  }));
 
   const today = format(new Date(), "yyyy-MM-dd");
   const todayEntries = entries.filter((e) => myBatchIds.has(e.batchId) && e.date === today);
@@ -54,8 +98,8 @@ const DirectorDashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard icon={<ClipboardCheck className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${todayPct}%`} />
           <StatCard icon={<ClipboardCheck className="h-5 w-5" />} label="ব্যাচ উপস্থিতি %" value={`${overallPct}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="মোট শিক্ষার্থী" value={String(myStudents.length)} />
-          <StatCard icon={<Layers className="h-5 w-5" />} label="মোট ব্যাচ" value={String(myBatches.length)} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="মোট শিক্ষার্থী" value={String(totalStudents)} />
+          <StatCard icon={<Layers className="h-5 w-5" />} label="মোট ব্যাচ" value={String(totalBatches)} />
         </div>
 
         <Card className="border-none shadow-sm">
@@ -75,17 +119,17 @@ const DirectorDashboard = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {myBatches.length === 0 ? (
+                {rosterBatches.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">কোনো ব্যাচ নিয়োগ করা হয়নি</TableCell></TableRow>
                 ) : (
-                  myBatches.map((b) => (
+                  rosterBatches.map((b) => (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.name}</TableCell>
-                      <TableCell>{getCourse(b.courseId)?.name || "—"}</TableCell>
+                      <TableCell>{b.courseName || "—"}</TableCell>
                       <TableCell className="text-sm">{b.batchTime}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{b.days.join(", ") || "—"}</TableCell>
                       <TableCell>{b.roomNumber || "—"}</TableCell>
-                      <TableCell className="text-center"><Badge variant="outline">{studentCountByBatch(b.id)}</Badge></TableCell>
+                      <TableCell className="text-center"><Badge variant="outline">{b.studentCount}</Badge></TableCell>
                     </TableRow>
                   ))
                 )}
