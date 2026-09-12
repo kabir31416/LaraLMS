@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { GraduationCap } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { toAsciiDigits } from "@/lib/format";
+import { passwordFromPhone } from "@/lib/format";
 
 /**
  * Two tabs sharing the same /auth/login call underneath — the backend
@@ -28,7 +28,6 @@ const Login = () => {
   const [password, setPassword] = useState("");
 
   const [studentPhone, setStudentPhone] = useState("");
-  const [studentRoll, setStudentRoll] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,12 +55,12 @@ const Login = () => {
 
   const handleStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // A Roll Number is often typed/stored with Bengali numerals, but the
-    // backend always stores the login password as ASCII digits
-    // (student.service.ts's syncStudentLogin normalizes it) — normalizing
-    // here too means it doesn't matter which numeral system the student
-    // actually types.
-    doLogin(studentPhone, toAsciiDigits(studentRoll));
+    // Only the phone number is asked for — the password (its last 6
+    // digits) is derived automatically, the same way
+    // student.service.ts's syncStudentLogin sets it server-side. This
+    // removes the one remaining way a student could type a mismatched
+    // credential.
+    doLogin(studentPhone, passwordFromPhone(studentPhone));
   };
 
   return (
@@ -121,17 +120,7 @@ const Login = () => {
                     placeholder="01XXXXXXXXX"
                     autoComplete="username"
                   />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="student-roll">রোল নম্বর</Label>
-                  <Input
-                    id="student-roll"
-                    value={studentRoll}
-                    onChange={(e) => setStudentRoll(e.target.value)}
-                    placeholder="যেমন: 07"
-                    autoComplete="current-password"
-                  />
-                  <p className="text-xs text-muted-foreground">আপনার ব্যাচের রোল নম্বরই এখানে পাসওয়ার্ড হিসেবে ব্যবহার হয়</p>
+                  <p className="text-xs text-muted-foreground">শুধু আপনার মোবাইল নম্বর দিন — আলাদা পাসওয়ার্ড লাগবে না</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "লগইন হচ্ছে..." : "লগইন"}

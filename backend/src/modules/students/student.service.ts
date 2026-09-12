@@ -6,7 +6,7 @@ import { buildMeta, buildSearchFilter, parsePagination } from "../../common/util
 import { generateRegistrationId } from "../../common/utils/idGenerators";
 import * as guardianService from "../guardians/guardian.service";
 import { logger } from "../../logger/logger";
-import { toAsciiDigits } from "../../common/utils/digits";
+import { passwordFromPhone } from "../../common/utils/digits";
 
 interface GuardianInline {
   guardianName?: string;
@@ -154,16 +154,20 @@ async function getDocOrThrow(id: string): Promise<StudentDoc> {
 }
 
 /**
- * Keeps a Student's Portal login (identifier = phone, password = Roll
- * Number) automatically in sync with their record — created the moment
- * both are known, and re-synced whenever the Roll Number changes (which is
- * exactly the scenario that used to leave a stale password behind before a
- * manual "Create/Reset Login" click). Best-effort and non-blocking: it must
- * never fail a student create/update, so every failure mode here is
- * swallowed and logged rather than thrown.
+ * Keeps a Student's Portal login (identifier = phone, password = the
+ * phone's last 6 digits) automatically in sync with their record — created
+ * the moment a phone number is known, and re-synced whenever it changes.
+ * The password is deliberately derived from the phone number rather than
+ * the Roll Number: a Roll Number can be typed in Bengali numerals, edited
+ * later, or left unset, all of which previously left a student unable to
+ * log in for reasons invisible from the admin UI. A phone number is
+ * required on every student and is always digits, so this is the more
+ * reliable source. Best-effort and non-blocking: it must never fail a
+ * student create/update, so every failure mode here is swallowed and
+ * logged rather than thrown.
  */
 async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
-  if (!doc.phone || !doc.currentRollNumber) return;
+  if (!doc.phone) return;
   try {
     const { Role } = await import("../rbac/role.model");
     const { User } = await import("../users/user.model");
@@ -178,7 +182,7 @@ async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
       return;
     }
 
-    const password = toAsciiDigits(doc.currentRollNumber);
+    const password = passwordFromPhone(doc.phone);
     const existing = await User.findOne({ linkedStudentId: doc._id });
     if (existing) {
       await userService.resetCredentials(req, String(existing._id), {
@@ -309,12 +313,9 @@ export async function update(req: Request, id: string, patch: Record<string, unk
   const doc = await getDocOrThrow(id);
   const before = await applyPatch(req, doc, patch);
   await recordAudit({ req, action: "student.update", module: "students", targetCollection: "students", targetId: id, before, after: doc.toObject() });
-  // The full Admission edit form sends rollNumber through this same general
-  // PATCH (createStudentSchema's rollNumber is included in updateStudentSchema),
-  // not through the dedicated PATCH /:id/roll — so a Roll Number set or
-  // changed here needs the same login re-sync "phone" already gets, or a
-  // student edited this way never gets a login at all.
-  if ("phone" in patch || "rollNumber" in patch) await syncStudentLogin(req, doc);
+  // The login password is derived from the phone number, so only a phone
+  // change needs a re-sync — a Roll Number edit no longer affects login.
+  if ("phone" in patch) await syncStudentLogin(req, doc);
   return withGuardian(doc);
 }
 

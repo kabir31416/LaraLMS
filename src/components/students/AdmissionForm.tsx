@@ -133,12 +133,14 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    // Quick Admission (Phase 1 §2): Roll, Name, and Phone are the only
-    // required fields — everything else can be completed later, by an admin
-    // editing this same form or by the student themself once self-service
-    // profile completion (Module 27) ships.
-    if (!form.name || !form.mobile || !form.rollNumber) {
-      toast.error("রোল নম্বর, নাম ও মোবাইল নম্বর আবশ্যক");
+    // Only these five fields are required — everything else can be
+    // completed later, by an admin editing this same form or by the
+    // student themself once self-service profile completion (Module 27)
+    // ships. Roll Number + phone are also what the Student Portal login is
+    // built from (identifier = phone, password = phone's last 6 digits),
+    // so a saved student is always immediately able to log in.
+    if (!form.name || !form.mobile || !form.rollNumber || !dob || !form.guardianMobile) {
+      toast.error("নাম, মোবাইল নম্বর, রোল নম্বর, জন্ম তারিখ ও অভিভাবকের মোবাইল নম্বর আবশ্যক");
       return;
     }
 
@@ -224,7 +226,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.email} onChange={(e) => updateField("email", e.target.value)} placeholder="example@email.com" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>জন্ম তারিখ</Label>
+                  <Label>জন্ম তারিখ *</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dob && "text-muted-foreground")}>
@@ -269,7 +271,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label>অভিভাবকের নাম *</Label>
+                  <Label>অভিভাবকের নাম</Label>
                   <Input value={form.guardianName} onChange={(e) => updateField("guardianName", e.target.value)} placeholder="অভিভাবকের নাম" />
                 </div>
                 <div className="space-y-1.5">
@@ -282,7 +284,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>অভিভাবকের মোবাইল</Label>
+                  <Label>অভিভাবকের মোবাইল *</Label>
                   <Input value={form.guardianMobile} onChange={(e) => updateField("guardianMobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
@@ -299,7 +301,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label>কোর্স *</Label>
+                  <Label>কোর্স</Label>
                   <Select value={form.course} onValueChange={(v) => updateField("course", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
                     <SelectContent>

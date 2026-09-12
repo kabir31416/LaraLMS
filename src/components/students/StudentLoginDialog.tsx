@@ -6,7 +6,7 @@ import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import type { Student } from "@/types/student";
-import { toAsciiDigits } from "@/lib/format";
+import { passwordFromPhone } from "@/lib/format";
 
 interface Props {
   student: Student | null;
@@ -15,11 +15,13 @@ interface Props {
 
 /**
  * Student Portal login credential convention: identifier = mobile number,
- * password = Roll Number (Phase 3 addendum). Since the password is always
- * derived from a field already shown elsewhere in the app, there's nothing
- * to "reveal" from the server — this dialog just displays it plainly and
- * offers to (re)create the actual login account, which now also texts the
- * credential to the student via the configured SMS gateway.
+ * password = the last 6 digits of that same number (Phase 3 addendum,
+ * revised — a Roll Number turned out to be an unreliable password source:
+ * it could be in Bengali numerals, get edited later, or be left unset).
+ * Since the password is always derived from the phone number shown right
+ * above it, there's nothing to "reveal" from the server — this dialog just
+ * displays it plainly and offers to (re)create the actual login account,
+ * which also texts the credential to the student via the SMS gateway.
  */
 export function StudentLoginDialog({ student, onOpenChange }: Props) {
   const [submitting, setSubmitting] = useState(false);
@@ -40,7 +42,7 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
   // plain create, which used to fail with a raw, unhelpful duplicate-key
   // error instead of just fixing the existing login).
   const handleCreateOrReset = async () => {
-    if (!student || !student.mobile || !student.rollNumber) return;
+    if (!student || !student.mobile) return;
     setSubmitting(true);
     try {
       const roles = await api.get<{ _id: string; name: string }[]>("/roles");
@@ -51,7 +53,7 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
       }
       await api.post("/users", {
         identifier: student.mobile,
-        password: toAsciiDigits(student.rollNumber),
+        password: passwordFromPhone(student.mobile),
         roleId: studentRoleId,
         linkedStudentId: student.id,
       });
@@ -69,8 +71,8 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
   };
 
   if (!student) return null;
-  const missing = !student.mobile || !student.rollNumber;
-  const loginPassword = student.rollNumber ? toAsciiDigits(student.rollNumber) : "";
+  const missing = !student.mobile;
+  const loginPassword = student.mobile ? passwordFromPhone(student.mobile) : "";
 
   return (
     <Dialog open={!!student} onOpenChange={onOpenChange}>
@@ -80,7 +82,7 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
         </DialogHeader>
         <div className="space-y-3">
           {missing ? (
-            <p className="text-sm text-destructive">লগইন তৈরির জন্য মোবাইল নম্বর ও রোল নম্বর থাকা আবশ্যক — আগে এডিট করে যোগ করুন।</p>
+            <p className="text-sm text-destructive">লগইন তৈরির জন্য মোবাইল নম্বর থাকা আবশ্যক — আগে এডিট করে যোগ করুন।</p>
           ) : (
             <>
               <div className="flex items-center justify-between rounded-lg border p-3">
@@ -92,13 +94,12 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">পাসওয়ার্ড (রোল নম্বর, ইংরেজি সংখ্যায়)</p>
+                  <p className="text-xs text-muted-foreground">পাসওয়ার্ড (মোবাইল নম্বরের শেষ ৬ ডিজিট)</p>
                   <p className="font-mono font-medium">{loginPassword}</p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => copy(loginPassword)}><Copy className="h-3.5 w-3.5" /></Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                রোল নম্বর বাংলা সংখ্যায় (যেমন ০৭) দেওয়া থাকলেও লগইন পাসওয়ার্ড সবসময় ইংরেজি সংখ্যায় (07) — এখানে যা দেখানো হচ্ছে ঠিক তা-ই টাইপ করতে হবে।
                 নিচের বাটনে ক্লিক করলে এই তথ্য দিয়ে লগইন অ্যাকাউন্ট তৈরি/আপডেট হবে এবং শিক্ষার্থীর মোবাইলে SMS পাঠানো হবে।
               </p>
             </>
