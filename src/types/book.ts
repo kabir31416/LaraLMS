@@ -58,6 +58,10 @@ export interface StockHistoryEntry {
   note?: string;
 }
 
+// Branch itself doesn't have a real collection yet (that's Module 23), so
+// this stays a fixed client-side reference list — Book Management (Module
+// 22) only stores a branchId string against it, same forward-reference
+// pattern Batch.directorId used before Staff (Module 13) existed.
 export const DEMO_BRANCHES: Branch[] = [
   { id: "br1", name: "ঢাকা মেইন ব্রাঞ্চ", address: "ধানমন্ডি, ঢাকা", director: "জনাব আব্দুল করিম", phone: "01711000001" },
   { id: "br2", name: "চট্টগ্রাম ব্রাঞ্চ", address: "আগ্রাবাদ, চট্টগ্রাম", director: "জনাব মোহাম্মদ আলী", phone: "01711000002" },
@@ -71,17 +75,3 @@ export const DEMO_BRANCHES: Branch[] = [
   { id: "br10", name: "নারায়ণগঞ্জ ব্রাঞ্চ", address: "চাষাঢ়া, নারায়ণগঞ্জ", director: "জনাব আনিসুর রহমান", phone: "01711000010" },
 ];
 
-export const DEMO_BOOKS: Book[] = [
-  { id: "bk1", bookCode: "BK-0001", name: "বাংলা ব্যাকরণ", subject: "বাংলা", class: "নবম", author: "ড. মুহম্মদ শহীদুল্লাহ", price: 250, totalStock: 200, lowStockThreshold: 30 },
-  { id: "bk2", bookCode: "BK-0002", name: "ইংরেজি গ্রামার", subject: "ইংরেজি", class: "নবম", author: "P.K. De Sarkar", price: 300, totalStock: 180, lowStockThreshold: 30 },
-  { id: "bk3", bookCode: "BK-0003", name: "উচ্চতর গণিত", subject: "গণিত", class: "দশম", author: "মো. কেতাব উদ্দিন", price: 400, totalStock: 150, lowStockThreshold: 25 },
-  { id: "bk4", bookCode: "BK-0004", name: "পদার্থবিজ্ঞান", subject: "পদার্থ", class: "একাদশ", author: "ড. আমির হোসেন খান", price: 450, totalStock: 120, lowStockThreshold: 20 },
-  { id: "bk5", bookCode: "BK-0005", name: "রসায়ন", subject: "রসায়ন", class: "একাদশ", author: "হাজারী ও নাগ", price: 420, totalStock: 25, lowStockThreshold: 30 },
-  { id: "bk6", bookCode: "BK-0006", name: "জীববিজ্ঞান", subject: "জীববিজ্ঞান", class: "দ্বাদশ", author: "গাজী আজমল", price: 500, totalStock: 100, lowStockThreshold: 20 },
-];
-
-let bookCounter = DEMO_BOOKS.length;
-export const generateBookCode = () => {
-  bookCounter += 1;
-  return `BK-${String(bookCounter).padStart(4, "0")}`;
-};

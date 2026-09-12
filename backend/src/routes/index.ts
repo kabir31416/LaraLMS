@@ -16,10 +16,11 @@ import paymentRoutes from "../modules/payments/payment.routes";
 import attendanceRoutes from "../modules/attendance/attendance.routes";
 import examRoutes from "../modules/exams/exam.routes";
 import resultRoutes from "../modules/exams/result.routes";
+import bookRoutes from "../modules/books/book.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
- * Modules still pending (Video Class, Book, Branch, Notice, Report Center,
+ * Modules still pending (Video Class, Branch, Notice, Report Center,
  * Public /info) are added to this same list as each is implemented; see the
  * task tracker.
  */
@@ -42,5 +43,6 @@ router.use("/payments", paymentRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/exams", examRoutes);
 router.use("/results", resultRoutes);
+router.use("/books", bookRoutes);
 
 export default router;
