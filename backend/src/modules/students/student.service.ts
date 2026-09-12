@@ -170,7 +170,13 @@ async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
     const userService = await import("../users/user.service");
 
     const role = await Role.findOne({ name: "student" });
-    if (!role) return;
+    if (!role) {
+      logger.warn(
+        { studentId: String(doc._id) },
+        'student login auto-sync skipped: no "student" role exists — run `npm run seed` (or `npm run check-setup` to confirm)',
+      );
+      return;
+    }
 
     const password = toAsciiDigits(doc.currentRollNumber);
     const existing = await User.findOne({ linkedStudentId: doc._id });
