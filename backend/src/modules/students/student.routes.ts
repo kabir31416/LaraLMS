@@ -26,6 +26,10 @@ router.get("/", requirePermission(PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENT
 router.post("/quick", requirePermission(PERMISSIONS.STUDENTS_CREATE), validate(quickCreateStudentSchema), controller.quickCreate);
 router.post("/", requirePermission(PERMISSIONS.STUDENTS_CREATE), validate(createStudentSchema), controller.create);
 
+// Student Portal self-profile (Phase 3, Module 27) — must precede "/:id" so
+// Express doesn't try to resolve "me" as an :id.
+router.get("/me", requirePermission(PERMISSIONS.STUDENTS_UPDATE_SELF), controller.getMyProfile);
+
 router.get(
   "/:id",
   requirePermissionOrSelf([PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH], PERMISSIONS.STUDENTS_UPDATE_SELF, "id"),
