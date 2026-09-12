@@ -7,12 +7,12 @@ import { StudentProvider } from "@/contexts/StudentContext";
 import { PaymentProvider } from "@/contexts/PaymentContext";
 import { BatchProvider } from "@/contexts/BatchContext";
 import { RoutineProvider } from "@/contexts/RoutineContext";
+import { BranchProvider } from "@/contexts/BranchContext";
 import { BookProvider } from "@/contexts/BookContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { BranchLedgerProvider } from "@/contexts/BranchLedgerContext";
 import { AttendanceProvider } from "@/contexts/AttendanceContext";
 import { NoticeProvider } from "@/contexts/NoticeContext";
-import { AccountsAutoBridge } from "@/components/accounts/AccountsAutoBridge";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 
@@ -21,8 +21,12 @@ const queryClient = new QueryClient();
 /**
  * Single flattened provider tree. Order matters:
  *   Auth → Academic (master data) → Staff → Student → Payment (needs Student)
- *   → Batch (needs staff+student) → Routine/Book/Accounts/BranchLedger/
- *   Attendance/Notice (feature layers)
+ *   → Batch (needs staff+student) → Routine/Branch/Book/Accounts/
+ *   BranchLedger (need Branch) → Attendance/Notice (feature layers)
+ *
+ * There is no AccountsAutoBridge component anymore — payments are mirrored
+ * into the accounts ledger server-side now (payment.service.ts), not by a
+ * client component watching the payments array (Modules 23-24).
  */
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -35,20 +39,21 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
                 <PaymentProvider>
                   <BatchProvider>
                     <RoutineProvider>
-                      <BookProvider>
-                        <AccountsProvider>
-                          <BranchLedgerProvider>
-                            <AttendanceProvider>
-                              <NoticeProvider>
-                                <AccountsAutoBridge />
-                                <Toaster />
-                                <Sonner />
-                                {children}
-                              </NoticeProvider>
-                            </AttendanceProvider>
-                          </BranchLedgerProvider>
-                        </AccountsProvider>
-                      </BookProvider>
+                      <BranchProvider>
+                        <BookProvider>
+                          <AccountsProvider>
+                            <BranchLedgerProvider>
+                              <AttendanceProvider>
+                                <NoticeProvider>
+                                  <Toaster />
+                                  <Sonner />
+                                  {children}
+                                </NoticeProvider>
+                              </AttendanceProvider>
+                            </BranchLedgerProvider>
+                          </AccountsProvider>
+                        </BookProvider>
+                      </BranchProvider>
                     </RoutineProvider>
                   </BatchProvider>
                 </PaymentProvider>

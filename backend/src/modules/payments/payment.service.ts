@@ -1,10 +1,13 @@
 import { Request } from "express";
 import { Payment, PaymentDoc } from "./payment.model";
 import { Student } from "../students/student.model";
+import { Branch } from "../branches/branch.model";
+import * as accountsService from "../accounts/accounts.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateReceiptNumber } from "../../common/utils/idGenerators";
+import { logger } from "../../logger/logger";
 
 export async function list(req: Request) {
   const { page, limit, skip, sort } = parsePagination(req, { date: -1, createdAt: -1 });
@@ -81,5 +84,31 @@ export async function create(
   await student.save();
 
   await recordAudit({ req, action: "payment.create", module: "payments", targetCollection: "payments", targetId: String(doc._id), after: doc.toObject() });
+
+  // Best-effort mirror into the accounting ledger (Modules 23-24) — replaces
+  // the old client-side AccountsAutoBridge, which only fired if someone
+  // happened to have the Accounts page open. Never blocks the payment
+  // itself: a fresh install with no Branch yet just skips this until one
+  // exists, and the (source, refId) unique index makes a retry a no-op.
+  try {
+    const defaultBranch = await Branch.findOne().sort({ createdAt: 1 });
+    if (defaultBranch) {
+      const isAdmission = (data.note || "").includes("ভর্তি") || data.feeType === "এককালীন";
+      await accountsService.recordAutoIncome({
+        date: doc.date,
+        category: isAdmission ? "ভর্তি ফি" : "কোর্স ফি",
+        amount: paidAmount,
+        branchId: String(defaultBranch._id),
+        method: data.method as never,
+        studentId: data.studentId,
+        note: `রসিদ: ${receiptNo}${data.month ? ` (${data.month})` : ""}`,
+        source: isAdmission ? "admission_fee" : "student_fee",
+        refId: String(doc._id),
+      });
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to auto-post payment to accounts ledger");
+  }
+
   return doc;
 }

@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { useBooks } from "@/contexts/BookContext";
+import { useBranches } from "@/contexts/BranchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { CLASSES, SUBJECTS } from "@/types/student";
@@ -252,7 +253,8 @@ function StockTab() {
 type Row = { bookId: string; quantity: number };
 
 function BranchStockTab() {
-  const { books, branches, branchStock, transferMultipleToBranch } = useBooks();
+  const { books, branchStock, transferMultipleToBranch } = useBooks();
+  const { branches } = useBranches();
   const [open, setOpen] = useState(false);
   const [branchId, setBranchId] = useState("");
   const [rows, setRows] = useState<Row[]>([{ bookId: "", quantity: 1 }]);

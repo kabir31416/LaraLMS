@@ -1,19 +1,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   Book,
-  Branch,
   BranchStock,
   StudentBookIssue,
   StockHistoryEntry,
-  DEMO_BRANCHES,
 } from "@/types/book";
 import { api } from "@/lib/apiClient";
 
 /**
  * Books/BranchStock/Issues/History are now backed by the real API (Phase 3,
- * Module 22). Branch itself stays the fixed DEMO_BRANCHES list — Branch
- * doesn't have a real collection yet (that's Module 23) — same phased
- * approach used for Batch.directorId before Staff existed.
+ * Module 22). Branch itself is a real collection too as of Module 23 — see
+ * BranchContext — this context only stores a branchId string against it.
  */
 interface ApiBook {
   _id: string;
@@ -77,7 +74,6 @@ function historyFromApi(doc: ApiStockHistory): StockHistoryEntry {
 
 interface BookContextType {
   books: Book[];
-  branches: Branch[];
   branchStock: BranchStock[];
   issues: StudentBookIssue[];
   history: StockHistoryEntry[];
@@ -117,7 +113,6 @@ const LIST_LIMIT = "?limit=100";
 
 export function BookProvider({ children }: { children: React.ReactNode }) {
   const [books, setBooks] = useState<Book[]>([]);
-  const [branches] = useState<Branch[]>(DEMO_BRANCHES);
   const [branchStock, setBranchStock] = useState<BranchStock[]>([]);
   const [issues, setIssues] = useState<StudentBookIssue[]>([]);
   const [history, setHistory] = useState<StockHistoryEntry[]>([]);
@@ -219,7 +214,7 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      books, branches, branchStock, issues, history, loading,
+      books, branchStock, issues, history, loading,
       addBook, updateBook, deleteBook,
       addStock, reduceStock,
       transferMultipleToBranch,
@@ -228,7 +223,7 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
       getStudentIssues,
       refreshBooks, refreshBranchStock, refreshIssues, refreshHistory,
     }),
-    [books, branches, branchStock, issues, history, loading,
+    [books, branchStock, issues, history, loading,
       addBook, updateBook, deleteBook, addStock, reduceStock,
       transferMultipleToBranch, issueMultipleToStudent, returnFromStudent, getStudentIssues,
       refreshBooks, refreshBranchStock, refreshIssues, refreshHistory],
