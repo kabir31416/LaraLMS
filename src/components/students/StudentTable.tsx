@@ -41,6 +41,12 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
   // Login credential convention for the Student Portal: identifier = phone
   // number, password = Roll Number — both already assigned during
   // admission, so no separate credential needs to be communicated.
+  //
+  // If a login already exists for this student (e.g. it was created
+  // earlier and the Roll Number has since changed, leaving a stale
+  // password), this resets it to match the student's current mobile/roll
+  // number instead of just failing with "already exists" — that was a real
+  // bug: the button could only create, never fix, a login.
   const handleCreateLogin = async (student: Student) => {
     if (!student.mobile || !student.rollNumber) {
       toast.error("লগইন তৈরির জন্য মোবাইল নম্বর ও রোল নম্বর থাকা আবশ্যক");
@@ -48,6 +54,19 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
     }
     setCreatingLoginId(student.id);
     try {
+      const existing = await api.get<{ _id: string }[]>(`/users?linkedStudentId=${student.id}&limit=1`);
+      if (existing.length > 0) {
+        await api.patch(`/users/${existing[0]._id}/reset-credentials`, {
+          identifier: student.mobile,
+          password: student.rollNumber,
+        });
+        toast.success(
+          `লগইন আপডেট হয়েছে — মোবাইল: ${student.mobile}, পাসওয়ার্ড: ${student.rollNumber}`,
+          { duration: 15000 },
+        );
+        return;
+      }
+
       const roles = await api.get<{ _id: string; name: string }[]>("/roles");
       const studentRoleId = roles.find((r) => r.name === "student")?._id;
       if (!studentRoleId) {
@@ -66,9 +85,9 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
       );
     } catch (err) {
       if (err instanceof ApiClientError && err.code === "CONFLICT") {
-        toast.error("এই শিক্ষার্থীর জন্য লগইন আগে থেকেই তৈরি করা আছে");
+        toast.error("এই মোবাইল নম্বরে অন্য একটি অ্যাকাউন্ট আগে থেকেই আছে");
       } else {
-        toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি ব্যর্থ হয়েছে");
+        toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি/আপডেট ব্যর্থ হয়েছে");
       }
     } finally {
       setCreatingLoginId(null);
@@ -169,7 +188,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                         onClick={(e) => { e.stopPropagation(); handleCreateLogin(student); }}
                       >
                         <KeyRound className="mr-2 h-4 w-4" />
-                        {creatingLoginId === student.id ? "তৈরি হচ্ছে..." : "লগইন তৈরি করুন"}
+                        {creatingLoginId === student.id ? "প্রসেস হচ্ছে..." : "লগইন তৈরি/রিসেট করুন"}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"

@@ -23,6 +23,11 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, user);
 });
 
+export const resetCredentials = asyncHandler(async (req: Request, res: Response) => {
+  const user = await userService.resetCredentials(req, req.params.id, req.body);
+  sendSuccess(res, user);
+});
+
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   await userService.deleteUser(req, req.params.id);
   sendSuccess(res, { deleted: true });
