@@ -7,6 +7,7 @@ import { SubjectsTab } from "@/components/settings/SubjectsTab";
 import { LecturesTab } from "@/components/settings/LecturesTab";
 import { ClassExamsTab } from "@/components/settings/ClassExamsTab";
 import { OtherSettingsTab } from "@/components/settings/OtherSettingsTab";
+import { PublicInfoTab } from "@/components/settings/PublicInfoTab";
 
 export default function Settings() {
   const [tab, setTab] = useState("sessions");
@@ -25,6 +26,7 @@ export default function Settings() {
             <TabsTrigger value="subjects">সাবজেক্ট</TabsTrigger>
             <TabsTrigger value="lectures">লেকচার</TabsTrigger>
             <TabsTrigger value="classExams">ক্লাস / এক্সাম</TabsTrigger>
+            <TabsTrigger value="publicInfo">পাবলিক তথ্য</TabsTrigger>
             <TabsTrigger value="other">অন্যান্য সেটিংস</TabsTrigger>
           </TabsList>
 
@@ -33,6 +35,7 @@ export default function Settings() {
           <TabsContent value="subjects" className="mt-4"><SubjectsTab /></TabsContent>
           <TabsContent value="lectures" className="mt-4"><LecturesTab /></TabsContent>
           <TabsContent value="classExams" className="mt-4"><ClassExamsTab /></TabsContent>
+          <TabsContent value="publicInfo" className="mt-4"><PublicInfoTab /></TabsContent>
           <TabsContent value="other" className="mt-4"><OtherSettingsTab /></TabsContent>
         </Tabs>
       </div>
