@@ -8,7 +8,7 @@ export const createBatchSchema = z.object({
     batchTime: z.string().trim().min(1),
     days: z.array(z.enum(WEEK_DAYS)).default([]),
     roomNumber: z.string().trim().optional(),
-    directorId: z.string().trim().optional(), // not yet a real ObjectId ref — see batch.model.ts
+    directorId: z.string().length(24).optional(),
     startDate: z.string().min(1),
   }),
 });
@@ -26,7 +26,7 @@ export const listBatchesQuerySchema = z.object({
     limit: z.string().optional(),
     search: z.string().optional(),
     courseId: z.string().length(24).optional(),
-    directorId: z.string().optional(),
+    directorId: z.string().length(24).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
   }),

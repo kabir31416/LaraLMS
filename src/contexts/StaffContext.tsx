@@ -1,94 +1,86 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Staff } from "@/types/staff";
+import { api } from "@/lib/apiClient";
 
-const initialStaff: Staff[] = [
-  {
-    id: "s1",
-    name: "মাহমুদ আলী",
-    mobile: "01711000001",
-    email: "mahmud@lara.edu",
-    address: "ঢাকা",
-    staffType: "Admin",
-    salary: 45000,
-    joinDate: "2024-01-15",
-    status: "সক্রিয়",
-  },
-  {
-    id: "s2",
-    name: "রহিম স্যার",
-    mobile: "01711000002",
-    email: "rahim@lara.edu",
-    address: "রাজশাহী",
-    staffType: "Teacher",
-    salary: 30000,
-    joinDate: "2024-02-01",
-    status: "সক্রিয়",
-  },
-  {
-    id: "s3",
-    name: "করিম স্যার",
-    mobile: "01711000003",
-    staffType: "Teacher",
-    salary: 28000,
-    joinDate: "2024-03-10",
-    status: "সক্রিয়",
-  },
-  {
-    id: "s4",
-    name: "সাইফুল ইসলাম",
-    mobile: "01711000004",
-    email: "saiful@lara.edu",
-    staffType: "Batch Director",
-    salary: 35000,
-    joinDate: "2024-01-20",
-    status: "সক্রিয়",
-  },
-  {
-    id: "s5",
-    name: "নাসরিন আক্তার",
-    mobile: "01711000005",
-    email: "nasrin@lara.edu",
-    staffType: "Batch Director",
-    salary: 35000,
-    joinDate: "2024-04-01",
-    status: "সক্রিয়",
-  },
-  {
-    id: "s6",
-    name: "জাহিদ হাসান",
-    mobile: "01711000006",
-    staffType: "Staff",
-    salary: 18000,
-    joinDate: "2024-05-12",
-    status: "সক্রিয়",
-  },
-];
+/** Staff is now backed by the real API (Phase 3, Module 13). Field names are translated at this boundary (phone <-> mobile, photoUrl <-> photo) so existing pages keep reading the same property names. */
+interface ApiStaff {
+  _id: string;
+  name: string;
+  photoUrl?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  staffType: Staff["staffType"];
+  salary: number;
+  joinDate: string;
+  status: Staff["status"];
+}
+
+function fromApi(doc: ApiStaff): Staff {
+  return {
+    id: doc._id,
+    name: doc.name,
+    photo: doc.photoUrl,
+    mobile: doc.phone,
+    email: doc.email,
+    address: doc.address,
+    staffType: doc.staffType,
+    salary: doc.salary,
+    joinDate: doc.joinDate,
+    status: doc.status,
+  };
+}
+
+function toApiBody(data: Partial<Staff>): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...data };
+  if ("mobile" in data) { body.phone = data.mobile; delete body.mobile; }
+  if ("photo" in data) { body.photoUrl = data.photo; delete body.photo; }
+  delete body.id;
+  return body;
+}
 
 interface StaffContextType {
   staff: Staff[];
-  addStaff: (data: Omit<Staff, "id">) => Staff;
-  updateStaff: (id: string, data: Partial<Staff>) => void;
-  deleteStaff: (id: string) => void;
+  loading: boolean;
+  addStaff: (data: Omit<Staff, "id">) => Promise<Staff>;
+  updateStaff: (id: string, data: Partial<Staff>) => Promise<Staff>;
+  deleteStaff: (id: string) => Promise<void>;
   getStaff: (id: string) => Staff | undefined;
   getDirectors: () => Staff[];
+  refreshStaff: () => Promise<void>;
 }
 
 const StaffContext = createContext<StaffContextType | null>(null);
 
+const LIST_LIMIT = "?limit=100";
+
 export function StaffProvider({ children }: { children: React.ReactNode }) {
-  const [staff, setStaff] = useState<Staff[]>(initialStaff);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addStaff = useCallback((data: Omit<Staff, "id">): Staff => {
-    const s: Staff = { ...data, id: `s${Date.now()}` };
-    setStaff((prev) => [s, ...prev]);
-    return s;
+  const refreshStaff = useCallback(async () => {
+    const docs = await api.get<ApiStaff[]>(`/staff${LIST_LIMIT}`);
+    setStaff(docs.map(fromApi));
   }, []);
 
-  const updateStaff = useCallback((id: string, data: Partial<Staff>) => {
-    setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+  useEffect(() => {
+    refreshStaff().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
+  }, [refreshStaff]);
+
+  const addStaff = useCallback(async (data: Omit<Staff, "id">): Promise<Staff> => {
+    const created = fromApi(await api.post<ApiStaff>("/staff", toApiBody(data)));
+    setStaff((prev) => [created, ...prev]);
+    return created;
   }, []);
 
-  const deleteStaff = useCallback((id: string) => {
+  const updateStaff = useCallback(async (id: string, data: Partial<Staff>): Promise<Staff> => {
+    const updated = fromApi(await api.patch<ApiStaff>(`/staff/${id}`, toApiBody(data)));
+    setStaff((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    return updated;
+  }, []);
+
+  const deleteStaff = useCallback(async (id: string) => {
+    await api.del(`/staff/${id}`);
     setStaff((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
@@ -99,8 +91,8 @@ export function StaffProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ staff, addStaff, updateStaff, deleteStaff, getStaff, getDirectors }),
-    [staff, addStaff, updateStaff, deleteStaff, getStaff, getDirectors],
+    () => ({ staff, loading, addStaff, updateStaff, deleteStaff, getStaff, getDirectors, refreshStaff }),
+    [staff, loading, addStaff, updateStaff, deleteStaff, getStaff, getDirectors, refreshStaff],
   );
 
   return <StaffContext.Provider value={value}>{children}</StaffContext.Provider>;

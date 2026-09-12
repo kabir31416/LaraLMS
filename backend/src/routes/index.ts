@@ -10,6 +10,7 @@ import lectureRoutes from "../modules/lectures/lecture.routes";
 import studentRoutes from "../modules/students/student.routes";
 import guardianRoutes from "../modules/guardians/guardian.routes";
 import batchRoutes from "../modules/batches/batch.routes";
+import staffRoutes from "../modules/staff/staff.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -31,5 +32,6 @@ router.use("/lectures", lectureRoutes);
 router.use("/students", studentRoutes);
 router.use("/guardians", guardianRoutes);
 router.use("/batches", batchRoutes);
+router.use("/staff", staffRoutes);
 
 export default router;
