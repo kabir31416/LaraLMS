@@ -34,13 +34,8 @@ const DirectorResults = () => {
   }, [myBatches, batchId]);
 
   const batch = myBatches.find((b) => b.id === batchId);
-  // Batch.course may hold either the course id or the course name — match both,
-  // so the subject list always stays in sync with একাডেমিক সেটিংস.
-  const batchCourse = useMemo(() => {
-    if (!batch?.course) return undefined;
-    const key = String(batch.course).trim().toLowerCase();
-    return courses.find((c) => c.id === batch.course) || courses.find((c) => c.name.trim().toLowerCase() === key);
-  }, [courses, batch]);
+  // Batch.courseId is a real Course reference (Phase 1 §3 fix), so this is a direct lookup.
+  const batchCourse = useMemo(() => courses.find((c) => c.id === batch?.courseId), [courses, batch]);
   const courseSubjects = useMemo(
     () => (batchCourse ? subjects.filter((s) => s.courseId === batchCourse.id) : []),
     [subjects, batchCourse],
@@ -65,9 +60,10 @@ const DirectorResults = () => {
   const [fullMarks, setFullMarks] = useState<number>(50);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const batchStudents = students.filter((s) => batch?.studentIds.includes(s.id));
+  const batchStudents = students.filter((s) => s.batchId === batch?.id);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, "Present" | "Absent">>({});
+  const [saving, setSaving] = useState(false);
 
   // Auto: marks entered → Present
   const handleMarks = (sid: string, val: string) => {
@@ -75,28 +71,35 @@ const DirectorResults = () => {
     setAttendance((p) => ({ ...p, [sid]: val.trim() ? "Present" : "Absent" }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!batch || !subjectId || !lectureId || !title.trim()) {
       toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ, সাবজেক্ট, লেকচার ও এক্সাম শিরোনাম দিন।" });
       return;
     }
-    const exam = addExam({ batchId: batch.id, subjectId, lectureId, title, fullMarks, date });
-    saveResults(
-      exam.id,
-      batchStudents.map((s) => ({
-        studentId: s.id,
-        marks: marks[s.id]?.trim() ? Number(marks[s.id]) : null,
-      })),
-    );
-    saveAttendance(
-      batch.id,
-      date,
-      batchStudents.map((s) => ({ studentId: s.id, status: attendance[s.id] || "Absent" })),
-      "Exam",
-      exam.id,
-    );
-    toast({ title: "সংরক্ষিত", description: `${batchStudents.length} জনের রেজাল্ট ও উপস্থিতি সেভ হয়েছে।` });
-    setMarks({}); setAttendance({}); setTitle("");
+    setSaving(true);
+    try {
+      const exam = await addExam({ batchId: batch.id, subjectId, lectureId, title, fullMarks, date });
+      await saveResults(
+        exam.id,
+        batchStudents.map((s) => ({
+          studentId: s.id,
+          marks: marks[s.id]?.trim() ? Number(marks[s.id]) : null,
+        })),
+      );
+      await saveAttendance(
+        batch.id,
+        date,
+        batchStudents.map((s) => ({ studentId: s.id, status: attendance[s.id] || "Absent" })),
+        "Exam",
+        exam.id,
+      );
+      toast({ title: "সংরক্ষিত", description: `${batchStudents.length} জনের রেজাল্ট ও উপস্থিতি সেভ হয়েছে।` });
+      setMarks({}); setAttendance({}); setTitle("");
+    } catch {
+      toast({ title: "ব্যর্থ", description: "রেজাল্ট সংরক্ষণ করা যায়নি" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!user || user.role !== "Batch Director") return <Navigate to="/login" replace />;
@@ -125,7 +128,7 @@ const DirectorResults = () => {
             )}
             <div>
               <Label>কোর্স</Label>
-              <Input value={batchCourse?.name || batch?.course || "—"} disabled />
+              <Input value={batchCourse?.name || "—"} disabled />
             </div>
             <div>
               <Label>সাবজেক্ট</Label>
@@ -213,7 +216,7 @@ const DirectorResults = () => {
               </TableBody>
             </Table>
             <div className="flex justify-end mt-4">
-              <Button onClick={handleSave}>সংরক্ষণ করুন</Button>
+              <Button onClick={handleSave} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
             </div>
           </CardContent>
         </Card>

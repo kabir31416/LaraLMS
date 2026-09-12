@@ -1,33 +1,75 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { BranchLedgerEntry } from "@/types/branchLedger";
+import { useBranches } from "@/contexts/BranchContext";
+import { api } from "@/lib/apiClient";
+
+/** Branch Ledger entries are now backed by the real API (Phase 3, Module 24). */
+interface ApiBranchLedgerEntry {
+  _id: string;
+  date: string;
+  branchId: string;
+  type: BranchLedgerEntry["type"];
+  itemType?: BranchLedgerEntry["itemType"];
+  description?: string;
+  quantity?: number;
+  method?: BranchLedgerEntry["method"];
+  amount: number;
+  note?: string;
+}
 
 interface BranchLedgerContextType {
   entries: BranchLedgerEntry[];
-  addEntry: (data: Omit<BranchLedgerEntry, "id">) => BranchLedgerEntry;
-  updateEntry: (id: string, data: Partial<BranchLedgerEntry>) => void;
-  deleteEntry: (id: string) => void;
+  loading: boolean;
+  addEntry: (data: Omit<BranchLedgerEntry, "id" | "branchName">) => Promise<BranchLedgerEntry>;
+  updateEntry: (id: string, data: Partial<BranchLedgerEntry>) => Promise<BranchLedgerEntry>;
+  deleteEntry: (id: string) => Promise<void>;
 }
 
 const BranchLedgerContext = createContext<BranchLedgerContextType | null>(null);
 
+const LIST_LIMIT = "?limit=100";
+
 export function BranchLedgerProvider({ children }: { children: React.ReactNode }) {
+  const { branches } = useBranches();
   const [entries, setEntries] = useState<BranchLedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addEntry = useCallback((data: Omit<BranchLedgerEntry, "id">): BranchLedgerEntry => {
-    const entry: BranchLedgerEntry = { ...data, id: `bl${Date.now()}${Math.random().toString(36).slice(2, 6)}` };
-    setEntries((prev) => [entry, ...prev]);
-    return entry;
-  }, []);
+  const branchNameById = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
 
-  const updateEntry = useCallback((id: string, data: Partial<BranchLedgerEntry>) => {
-    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
-  }, []);
+  const fromApi = useCallback((doc: ApiBranchLedgerEntry): BranchLedgerEntry => ({
+    id: doc._id, date: doc.date, branchId: doc.branchId, branchName: branchNameById.get(doc.branchId) || "",
+    type: doc.type, itemType: doc.itemType, description: doc.description, quantity: doc.quantity,
+    method: doc.method, amount: doc.amount, note: doc.note,
+  }), [branchNameById]);
 
-  const deleteEntry = useCallback((id: string) => {
+  const refresh = useCallback(async () => {
+    const docs = await api.get<ApiBranchLedgerEntry[]>(`/branch-ledger${LIST_LIMIT}`);
+    setEntries(docs.map(fromApi));
+  }, [fromApi]);
+
+  useEffect(() => {
+    refresh().catch(() => {}).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches.length]);
+
+  const addEntry = useCallback(async (data: Omit<BranchLedgerEntry, "id" | "branchName">): Promise<BranchLedgerEntry> => {
+    const created = fromApi(await api.post<ApiBranchLedgerEntry>("/branch-ledger", data));
+    setEntries((prev) => [created, ...prev]);
+    return created;
+  }, [fromApi]);
+
+  const updateEntry = useCallback(async (id: string, data: Partial<BranchLedgerEntry>): Promise<BranchLedgerEntry> => {
+    const updated = fromApi(await api.patch<ApiBranchLedgerEntry>(`/branch-ledger/${id}`, data));
+    setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    return updated;
+  }, [fromApi]);
+
+  const deleteEntry = useCallback(async (id: string) => {
+    await api.del(`/branch-ledger/${id}`);
     setEntries((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
-  const value = useMemo(() => ({ entries, addEntry, updateEntry, deleteEntry }), [entries, addEntry, updateEntry, deleteEntry]);
+  const value = useMemo(() => ({ entries, loading, addEntry, updateEntry, deleteEntry }), [entries, loading, addEntry, updateEntry, deleteEntry]);
 
   return <BranchLedgerContext.Provider value={value}>{children}</BranchLedgerContext.Provider>;
 }

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
+import { useBatches } from "@/contexts/BatchContext";
+import { ApiClientError } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +51,8 @@ import {
 } from "@/components/ui/command";
 
 const FeeManagement = () => {
-  const { students, payments, addPayment, getPayments } = useStudents();
+  const { students, refreshStudents } = useStudents();
+  const { payments, addPayment } = usePayments();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
   const [search, setSearch] = useState("");
@@ -231,7 +235,7 @@ const FeeManagement = () => {
           onOpenChange={setPaymentOpen}
           students={students}
           addPayment={addPayment}
-          onSuccess={(p) => setReceiptPayment(p)}
+          onSuccess={(p) => { setReceiptPayment(p); refreshStudents(); }}
         />
         <ReceiptDialog
           payment={receiptPayment}
@@ -253,9 +257,10 @@ function PaymentDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   students: Student[];
-  addPayment: (p: Omit<Payment, "id" | "receiptNo">) => Payment;
+  addPayment: (p: Omit<Payment, "id" | "receiptNo">) => Promise<Payment>;
   onSuccess?: (p: Payment) => void;
 }) {
+  const { batches } = useBatches();
   const [studentId, setStudentId] = useState("");
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [feeType, setFeeType] = useState<string>("এককালীন");
@@ -266,37 +271,45 @@ function PaymentDialog({
   const [month, setMonth] = useState("");
   const [note, setNote] = useState("");
   const [payDate, setPayDate] = useState<Date>(new Date());
+  const [submitting, setSubmitting] = useState(false);
 
   const paidAmount = amount - discount + fine;
   const selectedStudent = students.find((s) => s.id === studentId);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!studentId || amount <= 0) {
       toast.error("শিক্ষার্থী ও পরিমাণ নির্বাচন করুন");
       return;
     }
-    const created = addPayment({
-      studentId,
-      date: format(payDate, "yyyy-MM-dd"),
-      amount,
-      discount,
-      fine,
-      paidAmount,
-      method,
-      feeType: feeType as import("@/types/student").FeeType,
-      month: month || undefined,
-      note: note || undefined,
-    });
-    toast.success(`পেমেন্ট সফল। রসিদ নং: ${created.receiptNo}`);
-    onOpenChange(false);
-    onSuccess?.(created);
-    // Reset
-    setStudentId("");
-    setAmount(0);
-    setDiscount(0);
-    setFine(0);
-    setNote("");
-    setMonth("");
+    setSubmitting(true);
+    try {
+      const created = await addPayment({
+        studentId,
+        date: format(payDate, "yyyy-MM-dd"),
+        amount,
+        discount,
+        fine,
+        paidAmount,
+        method,
+        feeType: feeType as import("@/types/student").FeeType,
+        month: month || undefined,
+        note: note || undefined,
+      });
+      toast.success(`পেমেন্ট সফল। রসিদ নং: ${created.receiptNo}`);
+      onOpenChange(false);
+      onSuccess?.(created);
+      // Reset
+      setStudentId("");
+      setAmount(0);
+      setDiscount(0);
+      setFine(0);
+      setNote("");
+      setMonth("");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "পেমেন্ট ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -368,7 +381,7 @@ function PaymentDialog({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">কোর্স:</span>
-                <span>{selectedStudent.course} • {selectedStudent.batch}</span>
+                <span>{selectedStudent.course} • {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">ফি ধরন:</span>
@@ -469,8 +482,8 @@ function PaymentDialog({
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-            <Button onClick={handleSubmit}>পেমেন্ট সম্পন্ন</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+            <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "পেমেন্ট সম্পন্ন"}</Button>
           </div>
         </div>
       </DialogContent>

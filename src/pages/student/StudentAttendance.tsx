@@ -2,19 +2,25 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import type { AttendanceEntry } from "@/types/attendance";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function StudentAttendance() {
   const { user, student } = useStudentSelf();
   const { getByStudent, attendancePercent } = useAttendance();
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
-  if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
+  const [list, setList] = useState<AttendanceEntry[]>([]);
+  const [pct, setPct] = useState(0);
 
-  const list = getByStudent(student.id).sort((a, b) => b.date.localeCompare(a.date));
-  const pct = attendancePercent(student.id);
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    getByStudent(student.id).then((entries) => { if (!cancelled) setList(entries); }).catch(() => {});
+    attendancePercent(student.id).then((p) => { if (!cancelled) setPct(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [student, getByStudent, attendancePercent]);
 
   const monthly = useMemo(() => {
     const m = new Map<string, { p: number; total: number }>();
@@ -27,6 +33,9 @@ export default function StudentAttendance() {
     });
     return Array.from(m.entries()).map(([k, v]) => ({ month: k, pct: Math.round((v.p / v.total) * 100), p: v.p, total: v.total }));
   }, [list]);
+
+  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
   return (
     <DashboardLayout>

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,6 +14,11 @@ import { bn } from "date-fns/locale";
 import { useStaff } from "@/contexts/StaffContext";
 import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff, type StaffType } from "@/types/staff";
 import { toast } from "sonner";
+import { api } from "@/lib/apiClient";
+import { ApiClientError } from "@/contexts/AuthContext";
+
+const LOGIN_ELIGIBLE: StaffType[] = ["Admin", "Batch Director"];
+const ROLE_NAME_BY_STAFF_TYPE: Partial<Record<StaffType, string>> = { Admin: "admin", "Batch Director": "batch_director" };
 
 interface Props {
   open: boolean;
@@ -28,6 +34,17 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
   const [joinDate, setJoinDate] = useState<Date | undefined>(
     editStaff?.joinDate ? new Date(editStaff.joinDate) : new Date(),
   );
+  const [submitting, setSubmitting] = useState(false);
+  const [createLogin, setCreateLogin] = useState(false);
+
+  // Only fetched when actually needed (creating a login), so a plain staff
+  // add never requires Role-management permission.
+  const findRoleId = async (staffType: StaffType): Promise<string | undefined> => {
+    const roleName = ROLE_NAME_BY_STAFF_TYPE[staffType];
+    if (!roleName) return undefined;
+    const roles = await api.get<{ _id: string; name: string }[]>("/roles");
+    return roles.find((r) => r.name === roleName)?._id;
+  };
 
   function init(s?: Staff | null) {
     if (s) {
@@ -56,7 +73,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
 
   const update = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: v }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.name || !form.mobile) {
       toast.error("নাম এবং মোবাইল প্রয়োজন");
       return;
@@ -72,14 +89,41 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       joinDate: joinDate ? format(joinDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       status: form.status,
     };
-    if (isEdit && editStaff) {
-      updateStaff(editStaff.id, data);
-      toast.success("স্টাফ আপডেট হয়েছে");
-    } else {
-      addStaff(data);
-      toast.success("স্টাফ যোগ হয়েছে");
+
+    setSubmitting(true);
+    try {
+      let staffRecord: Staff;
+      if (isEdit && editStaff) {
+        staffRecord = await updateStaff(editStaff.id, data);
+        toast.success("স্টাফ আপডেট হয়েছে");
+      } else {
+        staffRecord = await addStaff(data);
+        toast.success("স্টাফ যোগ হয়েছে");
+      }
+
+      if (!isEdit && createLogin) {
+        const roleId = await findRoleId(form.staffType);
+        if (roleId) {
+          const res = await api.post<{ tempPassword?: string }>("/users", {
+            identifier: form.mobile,
+            roleId,
+            linkedStaffId: staffRecord.id,
+          });
+          toast.success(
+            res.tempPassword
+              ? `লগইন তৈরি হয়েছে। সাময়িক পাসওয়ার্ড: ${res.tempPassword}`
+              : "লগইন তৈরি হয়েছে",
+            { duration: 15000 },
+          );
+        }
+      }
+
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   };
 
   return (
@@ -148,10 +192,18 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
               </SelectContent>
             </Select>
           </div>
+          {!isEdit && LOGIN_ELIGIBLE.includes(form.staffType) && (
+            <div className="space-y-1.5 md:col-span-2 flex items-center gap-2 border rounded-lg p-3">
+              <Checkbox checked={createLogin} onCheckedChange={(v) => setCreateLogin(!!v)} id="create-login" />
+              <label htmlFor="create-login" className="text-sm cursor-pointer">
+                একই সাথে লগইন অ্যাকাউন্ট তৈরি করুন (মোবাইল নম্বর দিয়ে, সাময়িক পাসওয়ার্ড দেখানো হবে)
+              </label>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-          <Button onClick={handleSubmit}>{isEdit ? "আপডেট" : "সংরক্ষণ"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : isEdit ? "আপডেট" : "সংরক্ষণ"}</Button>
         </div>
       </DialogContent>
     </Dialog>

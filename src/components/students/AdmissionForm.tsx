@@ -40,6 +40,7 @@ import type { Student, FeeType } from "@/types/student";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 interface AdmissionFormProps {
   open: boolean;
@@ -61,6 +62,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
   function getInitialForm(student?: Student | null) {
     if (student) {
       return {
+        rollNumber: student.rollNumber || "",
         name: student.name,
         mobile: student.mobile,
         altMobile: student.altMobile || "",
@@ -86,6 +88,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       };
     }
     return {
+      rollNumber: "",
       name: "",
       mobile: "",
       altMobile: "",
@@ -127,13 +130,20 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
     );
   };
 
-  const handleSubmit = () => {
-    if (!form.name || !form.mobile || !form.guardianName || !form.course) {
-      toast.error("অনুগ্রহ করে প্রয়োজনীয় তথ্য পূরণ করুন");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    // Quick Admission (Phase 1 §2): Roll, Name, and Phone are the only
+    // required fields — everything else can be completed later, by an admin
+    // editing this same form or by the student themself once self-service
+    // profile completion (Module 27) ships.
+    if (!form.name || !form.mobile || !form.rollNumber) {
+      toast.error("রোল নম্বর, নাম ও মোবাইল নম্বর আবশ্যক");
       return;
     }
 
     const studentData = {
+      rollNumber: form.rollNumber || undefined,
       name: form.name,
       mobile: form.mobile,
       altMobile: form.altMobile || undefined,
@@ -147,7 +157,6 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       guardianMobile: form.guardianMobile,
       address: form.address,
       course: form.course,
-      batch: editStudent?.batch || "",
       section: form.section,
       group: form.group,
       subjects: selectedSubjects,
@@ -164,14 +173,21 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       due,
     };
 
-    if (isEdit && editStudent) {
-      updateStudent(editStudent.id, studentData);
-      toast.success("শিক্ষার্থীর তথ্য হালনাগাদ করা হয়েছে");
-    } else {
-      addStudent(studentData);
-      toast.success("নতুন শিক্ষার্থী ভর্তি সম্পন্ন হয়েছে");
+    setSubmitting(true);
+    try {
+      if (isEdit && editStudent) {
+        await updateStudent(editStudent.id, studentData);
+        toast.success("শিক্ষার্থীর তথ্য হালনাগাদ করা হয়েছে");
+      } else {
+        await addStudent(studentData);
+        toast.success("নতুন শিক্ষার্থী ভর্তি সম্পন্ন হয়েছে");
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   };
 
   return (
@@ -292,6 +308,11 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Select>
                 </div>
                 <div className="space-y-1.5">
+                  <Label>রোল নম্বর *</Label>
+                  <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
+                  <p className="text-xs text-muted-foreground">অ্যাডমিন কর্তৃক নির্ধারিত — ব্যাচ পরিবর্তনের সময় প্রয়োজনে পরিবর্তনযোগ্য</p>
+                </div>
+                <div className="space-y-1.5">
                   <Label>ব্যাচ</Label>
                   <div className="h-10 px-3 flex items-center text-sm text-muted-foreground border rounded-md bg-muted/30">
                     ব্যাচ মডিউল থেকে assign করুন
@@ -409,8 +430,10 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
             </section>
 
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-              <Button onClick={handleSubmit}>{isEdit ? "হালনাগাদ করুন" : "ভর্তি সম্পন্ন করুন"}</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? "সংরক্ষণ হচ্ছে..." : isEdit ? "হালনাগাদ করুন" : "ভর্তি সম্পন্ন করুন"}
+              </Button>
             </div>
           </div>
         </ScrollArea>

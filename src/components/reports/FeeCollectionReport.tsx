@@ -5,12 +5,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useStudents } from "@/contexts/StudentContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function FeeCollectionReport() {
-  const { payments, students } = useStudents();
+  const { payments } = usePayments();
+  const { students } = useStudents();
   const { courses } = useAcademic();
   const { batches } = useBatches();
   const [from, setFrom] = useState("");
@@ -24,7 +26,7 @@ export default function FeeCollectionReport() {
       if (to && p.date > to) return false;
       const s = students.find((x) => x.id === p.studentId);
       if (course !== "all" && s?.course !== course) return false;
-      if (batch !== "all" && s?.batch !== batch) return false;
+      if (batch !== "all" && s?.batchId !== batch) return false;
       return true;
     });
   }, [payments, students, from, to, course, batch]);
@@ -45,7 +47,7 @@ export default function FeeCollectionReport() {
           <Select value={course} onValueChange={setCourse}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent></Select>
         </div>
         <div><Label className="text-xs">ব্যাচ</Label>
-          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
         </div>
       </div>
 

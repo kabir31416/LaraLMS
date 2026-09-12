@@ -2,98 +2,82 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type {
   Session, Course, Subject, Lecture, ClassExam, VideoClass, Question, AcademicSettings,
 } from "@/types/academic";
+import { api } from "@/lib/apiClient";
 
-const KEY = "lara-academic-v1";
+/**
+ * Sessions/Courses/Subjects/Lectures/Settings are now backed by the real API
+ * (Phase 3, Modules 5-9) — this is the single source of truth, replacing the
+ * `lara-academic-v1` localStorage blob for those fields.
+ *
+ * ClassExams and VideoClasses are NOT part of this module yet (Modules 18-21)
+ * and stay exactly as they were: local state seeded once and persisted to a
+ * smaller localStorage key, so nothing about the Exam/Video screens changes
+ * until their own backend modules land.
+ */
+const MOCK_KEY = "lara-academic-mock-v1"; // classExams + videos only, until Modules 18-21
 
-interface State {
+interface MockState {
+  classExams: ClassExam[];
+  videos: VideoClass[];
+}
+
+function loadMock(): MockState {
+  try {
+    const raw = localStorage.getItem(MOCK_KEY);
+    if (raw) return JSON.parse(raw) as MockState;
+  } catch { /* ignore */ }
+  return { classExams: [], videos: [] };
+}
+
+const DEFAULT_SETTINGS: AcademicSettings = {
+  defaultExamDuration: 60,
+  passingPercentage: 33,
+  shuffleQuestions: false,
+  publishResults: true,
+};
+
+/** Backend documents come back as { _id, ... }; every existing page reads `.id`. */
+function withId<T extends { _id: string }>(doc: T): Omit<T, "_id"> & { id: string } {
+  const { _id, ...rest } = doc;
+  return { ...rest, id: _id };
+}
+
+interface Ctx extends MockState {
   sessions: Session[];
   courses: Course[];
   subjects: Subject[];
   lectures: Lecture[];
-  classExams: ClassExam[];
-  videos: VideoClass[];
   settings: AcademicSettings;
-}
-
-function seed(): State {
-  const sessions: Session[] = [
-    { id: "ses1", name: "সেশন ২০২৬", startDate: "2026-01-01", endDate: "2026-12-31" },
-    { id: "ses2", name: "সেশন ২০২৫", startDate: "2025-01-01", endDate: "2025-12-31" },
-  ];
-  const courses: Course[] = [
-    { id: "c1", name: "বিজ্ঞান", sessionId: "ses1", duration: 12 },
-    { id: "c2", name: "বাণিজ্য", sessionId: "ses1", duration: 12 },
-    { id: "c3", name: "মানবিক", sessionId: "ses1", duration: 12 },
-  ];
-  const subjects: Subject[] = [
-    { id: "sub1", name: "পদার্থবিজ্ঞান", courseId: "c1" },
-    { id: "sub2", name: "রসায়ন", courseId: "c1" },
-    { id: "sub3", name: "গণিত", courseId: "c1" },
-    { id: "sub4", name: "জীববিজ্ঞান", courseId: "c1" },
-    { id: "sub5", name: "হিসাববিজ্ঞান", courseId: "c2" },
-    { id: "sub6", name: "ব্যবসায় শিক্ষা", courseId: "c2" },
-    { id: "sub7", name: "ইতিহাস", courseId: "c3" },
-    { id: "sub8", name: "ভূগোল", courseId: "c3" },
-  ];
-  const lectures: Lecture[] = [
-    { id: "lec1", title: "নিউটনের গতিসূত্র", subjectId: "sub1", lectureNumber: 1, description: "প্রথম, দ্বিতীয় ও তৃতীয় সূত্র" },
-    { id: "lec2", title: "তরঙ্গ", subjectId: "sub1", lectureNumber: 2 },
-    { id: "lec3", title: "পর্যায় সারণি", subjectId: "sub2", lectureNumber: 1 },
-    { id: "lec4", title: "ত্রিকোণমিতি", subjectId: "sub3", lectureNumber: 1 },
-  ];
-  return {
-    sessions, courses, subjects, lectures,
-    classExams: [],
-    videos: [],
-    settings: {
-      defaultSessionId: "ses1",
-      defaultExamDuration: 60,
-      passingPercentage: 33,
-      shuffleQuestions: false,
-      publishResults: true,
-    },
-  };
-}
-
-function load(): State {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as State;
-  } catch { /* ignore */ }
-  return seed();
-}
-
-interface Ctx extends State {
+  loading: boolean;
   // Sessions
-  addSession: (s: Omit<Session, "id">) => void;
-  updateSession: (id: string, s: Partial<Session>) => void;
-  deleteSession: (id: string) => void;
+  addSession: (s: Omit<Session, "id">) => Promise<Session>;
+  updateSession: (id: string, s: Partial<Session>) => Promise<Session>;
+  deleteSession: (id: string) => Promise<void>;
   // Courses
-  addCourse: (c: Omit<Course, "id">) => void;
-  updateCourse: (id: string, c: Partial<Course>) => void;
-  deleteCourse: (id: string) => void;
+  addCourse: (c: Omit<Course, "id">) => Promise<Course>;
+  updateCourse: (id: string, c: Partial<Course>) => Promise<Course>;
+  deleteCourse: (id: string) => Promise<void>;
   // Subjects
-  addSubject: (s: Omit<Subject, "id">) => void;
-  updateSubject: (id: string, s: Partial<Subject>) => void;
-  deleteSubject: (id: string) => void;
+  addSubject: (s: Omit<Subject, "id">) => Promise<Subject>;
+  updateSubject: (id: string, s: Partial<Subject>) => Promise<Subject>;
+  deleteSubject: (id: string) => Promise<void>;
   // Lectures
-  addLecture: (l: Omit<Lecture, "id">) => void;
-  updateLecture: (id: string, l: Partial<Lecture>) => void;
-  deleteLecture: (id: string) => void;
-  // Class/Exam
+  addLecture: (l: Omit<Lecture, "id">) => Promise<Lecture>;
+  updateLecture: (id: string, l: Partial<Lecture>) => Promise<Lecture>;
+  deleteLecture: (id: string) => Promise<void>;
+  // Class/Exam (still local — Modules 18-21)
   addClassExam: (c: Omit<ClassExam, "id">) => ClassExam;
   updateClassExam: (id: string, c: Partial<ClassExam>) => void;
   deleteClassExam: (id: string) => void;
-  // Questions inside an exam
   addQuestions: (examId: string, qs: Omit<Question, "id">[]) => void;
   updateQuestion: (examId: string, qid: string, q: Partial<Question>) => void;
   deleteQuestion: (examId: string, qid: string) => void;
-  // Video Classes
+  // Video Classes (still local — Modules 18-21)
   addVideo: (v: Omit<VideoClass, "id">) => void;
   updateVideo: (id: string, v: Partial<VideoClass>) => void;
   deleteVideo: (id: string) => void;
   // Settings
-  updateSettings: (s: Partial<AcademicSettings>) => void;
+  updateSettings: (s: Partial<AcademicSettings>) => Promise<void>;
   // Helpers
   getCoursesBySession: (sessionId: string) => Course[];
   getSubjectsByCourse: (courseId: string) => Subject[];
@@ -107,70 +91,136 @@ interface Ctx extends State {
 
 const AcademicContext = createContext<Ctx | null>(null);
 
+// Master data lists are expected to stay well under 100 rows for a single
+// coaching centre; the Reports module gets real pagination separately.
+const LIST_LIMIT = "?limit=100";
+
 export function AcademicProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<State>(() => load());
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [settings, setSettings] = useState<AcademicSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+
+  const [mock, setMock] = useState<MockState>(() => loadMock());
+  useEffect(() => {
+    try { localStorage.setItem(MOCK_KEY, JSON.stringify(mock)); } catch { /* ignore */ }
+  }, [mock]);
+
+  const refreshAll = useCallback(async () => {
+    const [s, c, sub, lec, set] = await Promise.all([
+      api.get<{ _id: string }[]>(`/sessions${LIST_LIMIT}`),
+      api.get<{ _id: string }[]>(`/courses${LIST_LIMIT}`),
+      api.get<{ _id: string }[]>(`/subjects${LIST_LIMIT}`),
+      api.get<{ _id: string }[]>(`/lectures${LIST_LIMIT}`),
+      api.get<AcademicSettings>("/settings"),
+    ]);
+    setSessions(s.map(withId) as Session[]);
+    setCourses(c.map(withId) as Course[]);
+    setSubjects(sub.map(withId) as Subject[]);
+    setLectures(lec.map(withId) as Lecture[]);
+    setSettings(set);
+  }, []);
 
   useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* ignore */ }
-  }, [state]);
+    refreshAll().catch(() => { /* not logged in yet, or offline — dropdowns just stay empty */ }).finally(() => setLoading(false));
+  }, [refreshAll]);
 
+  // -------------------- Sessions --------------------
+  const addSession = useCallback(async (s: Omit<Session, "id">) => {
+    const created = withId(await api.post<{ _id: string }>("/sessions", s)) as Session;
+    setSessions((p) => [created, ...p]);
+    return created;
+  }, []);
+  const updateSession = useCallback(async (id: string, s: Partial<Session>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/sessions/${id}`, s)) as Session;
+    setSessions((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const deleteSession = useCallback(async (id: string) => {
+    await api.del(`/sessions/${id}`);
+    setSessions((p) => p.filter((x) => x.id !== id));
+  }, []);
+
+  // -------------------- Courses --------------------
+  const addCourse = useCallback(async (c: Omit<Course, "id">) => {
+    const created = withId(await api.post<{ _id: string }>("/courses", c)) as Course;
+    setCourses((p) => [created, ...p]);
+    return created;
+  }, []);
+  const updateCourse = useCallback(async (id: string, c: Partial<Course>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/courses/${id}`, c)) as Course;
+    setCourses((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const deleteCourse = useCallback(async (id: string) => {
+    await api.del(`/courses/${id}`);
+    setCourses((p) => p.filter((x) => x.id !== id));
+  }, []);
+
+  // -------------------- Subjects --------------------
+  const addSubject = useCallback(async (s: Omit<Subject, "id">) => {
+    const created = withId(await api.post<{ _id: string }>("/subjects", s)) as Subject;
+    setSubjects((p) => [created, ...p]);
+    return created;
+  }, []);
+  const updateSubject = useCallback(async (id: string, s: Partial<Subject>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/subjects/${id}`, s)) as Subject;
+    setSubjects((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const deleteSubject = useCallback(async (id: string) => {
+    await api.del(`/subjects/${id}`);
+    setSubjects((p) => p.filter((x) => x.id !== id));
+  }, []);
+
+  // -------------------- Lectures --------------------
+  const addLecture = useCallback(async (l: Omit<Lecture, "id">) => {
+    const created = withId(await api.post<{ _id: string }>("/lectures", l)) as Lecture;
+    setLectures((p) => [created, ...p]);
+    return created;
+  }, []);
+  const updateLecture = useCallback(async (id: string, l: Partial<Lecture>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/lectures/${id}`, l)) as Lecture;
+    setLectures((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const deleteLecture = useCallback(async (id: string) => {
+    await api.del(`/lectures/${id}`);
+    setLectures((p) => p.filter((x) => x.id !== id));
+  }, []);
+
+  // -------------------- Settings --------------------
+  const updateSettings = useCallback(async (s: Partial<AcademicSettings>) => {
+    const updated = await api.patch<AcademicSettings>("/settings", s);
+    setSettings(updated);
+  }, []);
+
+  // -------------------- Class/Exam + Video (unchanged local mock) --------------------
   const uid = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-  // Sessions
-  const addSession = useCallback((s: Omit<Session, "id">) =>
-    setState((p) => ({ ...p, sessions: [{ ...s, id: uid("ses") }, ...p.sessions] })), []);
-  const updateSession = useCallback((id: string, s: Partial<Session>) =>
-    setState((p) => ({ ...p, sessions: p.sessions.map((x) => x.id === id ? { ...x, ...s } : x) })), []);
-  const deleteSession = useCallback((id: string) =>
-    setState((p) => ({ ...p, sessions: p.sessions.filter((x) => x.id !== id) })), []);
-
-  // Courses
-  const addCourse = useCallback((c: Omit<Course, "id">) =>
-    setState((p) => ({ ...p, courses: [{ ...c, id: uid("c") }, ...p.courses] })), []);
-  const updateCourse = useCallback((id: string, c: Partial<Course>) =>
-    setState((p) => ({ ...p, courses: p.courses.map((x) => x.id === id ? { ...x, ...c } : x) })), []);
-  const deleteCourse = useCallback((id: string) =>
-    setState((p) => ({ ...p, courses: p.courses.filter((x) => x.id !== id) })), []);
-
-  // Subjects
-  const addSubject = useCallback((s: Omit<Subject, "id">) =>
-    setState((p) => ({ ...p, subjects: [{ ...s, id: uid("sub") }, ...p.subjects] })), []);
-  const updateSubject = useCallback((id: string, s: Partial<Subject>) =>
-    setState((p) => ({ ...p, subjects: p.subjects.map((x) => x.id === id ? { ...x, ...s } : x) })), []);
-  const deleteSubject = useCallback((id: string) =>
-    setState((p) => ({ ...p, subjects: p.subjects.filter((x) => x.id !== id) })), []);
-
-  // Lectures
-  const addLecture = useCallback((l: Omit<Lecture, "id">) =>
-    setState((p) => ({ ...p, lectures: [{ ...l, id: uid("lec") }, ...p.lectures] })), []);
-  const updateLecture = useCallback((id: string, l: Partial<Lecture>) =>
-    setState((p) => ({ ...p, lectures: p.lectures.map((x) => x.id === id ? { ...x, ...l } : x) })), []);
-  const deleteLecture = useCallback((id: string) =>
-    setState((p) => ({ ...p, lectures: p.lectures.filter((x) => x.id !== id) })), []);
-
-  // Class/Exam
   const addClassExam = useCallback((c: Omit<ClassExam, "id">) => {
     const item: ClassExam = { ...c, id: uid("ce"), questions: c.questions || [] };
-    setState((p) => ({ ...p, classExams: [item, ...p.classExams] }));
+    setMock((p) => ({ ...p, classExams: [item, ...p.classExams] }));
     return item;
   }, []);
   const updateClassExam = useCallback((id: string, c: Partial<ClassExam>) =>
-    setState((p) => ({ ...p, classExams: p.classExams.map((x) => x.id === id ? { ...x, ...c } : x) })), []);
+    setMock((p) => ({ ...p, classExams: p.classExams.map((x) => x.id === id ? { ...x, ...c } : x) })), []);
   const deleteClassExam = useCallback((id: string) =>
-    setState((p) => ({ ...p, classExams: p.classExams.filter((x) => x.id !== id) })), []);
+    setMock((p) => ({ ...p, classExams: p.classExams.filter((x) => x.id !== id) })), []);
 
   const addQuestions = useCallback((examId: string, qs: Omit<Question, "id">[]) => {
     const withIds: Question[] = qs.map((q) => ({ ...q, id: uid("q") }));
-    setState((p) => ({
+    setMock((p) => ({
       ...p,
       classExams: p.classExams.map((x) =>
         x.id === examId ? { ...x, questions: [...(x.questions || []), ...withIds] } : x,
       ),
     }));
   }, []);
-
   const updateQuestion = useCallback((examId: string, qid: string, q: Partial<Question>) =>
-    setState((p) => ({
+    setMock((p) => ({
       ...p,
       classExams: p.classExams.map((x) =>
         x.id === examId
@@ -178,39 +228,34 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
           : x,
       ),
     })), []);
-
   const deleteQuestion = useCallback((examId: string, qid: string) =>
-    setState((p) => ({
+    setMock((p) => ({
       ...p,
       classExams: p.classExams.map((x) =>
         x.id === examId ? { ...x, questions: (x.questions || []).filter((qq) => qq.id !== qid) } : x,
       ),
     })), []);
 
-  // Videos
   const addVideo = useCallback((v: Omit<VideoClass, "id">) =>
-    setState((p) => ({ ...p, videos: [{ ...v, id: uid("vid") }, ...p.videos] })), []);
+    setMock((p) => ({ ...p, videos: [{ ...v, id: uid("vid") }, ...p.videos] })), []);
   const updateVideo = useCallback((id: string, v: Partial<VideoClass>) =>
-    setState((p) => ({ ...p, videos: p.videos.map((x) => x.id === id ? { ...x, ...v } : x) })), []);
+    setMock((p) => ({ ...p, videos: p.videos.map((x) => x.id === id ? { ...x, ...v } : x) })), []);
   const deleteVideo = useCallback((id: string) =>
-    setState((p) => ({ ...p, videos: p.videos.filter((x) => x.id !== id) })), []);
+    setMock((p) => ({ ...p, videos: p.videos.filter((x) => x.id !== id) })), []);
 
-  // Settings
-  const updateSettings = useCallback((s: Partial<AcademicSettings>) =>
-    setState((p) => ({ ...p, settings: { ...p.settings, ...s } })), []);
-
-  // Helpers
-  const getCoursesBySession = useCallback((sid: string) => state.courses.filter((c) => c.sessionId === sid), [state.courses]);
-  const getSubjectsByCourse = useCallback((cid: string) => state.subjects.filter((s) => s.courseId === cid), [state.subjects]);
-  const getLecturesBySubject = useCallback((sid: string) => state.lectures.filter((l) => l.subjectId === sid).sort((a, b) => a.lectureNumber - b.lectureNumber), [state.lectures]);
-  const getClassExamsByLecture = useCallback((lid: string) => state.classExams.filter((c) => c.lectureId === lid), [state.classExams]);
-  const getVideosByLecture = useCallback((lid: string) => state.videos.filter((v) => v.lectureId === lid), [state.videos]);
-  const getCourse = useCallback((id: string) => state.courses.find((c) => c.id === id), [state.courses]);
-  const getSubject = useCallback((id: string) => state.subjects.find((s) => s.id === id), [state.subjects]);
-  const getLecture = useCallback((id: string) => state.lectures.find((l) => l.id === id), [state.lectures]);
+  // -------------------- Helpers --------------------
+  const getCoursesBySession = useCallback((sid: string) => courses.filter((c) => c.sessionId === sid), [courses]);
+  const getSubjectsByCourse = useCallback((cid: string) => subjects.filter((s) => s.courseId === cid), [subjects]);
+  const getLecturesBySubject = useCallback((sid: string) => lectures.filter((l) => l.subjectId === sid).sort((a, b) => a.lectureNumber - b.lectureNumber), [lectures]);
+  const getClassExamsByLecture = useCallback((lid: string) => mock.classExams.filter((c) => c.lectureId === lid), [mock.classExams]);
+  const getVideosByLecture = useCallback((lid: string) => mock.videos.filter((v) => v.lectureId === lid), [mock.videos]);
+  const getCourse = useCallback((id: string) => courses.find((c) => c.id === id), [courses]);
+  const getSubject = useCallback((id: string) => subjects.find((s) => s.id === id), [subjects]);
+  const getLecture = useCallback((id: string) => lectures.find((l) => l.id === id), [lectures]);
 
   const value = useMemo<Ctx>(() => ({
-    ...state,
+    sessions, courses, subjects, lectures, settings, loading,
+    classExams: mock.classExams, videos: mock.videos,
     addSession, updateSession, deleteSession,
     addCourse, updateCourse, deleteCourse,
     addSubject, updateSubject, deleteSubject,
@@ -221,7 +266,13 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
     getCourse, getSubject, getLecture,
-  }), [state, addSession, updateSession, deleteSession, addCourse, updateCourse, deleteCourse, addSubject, updateSubject, deleteSubject, addLecture, updateLecture, deleteLecture, addClassExam, updateClassExam, deleteClassExam, addQuestions, updateQuestion, deleteQuestion, addVideo, updateVideo, deleteVideo, updateSettings, getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture, getCourse, getSubject, getLecture]);
+  }), [sessions, courses, subjects, lectures, settings, loading, mock,
+    addSession, updateSession, deleteSession, addCourse, updateCourse, deleteCourse,
+    addSubject, updateSubject, deleteSubject, addLecture, updateLecture, deleteLecture,
+    addClassExam, updateClassExam, deleteClassExam, addQuestions, updateQuestion, deleteQuestion,
+    addVideo, updateVideo, deleteVideo, updateSettings,
+    getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
+    getCourse, getSubject, getLecture]);
 
   return <AcademicContext.Provider value={value}>{children}</AcademicContext.Provider>;
 }

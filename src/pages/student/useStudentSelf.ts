@@ -9,7 +9,7 @@ export function useStudentSelf() {
   const { batches } = useBatches();
   const { staff } = useStaff();
   const student = user?.studentId ? students.find((s) => s.id === user.studentId) : undefined;
-  const batch = student ? batches.find((b) => b.studentIds.includes(student.id)) : undefined;
+  const batch = student ? batches.find((b) => b.id === student.batchId) : undefined;
   const director = batch?.directorId ? staff.find((s) => s.id === batch.directorId) : undefined;
   return { user, student, batch, director };
 }

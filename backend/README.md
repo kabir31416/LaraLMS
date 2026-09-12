@@ -18,10 +18,27 @@ Health check: `GET /health`. All API routes are mounted under `/api/v1`.
 
 ## Status
 
-Implemented so far: **Authentication, User Management, Role & Permission**
-(Modules 1–3). Remaining modules are tracked in the session's task list and
-added to `src/modules/` and `src/routes/index.ts` one at a time, each wired
-into the existing React frontend and tested before the next begins.
+Implemented so far:
+
+- **Authentication, User Management, Role & Permission** (Modules 1–3)
+- **Settings** (Module 5) — `Settings` + `PublicInfoSettings` singletons
+- **Session, Course, Subject, Lecture** (Modules 6–9) — academic master data,
+  each with a delete guard against orphaning the level below it
+- **Student, Admission, Batch** (Modules 10–12) — Guardian as its own
+  collection, quick admission + full admission in one form, admin-only Roll
+  Number (`PATCH /students/:id/roll`), and `BatchEnrollment` for transfer
+  history (`POST /students/:id/enroll|transfer|withdraw`,
+  `GET /batches/:id/roster`) — see Phase 1 §13/§14
+
+**Dashboard (Module 4)** is deliberately built last among this group — it
+aggregates Students/Batches/Attendance/Payments, none of which exist as
+backend modules yet, so a real implementation now would just be stub
+numbers. It's picked back up once those modules land.
+
+Remaining modules are tracked in the session's task list and added to
+`src/modules/` and `src/routes/index.ts` one at a time, each wired into the
+existing React frontend (`AcademicContext`, `AuthContext`, ...) and tested
+before the next begins.
 
 ## Conventions
 

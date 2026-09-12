@@ -15,6 +15,7 @@ import { useBatches } from "@/contexts/BatchContext";
 import { NOTICE_TYPE_LABELS, PRIORITY_LABELS, type Notice, type NoticePriority, type NoticeType } from "@/types/notice";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 const priorityColor: Record<NoticePriority, string> = {
   Normal: "bg-muted text-foreground",
@@ -34,6 +35,7 @@ export default function Notices() {
     publishDate: format(new Date(), "yyyy-MM-dd"), expiryDate: "", priority: "Normal" as NoticePriority, pinned: false,
   };
   const [form, setForm] = useState(blank);
+  const [submitting, setSubmitting] = useState(false);
 
   const openCreate = () => { setEditing(null); setForm(blank); setOpen(true); };
   const openEdit = (n: Notice) => {
@@ -42,12 +44,36 @@ export default function Notices() {
     setOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.title.trim()) { toast.error("শিরোনাম দিন"); return; }
     const payload = { ...form, expiryDate: form.expiryDate || undefined, targetId: (form.type === "Course" || form.type === "Batch") ? form.targetId : undefined };
-    if (editing) { updateNotice(editing.id, payload); toast.success("নোটিশ আপডেট হয়েছে"); }
-    else { addNotice(payload); toast.success("নোটিশ তৈরি হয়েছে"); }
-    setOpen(false);
+    setSubmitting(true);
+    try {
+      if (editing) { await updateNotice(editing.id, payload); toast.success("নোটিশ আপডেট হয়েছে"); }
+      else { await addNotice(payload); toast.success("নোটিশ তৈরি হয়েছে"); }
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTogglePin = async (id: string) => {
+    try {
+      await togglePin(id);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "আপডেট ব্যর্থ হয়েছে");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteNotice(id);
+      toast.success("ডিলিট হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   const sorted = [...notices].sort((a, b) => {
@@ -88,11 +114,11 @@ export default function Notices() {
               <CardContent>
                 <p className="text-sm mb-3 whitespace-pre-wrap">{n.description}</p>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => togglePin(n.id)}>
+                  <Button size="sm" variant="outline" onClick={() => handleTogglePin(n.id)}>
                     {n.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => openEdit(n)}><Edit className="h-3.5 w-3.5" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => { deleteNotice(n.id); toast.success("ডিলিট হয়েছে"); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => handleDelete(n.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
               </CardContent>
             </Card>
@@ -144,8 +170,8 @@ export default function Notices() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>বাতিল</Button>
-            <Button onClick={save}>সংরক্ষণ</Button>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>বাতিল</Button>
+            <Button onClick={save} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

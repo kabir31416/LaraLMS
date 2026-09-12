@@ -10,6 +10,7 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useAcademic } from "@/contexts/AcademicContext";
 import type { Subject } from "@/types/academic";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 export function SubjectsTab() {
   const { subjects, courses, addSubject, updateSubject, deleteSubject } = useAcademic();
@@ -21,11 +22,24 @@ export function SubjectsTab() {
   const openNew = () => { setEdit(null); setForm({ name: "", courseId: courses[0]?.id || "" }); setOpen(true); };
   const openEdit = (s: Subject) => { setEdit(s); setForm({ name: s.name, courseId: s.courseId }); setOpen(true); };
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name || !form.courseId) { toast.error("সব ফিল্ড পূরণ করুন"); return; }
-    if (edit) { updateSubject(edit.id, form); toast.success("সাবজেক্ট আপডেট"); }
-    else { addSubject(form); toast.success("সাবজেক্ট যোগ"); }
-    setOpen(false);
+    try {
+      if (edit) { await updateSubject(edit.id, form); toast.success("সাবজেক্ট আপডেট"); }
+      else { await addSubject(form); toast.success("সাবজেক্ট যোগ"); }
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteSubject(id);
+      toast.success("মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   const courseName = (id: string) => courses.find((c) => c.id === id)?.name || "—";
@@ -55,7 +69,7 @@ export function SubjectsTab() {
                 <TableCell>{courseName(s.courseId)}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { deleteSubject(s.id); toast.success("মুছে ফেলা হয়েছে"); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
                 </TableCell>
               </TableRow>
             ))}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { format, isToday, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { bn } from "date-fns/locale";
 import { CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator } from "lucide-react";
@@ -28,14 +28,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { StatCard } from "@/components/StatCard";
-import { useAccounts, ACCOUNT_BRANCHES } from "@/contexts/AccountsContext";
+import { useAccounts } from "@/contexts/AccountsContext";
 import { useBranchLedger } from "@/contexts/BranchLedgerContext";
+import { useBranches } from "@/contexts/BranchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { PAYMENT_METHODS_LIST, PaymentMethod, IncomeEntry, ExpenseEntry } from "@/types/accounts";
 import { BranchLedgerEntry, BranchItemType } from "@/types/branchLedger";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Building2 } from "lucide-react";
+import { ApiClientError } from "@/contexts/AuthContext";
+import { api } from "@/lib/apiClient";
 
 const fmtBDT = (n: number) => `৳${n.toLocaleString("bn-BD")}`;
 const fmtDate = (iso: string) => format(parseISO(iso), "dd MMM yyyy", { locale: bn });
@@ -78,6 +81,7 @@ export default function Accounts() {
 /* -------------------- Summary -------------------- */
 function SummaryTab() {
   const { incomes, expenses } = useAccounts();
+  const { branches } = useBranches();
 
   const totalIncome = incomes.reduce((s, i) => s + i.amount, 0);
   const totalExpense = expenses.reduce((s, e) => s + e.amount, 0);
@@ -88,7 +92,7 @@ function SummaryTab() {
   const closing = opening + todayIncome - todayExpense;
 
   // Branch-wise
-  const branchRows = ACCOUNT_BRANCHES.map((b) => {
+  const branchRows = branches.map((b) => {
     const inc = incomes.filter((i) => i.branchId === b.id).reduce((s, i) => s + i.amount, 0);
     const exp = expenses.filter((e) => e.branchId === b.id).reduce((s, e) => s + e.amount, 0);
     return { ...b, income: inc, expense: exp, profit: inc - exp, balance: inc - exp };
@@ -160,6 +164,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "in
 /* -------------------- Income -------------------- */
 function IncomeTab() {
   const { incomes, deleteIncome } = useAccounts();
+  const { branches } = useBranches();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<IncomeEntry | null>(null);
   const [branchFilter, setBranchFilter] = useState<string>("all");
@@ -168,6 +173,15 @@ function IncomeTab() {
   const filtered = incomes.filter(
     (i) => (branchFilter === "all" || i.branchId === branchFilter) && (methodFilter === "all" || i.method === methodFilter)
   );
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteIncome(id);
+      toast.success("মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
+  };
 
   return (
     <Card>
@@ -178,7 +192,7 @@ function IncomeTab() {
             <SelectTrigger className="w-40"><SelectValue placeholder="শাখা" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">সব শাখা</SelectItem>
-              {ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={methodFilter} onValueChange={setMethodFilter}>
@@ -228,7 +242,7 @@ function IncomeTab() {
                   <Button size="icon" variant="ghost" onClick={() => { setEditing(i); setOpen(true); }} disabled={i.source !== "manual"}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { deleteIncome(i.id); toast.success("মুছে ফেলা হয়েছে"); }} disabled={i.source !== "manual"}>
+                  <Button size="icon" variant="ghost" onClick={() => handleDelete(i.id)} disabled={i.source !== "manual"}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
@@ -244,29 +258,38 @@ function IncomeTab() {
 
 function IncomeDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing: IncomeEntry | null }) {
   const { addIncome, updateIncome, incomeCategories } = useAccounts();
+  const { branches } = useBranches();
   const { students } = useStudents();
   const [date, setDate] = useState<Date>(editing ? parseISO(editing.date) : new Date());
   const [category, setCategory] = useState(editing?.category || incomeCategories[0]);
   const [amount, setAmount] = useState(String(editing?.amount || ""));
-  const [branchId, setBranchId] = useState(editing?.branchId || ACCOUNT_BRANCHES[0].id);
+  const [branchId, setBranchId] = useState(editing?.branchId || branches[0]?.id || "");
   const [method, setMethod] = useState<PaymentMethod>(editing?.method || "নগদ");
   const [studentId, setStudentId] = useState(editing?.studentId || "");
   const [note, setNote] = useState(editing?.note || "");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("সঠিক পরিমাণ লিখুন"); return; }
-    const branch = ACCOUNT_BRANCHES.find((b) => b.id === branchId)!;
+    if (!branchId) { toast.error("শাখা নির্বাচন করুন"); return; }
     const student = students.find((s) => s.id === studentId);
     const payload = {
       date: date.toISOString(),
-      category, amount: amt, branchId, branchName: branch.name, method,
+      category, amount: amt, branchId, method,
       studentId: student?.id, studentName: student?.name, note,
       source: "manual" as const,
     };
-    if (editing) { updateIncome(editing.id, payload); toast.success("আপডেট হয়েছে"); }
-    else { addIncome(payload); toast.success("আয় যুক্ত হয়েছে"); }
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      if (editing) { await updateIncome(editing.id, payload); toast.success("আপডেট হয়েছে"); }
+      else { await addIncome(payload); toast.success("আয় যুক্ত হয়েছে"); }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -284,8 +307,8 @@ function IncomeDialog({ open, onOpenChange, editing }: { open: boolean; onOpenCh
           <Field label="পরিমাণ"><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
           <Field label="শাখা">
             <Select value={branchId} onValueChange={setBranchId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+              <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
           <Field label="পেমেন্ট পদ্ধতি">
@@ -306,8 +329,8 @@ function IncomeDialog({ open, onOpenChange, editing }: { open: boolean; onOpenCh
           <div className="md:col-span-2"><Field label="নোট"><Textarea value={note} onChange={(e) => setNote(e.target.value)} /></Field></div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-          <Button onClick={submit}>সংরক্ষণ</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={submit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -317,6 +340,7 @@ function IncomeDialog({ open, onOpenChange, editing }: { open: boolean; onOpenCh
 /* -------------------- Expense -------------------- */
 function ExpenseTab() {
   const { expenses, deleteExpense } = useAccounts();
+  const { branches } = useBranches();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [branchFilter, setBranchFilter] = useState<string>("all");
@@ -325,6 +349,15 @@ function ExpenseTab() {
   const filtered = expenses.filter(
     (e) => (branchFilter === "all" || e.branchId === branchFilter) && (methodFilter === "all" || e.method === methodFilter)
   );
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteExpense(id);
+      toast.success("মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
+  };
 
   return (
     <Card>
@@ -335,7 +368,7 @@ function ExpenseTab() {
             <SelectTrigger className="w-40"><SelectValue placeholder="শাখা" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">সব শাখা</SelectItem>
-              {ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={methodFilter} onValueChange={setMethodFilter}>
@@ -377,7 +410,7 @@ function ExpenseTab() {
                 <TableCell className="text-right font-semibold text-destructive">{fmtBDT(e.amount)}</TableCell>
                 <TableCell className="text-right">
                   <Button size="icon" variant="ghost" onClick={() => { setEditing(e); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                  <Button size="icon" variant="ghost" onClick={() => { deleteExpense(e.id); toast.success("মুছে ফেলা হয়েছে"); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => handleDelete(e.id)}><Trash2 className="h-4 w-4" /></Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -391,21 +424,30 @@ function ExpenseTab() {
 
 function ExpenseDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing: ExpenseEntry | null }) {
   const { addExpense, updateExpense, expenseCategories } = useAccounts();
+  const { branches } = useBranches();
   const [date, setDate] = useState<Date>(editing ? parseISO(editing.date) : new Date());
   const [category, setCategory] = useState(editing?.category || expenseCategories[0]);
   const [amount, setAmount] = useState(String(editing?.amount || ""));
-  const [branchId, setBranchId] = useState(editing?.branchId || ACCOUNT_BRANCHES[0].id);
+  const [branchId, setBranchId] = useState(editing?.branchId || branches[0]?.id || "");
   const [method, setMethod] = useState<PaymentMethod>(editing?.method || "নগদ");
   const [note, setNote] = useState(editing?.note || "");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("সঠিক পরিমাণ লিখুন"); return; }
-    const branch = ACCOUNT_BRANCHES.find((b) => b.id === branchId)!;
-    const payload = { date: date.toISOString(), category, amount: amt, branchId, branchName: branch.name, method, note };
-    if (editing) { updateExpense(editing.id, payload); toast.success("আপডেট হয়েছে"); }
-    else { addExpense(payload); toast.success("ব্যয় যুক্ত হয়েছে"); }
-    onOpenChange(false);
+    if (!branchId) { toast.error("শাখা নির্বাচন করুন"); return; }
+    const payload = { date: date.toISOString(), category, amount: amt, branchId, method, note };
+    setSubmitting(true);
+    try {
+      if (editing) { await updateExpense(editing.id, payload); toast.success("আপডেট হয়েছে"); }
+      else { await addExpense(payload); toast.success("ব্যয় যুক্ত হয়েছে"); }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -423,8 +465,8 @@ function ExpenseDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
           <Field label="পরিমাণ"><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
           <Field label="শাখা">
             <Select value={branchId} onValueChange={setBranchId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+              <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
           <Field label="পেমেন্ট পদ্ধতি">
@@ -436,8 +478,8 @@ function ExpenseDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
           <div className="md:col-span-2"><Field label="নোট"><Textarea value={note} onChange={(e) => setNote(e.target.value)} /></Field></div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-          <Button onClick={submit}>সংরক্ষণ</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={submit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -498,6 +540,14 @@ function CategoriesTab() {
   const [newIncome, setNewIncome] = useState("");
   const [newExpense, setNewExpense] = useState("");
 
+  const runOrToast = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "আপডেট ব্যর্থ হয়েছে");
+    }
+  };
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Card>
@@ -505,7 +555,7 @@ function CategoriesTab() {
         <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Input placeholder="নতুন ক্যাটাগরি" value={newIncome} onChange={(e) => setNewIncome(e.target.value)} />
-            <Button onClick={() => { if (newIncome.trim()) { addIncomeCategory(newIncome.trim()); setNewIncome(""); } }}>
+            <Button onClick={() => { if (newIncome.trim()) { runOrToast(() => addIncomeCategory(newIncome.trim())); setNewIncome(""); } }}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
@@ -513,7 +563,7 @@ function CategoriesTab() {
             {incomeCategories.map((c) => (
               <Badge key={c} variant="secondary" className="gap-1 py-1.5 px-3">
                 {c}
-                <button onClick={() => removeIncomeCategory(c)} className="ml-1 hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                <button onClick={() => runOrToast(() => removeIncomeCategory(c))} className="ml-1 hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
               </Badge>
             ))}
           </div>
@@ -525,7 +575,7 @@ function CategoriesTab() {
         <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Input placeholder="নতুন ক্যাটাগরি" value={newExpense} onChange={(e) => setNewExpense(e.target.value)} />
-            <Button onClick={() => { if (newExpense.trim()) { addExpenseCategory(newExpense.trim()); setNewExpense(""); } }}>
+            <Button onClick={() => { if (newExpense.trim()) { runOrToast(() => addExpenseCategory(newExpense.trim())); setNewExpense(""); } }}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
@@ -533,7 +583,7 @@ function CategoriesTab() {
             {expenseCategories.map((c) => (
               <Badge key={c} variant="secondary" className="gap-1 py-1.5 px-3">
                 {c}
-                <button onClick={() => removeExpenseCategory(c)} className="ml-1 hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                <button onClick={() => runOrToast(() => removeExpenseCategory(c))} className="ml-1 hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
               </Badge>
             ))}
           </div>
@@ -546,6 +596,7 @@ function CategoriesTab() {
 /* -------------------- Reports -------------------- */
 function ReportsTab() {
   const { incomes, expenses, incomeCategories, expenseCategories } = useAccounts();
+  const { branches } = useBranches();
   const [from, setFrom] = useState<Date | undefined>(startOfMonth(new Date()));
   const [to, setTo] = useState<Date | undefined>(endOfMonth(new Date()));
   const [branch, setBranch] = useState("all");
@@ -590,7 +641,7 @@ function ReportsTab() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">সব</SelectItem>
-                {ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
@@ -658,13 +709,30 @@ function ReportsTab() {
 /* -------------------- Branch Ledger -------------------- */
 const ITEM_TYPES: BranchItemType[] = ["বই", "ভর্তি ফর্ম", "অন্যান্য"];
 
+interface BranchLedgerSummaryRow {
+  branchId: string;
+  totalExpense: number;
+  totalIncome: number;
+  due: number;
+}
+
 function BranchLedgerTab() {
   const { entries, deleteEntry } = useBranchLedger();
+  const { branches } = useBranches();
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BranchLedgerEntry | null>(null);
   const [defaultType, setDefaultType] = useState<"expense" | "income">("expense");
+  const [summaryRows, setSummaryRows] = useState<BranchLedgerSummaryRow[]>([]);
+
+  // Fetched from the server rather than recomputed from `entries` (capped at
+  // 100 rows client-side) — accurate even once a branch has more history than that.
+  useEffect(() => {
+    let cancelled = false;
+    api.get<BranchLedgerSummaryRow[]>("/branch-ledger/summary").then((rows) => { if (!cancelled) setSummaryRows(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [entries]);
 
   const filtered = useMemo(() => {
     return entries.filter((e) => {
@@ -687,20 +755,27 @@ function BranchLedgerTab() {
     return out.reverse();
   }, [filtered]);
 
-  // Branch summary across all entries (not filtered) — for accurate due
   const branchSummary = useMemo(() => {
-    return ACCOUNT_BRANCHES.map((b) => {
-      const list = entries.filter((e) => e.branchId === b.id);
-      const totalExpense = list.filter((e) => e.type === "expense").reduce((s, e) => s + e.amount, 0);
-      const totalIncome = list.filter((e) => e.type === "income").reduce((s, e) => s + e.amount, 0);
-      return { ...b, totalExpense, totalIncome, due: totalExpense - totalIncome };
+    const byId = new Map(summaryRows.map((r) => [r.branchId, r]));
+    return branches.map((b) => {
+      const row = byId.get(b.id);
+      return { ...b, totalExpense: row?.totalExpense || 0, totalIncome: row?.totalIncome || 0, due: row?.due || 0 };
     });
-  }, [entries]);
+  }, [branches, summaryRows]);
 
   const openAdd = (type: "expense" | "income") => {
     setEditing(null);
     setDefaultType(type);
     setOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteEntry(id);
+      toast.success("মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   return (
@@ -713,7 +788,7 @@ function BranchLedgerTab() {
               <SelectTrigger className="w-44"><SelectValue placeholder="শাখা" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">সব শাখা</SelectItem>
-                {ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <DateField value={dateFilter} onChange={setDateFilter} />
@@ -771,7 +846,7 @@ function BranchLedgerTab() {
                     <Button size="icon" variant="ghost" onClick={() => { setEditing(r); setDefaultType(r.type); setOpen(true); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => { deleteEntry(r.id); toast.success("মুছে ফেলা হয়েছে"); }}>
+                    <Button size="icon" variant="ghost" onClick={() => handleDelete(r.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -827,23 +902,25 @@ function BranchLedgerDialog({
   defaultType: "expense" | "income";
 }) {
   const { addEntry, updateEntry } = useBranchLedger();
+  const { branches } = useBranches();
   const initial = editing;
   const [type, setType] = useState<"expense" | "income">(initial?.type || defaultType);
   const [date, setDate] = useState<Date>(initial ? parseISO(initial.date) : new Date());
-  const [branchId, setBranchId] = useState(initial?.branchId || ACCOUNT_BRANCHES[0].id);
+  const [branchId, setBranchId] = useState(initial?.branchId || branches[0]?.id || "");
   const [amount, setAmount] = useState(String(initial?.amount || ""));
   const [itemType, setItemType] = useState<BranchItemType>(initial?.itemType || "বই");
   const [description, setDescription] = useState(initial?.description || "");
   const [quantity, setQuantity] = useState(String(initial?.quantity || ""));
   const [method, setMethod] = useState<PaymentMethod>(initial?.method || "নগদ");
   const [note, setNote] = useState(initial?.note || "");
+  const [submitting, setSubmitting] = useState(false);
 
   // Reset on open change
   React.useEffect(() => {
     if (open) {
       setType(initial?.type || defaultType);
       setDate(initial ? parseISO(initial.date) : new Date());
-      setBranchId(initial?.branchId || ACCOUNT_BRANCHES[0].id);
+      setBranchId(initial?.branchId || branches[0]?.id || "");
       setAmount(String(initial?.amount || ""));
       setItemType(initial?.itemType || "বই");
       setDescription(initial?.description || "");
@@ -851,16 +928,16 @@ function BranchLedgerDialog({
       setMethod(initial?.method || "নগদ");
       setNote(initial?.note || "");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial, defaultType]);
 
-  const submit = () => {
+  const submit = async () => {
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error("সঠিক পরিমাণ লিখুন"); return; }
-    const branch = ACCOUNT_BRANCHES.find((b) => b.id === branchId)!;
-    const payload: Omit<BranchLedgerEntry, "id"> = {
+    if (!branchId) { toast.error("শাখা নির্বাচন করুন"); return; }
+    const payload: Omit<BranchLedgerEntry, "id" | "branchName"> = {
       date: date.toISOString(),
       branchId,
-      branchName: branch.name,
       type,
       amount: amt,
       note,
@@ -868,9 +945,16 @@ function BranchLedgerDialog({
         ? { itemType, description, quantity: quantity ? Number(quantity) : undefined }
         : { method }),
     };
-    if (editing) { updateEntry(editing.id, payload); toast.success("আপডেট হয়েছে"); }
-    else { addEntry(payload); toast.success(type === "expense" ? "ব্যয় যুক্ত হয়েছে" : "আয় যুক্ত হয়েছে"); }
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      if (editing) { await updateEntry(editing.id, payload); toast.success("আপডেট হয়েছে"); }
+      else { await addEntry(payload); toast.success(type === "expense" ? "ব্যয় যুক্ত হয়েছে" : "আয় যুক্ত হয়েছে"); }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -894,8 +978,8 @@ function BranchLedgerDialog({
           </Field>
           <Field label="শাখা">
             <Select value={branchId} onValueChange={setBranchId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{ACCOUNT_BRANCHES.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+              <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
           <Field label="তারিখ"><DateField value={date} onChange={(d) => d && setDate(d)} /></Field>
@@ -931,8 +1015,8 @@ function BranchLedgerDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-          <Button onClick={submit}>সংরক্ষণ</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={submit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

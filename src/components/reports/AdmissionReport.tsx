@@ -23,7 +23,7 @@ export default function AdmissionReport() {
   const filtered = useMemo(() => {
     return students.filter((s) => {
       if (course !== "all" && s.course !== course) return false;
-      if (batch !== "all" && s.batch !== batch) return false;
+      if (batch !== "all" && s.batchId !== batch) return false;
       if (from && s.admissionDate < from) return false;
       if (to && s.admissionDate > to) return false;
       return true;
@@ -32,8 +32,9 @@ export default function AdmissionReport() {
 
   const newCount = filtered.filter((s) => s.admissionType === "নতুন").length;
 
+  const batchName = (id?: string) => batches.find((b) => b.id === id)?.name || "—";
   const headers = ["Student ID", "নাম", "কোর্স", "ব্যাচ", "ভর্তির ধরন", "ভর্তির তারিখ"];
-  const rows = filtered.map((s) => [s.studentId, s.name, s.course, s.batch, s.admissionType, s.admissionDate]);
+  const rows = filtered.map((s) => [s.studentId, s.name, s.course, batchName(s.batchId), s.admissionType, s.admissionDate]);
 
   return (
     <div className="space-y-4">
@@ -53,7 +54,7 @@ export default function AdmissionReport() {
         <div><Label className="text-xs">ব্যাচ</Label>
           <Select value={batch} onValueChange={setBatch}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}</SelectContent>
+            <SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div><Label className="text-xs">তারিখ থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>

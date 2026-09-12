@@ -24,26 +24,21 @@ const DirectorStudents = () => {
     () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
     [batches, user],
   );
-  const myStudentIds = useMemo(() => new Set(myBatches.flatMap((b) => b.studentIds)), [myBatches]);
+  const myBatchIds = useMemo(() => new Set(myBatches.map((b) => b.id)), [myBatches]);
 
   const list = useMemo(() => {
     const q = search.toLowerCase();
     return students
-      .filter((s) => myStudentIds.has(s.id))
-      .filter((s) => {
-        if (batchFilter !== "all") {
-          const b = myBatches.find((x) => x.id === batchFilter);
-          if (!b || !b.studentIds.includes(s.id)) return false;
-        }
-        return !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q);
-      });
-  }, [students, myStudentIds, search, batchFilter, myBatches]);
+      .filter((s) => s.batchId && myBatchIds.has(s.batchId))
+      .filter((s) => batchFilter === "all" || s.batchId === batchFilter)
+      .filter((s) => !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q));
+  }, [students, myBatchIds, search, batchFilter]);
 
   if (!user || user.role !== "Batch Director") {
     return <Navigate to="/login" replace />;
   }
 
-  const batchOf = (sid: string) => myBatches.find((b) => b.studentIds.includes(sid));
+  const batchOf = (sid: string) => myBatches.find((b) => b.id === students.find((s) => s.id === sid)?.batchId);
 
   return (
     <DashboardLayout>

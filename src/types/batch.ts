@@ -20,11 +20,13 @@ export const WEEK_DAYS: WeekDay[] = [
 export interface Batch {
   id: string;
   name: string;
-  course: string;
+  courseId: string; // real Course id (Phase 1 §3 fix — used to be the course name)
   batchTime: string; // e.g. "৫:০০ PM - ৭:০০ PM"
   days: WeekDay[];
-  roomNumber: string;
+  roomNumber?: string;
   startDate: string; // ISO
   directorId?: string; // staff id (Batch Director)
-  studentIds: string[];
+  // No studentIds here anymore — a batch's roster is whoever has
+  // Student.batchId === this batch's id (kept in sync by the enrollment
+  // API on enroll/transfer/withdraw), not an array owned by the batch.
 }

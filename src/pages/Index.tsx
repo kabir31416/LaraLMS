@@ -3,61 +3,95 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStudents } from "@/contexts/StudentContext";
-import { useAttendance } from "@/contexts/AttendanceContext";
+import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
 import { format, subDays } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/apiClient";
+import { ApiClientError } from "@/contexts/AuthContext";
+
+interface AdminDashboardSummary {
+  totalStudents: number;
+  todayAdmissions: number;
+  totalBatches: number;
+  totalDue: number;
+  packageDue: number;
+  monthlyDue: number;
+  todayCollection: number;
+  monthlyCollection: { month: string; total: number }[];
+  todayPresent: number;
+  todayAbsent: number;
+  todayAttendancePct: number;
+  attendanceTrend: { date: string; pct: number }[];
+  topAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
+  lowAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
+  recentAdmissions: { id: string; name: string; class?: string; course?: string; admissionDate: string; registrationId: string }[];
+  recentPayments: { id: string; receiptNo: string; studentName?: string; date: string; paidAmount: number; method: string }[];
+}
 
 const Index = () => {
-  const { students, payments } = useStudents();
-  const { entries, attendancePercent } = useAttendance();
+  const { students } = useStudents();
+  const { payments } = usePayments();
   const { batches } = useBatches();
   const { notices } = useNotices();
 
-  const totalStudents = students.length;
-  const today = format(new Date(), "yyyy-MM-dd");
-  const todayAdmissions = students.filter((s) => s.admissionDate === today).length;
-  const todayCollection = payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
-  const totalDue = students.reduce((sum, s) => sum + s.due, 0);
-  const packageDue = students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
-  const monthlyDue = students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+  // Module 4 (extended in Modules 15-20): server-side aggregation for
+  // everything that already has a real collection (Student, Batch, Payment,
+  // Attendance) — StudentContext/BatchContext/PaymentContext cap their list
+  // fetch at 100 rows for the table views, and Attendance isn't cached
+  // client-side at all (see AttendanceContext), so these stat cards and
+  // charts are computed server-side instead. Only notices stay mock until
+  // Module 25 exists.
+  const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<AdminDashboardSummary>("/dashboard/admin")
+      .then((data) => { if (!cancelled) setSummary(data); })
+      .catch((err) => {
+        if (!(err instanceof ApiClientError)) console.error(err);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  // Attendance stats
-  const todayEntries = entries.filter((e) => e.date === today);
-  const todayPresent = todayEntries.filter((e) => e.status === "Present").length;
-  const todayAbsent = todayEntries.filter((e) => e.status === "Absent").length;
-  const todayPct = todayEntries.length ? Math.round((todayPresent / todayEntries.length) * 100) : 0;
+  const totalStudents = summary?.totalStudents ?? students.length;
+  const todayAdmissions = summary?.todayAdmissions ?? 0;
+  const todayCollection = summary?.todayCollection ?? 0;
+  const totalDue = summary?.totalDue ?? students.reduce((sum, s) => sum + s.due, 0);
+  const packageDue = summary?.packageDue ?? students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
+  const monthlyDue = summary?.monthlyDue ?? students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
+  const totalBatches = summary?.totalBatches ?? batches.length;
 
-  // Last 7 days trend
-  const trend = useMemo(() => {
-    return Array.from({ length: 7 }).map((_, i) => {
-      const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
-      const day = entries.filter((e) => e.date === d);
-      const pct = day.length ? Math.round((day.filter((e) => e.status === "Present").length / day.length) * 100) : 0;
-      return { date: d.slice(5), pct };
-    });
-  }, [entries]);
+  const todayPresent = summary?.todayPresent ?? 0;
+  const todayAbsent = summary?.todayAbsent ?? 0;
+  const todayPct = summary?.todayAttendancePct ?? 0;
+  const trend = summary?.attendanceTrend ?? [];
+  const top10 = summary?.topAttendance ?? [];
+  const lowAttendance = summary?.lowAttendance ?? [];
 
-  // Top 10 by attendance %
-  const monthStart = format(subDays(new Date(), 30), "yyyy-MM-dd");
-  const ranked = useMemo(() => students
-    .map((s) => ({ s, pct: attendancePercent(s.id, monthStart, today) }))
-    .sort((a, b) => b.pct - a.pct), [students, attendancePercent, monthStart, today]);
-  const top10 = ranked.slice(0, 10);
-  const lowAttendance = ranked.filter((x) => x.pct > 0 && x.pct < 60).slice(0, 8);
-
-  const recentAdmissions = [...students]
+  const recentAdmissions = summary?.recentAdmissions ?? [...students]
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
     .slice(0, 5);
 
-  const recentPayments = [...payments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const recentPayments = summary?.recentPayments ?? [...payments]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
+    .map((p) => ({
+      id: p.id,
+      receiptNo: p.receiptNo,
+      studentName: students.find((s) => s.id === p.studentId)?.name,
+      date: p.date,
+      paidAmount: p.paidAmount,
+      method: p.method,
+    }));
   const latestNotices = filterNoticesFor(notices, { role: "Admin" }).slice(0, 5);
 
   // Monthly collection (last 6 months)
   const monthly = useMemo(() => {
+    if (summary?.monthlyCollection) return summary.monthlyCollection;
     const m = new Map<string, number>();
     for (let i = 5; i >= 0; i--) {
       const d = subDays(new Date(), i * 30);
@@ -69,7 +103,7 @@ const Index = () => {
       if (m.has(key)) m.set(key, (m.get(key) || 0) + p.paidAmount);
     });
     return Array.from(m.entries()).map(([month, total]) => ({ month: month.slice(5), total }));
-  }, [payments]);
+  }, [payments, summary]);
 
   return (
     <DashboardLayout>
@@ -89,7 +123,7 @@ const Index = () => {
           <StatCard title="আজকের উপস্থিতি %" value={`${todayPct}%`} icon={ClipboardCheck} variant="success" />
           <StatCard title="মোট উপস্থিত" value={String(todayPresent)} icon={UserCheck} variant="info" />
           <StatCard title="অনুপস্থিত" value={String(todayAbsent)} icon={UserX} variant="warning" />
-          <StatCard title="মোট ব্যাচ" value={String(batches.length)} icon={Layers} variant="primary" />
+          <StatCard title="মোট ব্যাচ" value={String(totalBatches)} icon={Layers} variant="primary" />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -138,12 +172,12 @@ const Index = () => {
             <CardContent className="p-0">
               <div className="divide-y divide-border">
                 {top10.map((x, i) => (
-                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-semibold text-muted-foreground w-5">{i + 1}</span>
                       <div>
-                        <p className="text-sm font-medium">{x.s.name}</p>
-                        <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                        <p className="text-sm font-medium">{x.name || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{x.registrationId}</p>
                       </div>
                     </div>
                     <Badge className="bg-success/10 text-success border-success/20">{x.pct}%</Badge>
@@ -160,10 +194,10 @@ const Index = () => {
                 {lowAttendance.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-muted-foreground text-center">কেউ নেই</p>
                 ) : lowAttendance.map((x) => (
-                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
                     <div>
-                      <p className="text-sm font-medium">{x.s.name}</p>
-                      <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                      <p className="text-sm font-medium">{x.name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{x.registrationId}</p>
                     </div>
                     <Badge className="bg-destructive/10 text-destructive border-destructive/20">{x.pct}%</Badge>
                   </div>
@@ -200,16 +234,15 @@ const Index = () => {
             <CardContent className="p-0">
               <div className="divide-y divide-border">
                 {recentPayments.length === 0 ? <p className="px-5 py-6 text-sm text-muted-foreground text-center">কোনো পেমেন্ট নেই</p> :
-                  recentPayments.map((p) => {
-                    const s = students.find((x) => x.id === p.studentId);
-                    return <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                  recentPayments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between px-5 py-3">
                       <div>
-                        <p className="text-sm font-medium">{s?.name || "—"}</p>
+                        <p className="text-sm font-medium">{p.studentName || "—"}</p>
                         <p className="text-xs text-muted-foreground">{p.receiptNo} • {p.date}</p>
                       </div>
                       <span className="text-xs text-success font-semibold">৳ {p.paidAmount.toLocaleString()}</span>
-                    </div>;
-                  })}
+                    </div>
+                  ))}
               </div>
             </CardContent>
           </Card>

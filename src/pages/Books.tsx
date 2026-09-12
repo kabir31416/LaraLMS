@@ -16,10 +16,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { useBooks } from "@/contexts/BookContext";
+import { useBranches } from "@/contexts/BranchContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { useBatches } from "@/contexts/BatchContext";
 import { CLASSES, SUBJECTS } from "@/types/student";
 import { Plus, Minus, AlertTriangle, ArrowRightLeft, BookPlus, Undo2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 export default function Books() {
   return (
@@ -59,12 +62,25 @@ function AllBooksTab() {
     totalStock: 0, lowStockThreshold: 20,
   });
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name.trim()) return toast.error("বইয়ের নাম দিন");
-    addBook(form);
-    toast.success("বই যোগ হয়েছে");
-    setOpen(false);
-    setForm({ name: "", subject: SUBJECTS[0], class: CLASSES[0], author: "", price: 0, totalStock: 0, lowStockThreshold: 20 });
+    try {
+      await addBook(form);
+      toast.success("বই যোগ হয়েছে");
+      setOpen(false);
+      setForm({ name: "", subject: SUBJECTS[0], class: CLASSES[0], author: "", price: 0, totalStock: 0, lowStockThreshold: 20 });
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "বই যোগ করা যায়নি");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteBook(id);
+      toast.success("বই মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   return (
@@ -130,7 +146,7 @@ function AllBooksTab() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Button size="sm" variant="ghost" onClick={() => deleteBook(b.id)}>মুছুন</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleDelete(b.id)}>মুছুন</Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -150,11 +166,15 @@ function StockTab() {
 
   const lowStock = books.filter((b) => b.totalStock <= b.lowStockThreshold);
 
-  const submit = () => {
+  const submit = async () => {
     if (!dialog || qty <= 0) return toast.error("পরিমাণ দিন");
-    if (dialog.type === "add") addStock(dialog.bookId, qty, note);
-    else reduceStock(dialog.bookId, qty, note);
-    toast.success("স্টক আপডেট হয়েছে");
+    try {
+      if (dialog.type === "add") await addStock(dialog.bookId, qty, note);
+      else await reduceStock(dialog.bookId, qty, note);
+      toast.success("স্টক আপডেট হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "স্টক আপডেট ব্যর্থ হয়েছে");
+    }
     setDialog(null); setQty(0); setNote("");
   };
 
@@ -233,7 +253,8 @@ function StockTab() {
 type Row = { bookId: string; quantity: number };
 
 function BranchStockTab() {
-  const { books, branches, branchStock, transferMultipleToBranch } = useBooks();
+  const { books, branchStock, transferMultipleToBranch } = useBooks();
+  const { branches } = useBranches();
   const [open, setOpen] = useState(false);
   const [branchId, setBranchId] = useState("");
   const [rows, setRows] = useState<Row[]>([{ bookId: "", quantity: 1 }]);
@@ -244,11 +265,16 @@ function BranchStockTab() {
   const updateRow = (i: number, patch: Partial<Row>) =>
     setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const submit = () => {
+  const submit = async () => {
     if (!branchId) return toast.error("ব্রাঞ্চ নির্বাচন করুন");
     const items = rows.filter((r) => r.bookId && r.quantity > 0);
     if (items.length === 0) return toast.error("কমপক্ষে একটি বই যোগ করুন");
-    const res = transferMultipleToBranch(branchId, items);
+    let res: { ok: boolean; failed?: string[] };
+    try {
+      res = await transferMultipleToBranch(branchId, items);
+    } catch (err) {
+      return toast.error(err instanceof ApiClientError ? err.message : "স্থানান্তর ব্যর্থ হয়েছে");
+    }
     if (!res.ok) return toast.error("স্থানান্তর ব্যর্থ — যথেষ্ট স্টক নেই");
     if (res.failed?.length) toast.warning(`কিছু বই স্থানান্তর হয়নি: ${res.failed.join(", ")}`);
     else toast.success("স্থানান্তর সফল");
@@ -407,6 +433,7 @@ function BranchStockTab() {
 function DistributeTab() {
   const { books, issues, issueMultipleToStudent, returnFromStudent } = useBooks();
   const { students } = useStudents();
+  const { batches } = useBatches();
 
   const [search, setSearch] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -428,28 +455,33 @@ function DistributeTab() {
   const updateRow = (i: number, patch: Partial<Row>) =>
     setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const submit = () => {
+  const submit = async () => {
     if (!selectedStudent) return toast.error("শিক্ষার্থী নির্বাচন করুন");
     const items = rows.filter((r) => r.bookId && r.quantity > 0);
     if (items.length === 0) return toast.error("কমপক্ষে একটি বই যোগ করুন");
-    const res = issueMultipleToStudent({
-      studentId: selectedStudent.id,
-      studentName: selectedStudent.name,
-      issueDate,
-      items,
-    });
+    let res: { ok: boolean; failed?: string[] };
+    try {
+      res = await issueMultipleToStudent({
+        studentId: selectedStudent.id,
+        studentName: selectedStudent.name,
+        issueDate,
+        items,
+      });
+    } catch (err) {
+      return toast.error(err instanceof ApiClientError ? err.message : "বিতরণ ব্যর্থ হয়েছে");
+    }
     if (!res.ok) return toast.error("বিতরণ ব্যর্থ — মেইন স্টকে যথেষ্ট বই নেই");
     if (res.failed?.length) toast.warning(`কিছু বই বিতরণ হয়নি: ${res.failed.join(", ")}`);
     else toast.success("বই বিতরণ সফল");
     setRows([{ bookId: "", quantity: 1 }]);
   };
 
-  const handleReturn = (issueId: string, max: number) => {
+  const handleReturn = async (issueId: string, max: number) => {
     const input = prompt(`কত পরিমাণ ফেরত (সর্বোচ্চ ${max})?`, String(max));
     if (!input) return;
     const n = parseInt(input);
     if (isNaN(n) || n <= 0) return toast.error("সঠিক পরিমাণ দিন");
-    const ok = returnFromStudent(issueId, n);
+    const ok = await returnFromStudent(issueId, n);
     if (!ok) return toast.error("ফেরত ব্যর্থ");
     toast.success("ফেরত সম্পন্ন");
   };
@@ -482,7 +514,7 @@ function DistributeTab() {
             <div className="rounded-md bg-muted/50 p-3 text-sm">
               <div><span className="text-muted-foreground">নাম:</span> {selectedStudent.name}</div>
               <div><span className="text-muted-foreground">কোর্স:</span> {selectedStudent.course}</div>
-              <div><span className="text-muted-foreground">ব্যাচ:</span> {selectedStudent.batch}</div>
+              <div><span className="text-muted-foreground">ব্যাচ:</span> {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</div>
             </div>
           )}
 

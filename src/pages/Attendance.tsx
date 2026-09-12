@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, subDays, startOfWeek, startOfMonth } from "date-fns";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { useStudents } from "@/contexts/StudentContext";
 type Range = "today" | "week" | "month" | "custom";
 
 const Attendance = () => {
-  const { entries, attendancePercent } = useAttendance();
+  const { getStats, attendancePercentages } = useAttendance();
   const { batches } = useBatches();
   const { students } = useStudents();
 
@@ -36,43 +36,49 @@ const Attendance = () => {
     return { from, to };
   }, [range, from, to, today, weekStart, monthStart]);
 
-  const pct = (list: typeof entries) => {
-    if (list.length === 0) return 0;
-    return Math.round((list.filter((e) => e.status === "Present").length / list.length) * 100);
-  };
+  const batchId = batchFilter === "all" ? undefined : batchFilter;
 
-  const filterByBatch = (list: typeof entries) =>
-    batchFilter === "all" ? list : list.filter((e) => e.batchId === batchFilter);
+  // Fixed-window stat cards (today/yesterday/week/month), independent of the range picker below.
+  const [quickPct, setQuickPct] = useState({ today: 0, yesterday: 0, week: 0, month: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getStats({ batchId, from: today, to: today }),
+      getStats({ batchId, from: yesterday, to: yesterday }),
+      getStats({ batchId, from: weekStart, to: today }),
+      getStats({ batchId, from: monthStart, to: today }),
+    ])
+      .then(([t, y, w, m]) => { if (!cancelled) setQuickPct({ today: t.pct, yesterday: y.pct, week: w.pct, month: m.pct }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [batchId, today, yesterday, weekStart, monthStart, getStats]);
 
-  const todayList = filterByBatch(entries.filter((e) => e.date === today));
-  const yesterdayList = filterByBatch(entries.filter((e) => e.date === yesterday));
-  const weekList = filterByBatch(entries.filter((e) => e.date >= weekStart && e.date <= today));
-  const monthList = filterByBatch(entries.filter((e) => e.date >= monthStart && e.date <= today));
-
-  // Daily breakdown for table
-  const dailyRows = useMemo(() => {
-    const list = filterByBatch(entries.filter((e) => e.date >= rangeBounds.from && e.date <= rangeBounds.to));
-    const groups = new Map<string, { date: string; batchId: string; present: number; absent: number }>();
-    list.forEach((e) => {
-      const key = `${e.date}__${e.batchId}`;
-      const cur = groups.get(key) || { date: e.date, batchId: e.batchId, present: 0, absent: 0 };
-      if (e.status === "Present") cur.present++; else cur.absent++;
-      groups.set(key, cur);
-    });
-    return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date));
-  }, [entries, rangeBounds, batchFilter]);
+  // Daily breakdown table for the selected range
+  const [dailyRows, setDailyRows] = useState<{ date: string; batchId: string; present: number; absent: number }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getStats({ batchId, from: rangeBounds.from, to: rangeBounds.to })
+      .then((data) => { if (!cancelled) setDailyRows(data.daily); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [batchId, rangeBounds, getStats]);
 
   // Top 10 students by attendance % within the range
-  const topStudents = useMemo(() => {
-    const ids = batchFilter === "all"
-      ? students.map((s) => s.id)
-      : (batches.find((b) => b.id === batchFilter)?.studentIds || []);
-    return ids
-      .map((sid) => ({ student: students.find((s) => s.id === sid)!, pct: attendancePercent(sid, rangeBounds.from, rangeBounds.to) }))
-      .filter((x) => x.student)
-      .sort((a, b) => b.pct - a.pct)
-      .slice(0, 10);
-  }, [students, batches, batchFilter, rangeBounds, attendancePercent]);
+  const [topStudents, setTopStudents] = useState<{ studentId: string; pct: number }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    attendancePercentages({ batchId }, rangeBounds.from, rangeBounds.to)
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Object.entries(data)
+          .map(([studentId, pct]) => ({ studentId, pct }))
+          .sort((a, b) => b.pct - a.pct)
+          .slice(0, 10);
+        setTopStudents(rows);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [batchId, rangeBounds, attendancePercentages]);
 
   return (
     <DashboardLayout>
@@ -115,10 +121,10 @@ const Attendance = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${pct(todayList)}%`} />
-          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="গতকালের উপস্থিতি" value={`${pct(yesterdayList)}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="এই সপ্তাহ" value={`${pct(weekList)}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="এই মাস" value={`${pct(monthList)}%`} />
+          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${quickPct.today}%`} />
+          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="গতকালের উপস্থিতি" value={`${quickPct.yesterday}%`} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="এই সপ্তাহ" value={`${quickPct.week}%`} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="এই মাস" value={`${quickPct.month}%`} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -171,18 +177,21 @@ const Attendance = () => {
                 <TableBody>
                   {topStudents.length === 0 ? (
                     <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">কোনো ডাটা নেই</TableCell></TableRow>
-                  ) : topStudents.map((x, i) => (
-                    <TableRow key={x.student.id}>
-                      <TableCell className="font-medium">{i + 1}</TableCell>
-                      <TableCell>{x.student.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{x.student.studentId}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge className={x.pct >= 80 ? "bg-success/10 text-success border-success/20" : x.pct >= 60 ? "bg-warning/10 text-warning border-warning/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
-                          {x.pct}%
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  ) : topStudents.map((x, i) => {
+                    const student = students.find((s) => s.id === x.studentId);
+                    return (
+                      <TableRow key={x.studentId}>
+                        <TableCell className="font-medium">{i + 1}</TableCell>
+                        <TableCell>{student?.name || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{student?.studentId || "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge className={x.pct >= 80 ? "bg-success/10 text-success border-success/20" : x.pct >= 60 ? "bg-warning/10 text-warning border-warning/20" : "bg-destructive/10 text-destructive border-destructive/20"}>
+                            {x.pct}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

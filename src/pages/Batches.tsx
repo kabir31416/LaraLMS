@@ -1,53 +1,76 @@
 import { useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Pencil, Trash2, MoreVertical, UserPlus, Search, ArrowLeft, X } from "lucide-react";
+import { Plus, Pencil, Trash2, MoreVertical, UserPlus, Search, ArrowLeft, X, ArrowRightLeft } from "lucide-react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import type { Batch } from "@/types/batch";
+import type { Student } from "@/types/student";
 import { BatchForm } from "@/components/batches/BatchForm";
 import { AssignStudentsDialog } from "@/components/batches/AssignStudentsDialog";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 const Batches = () => {
-  const { batches, deleteBatch, removeStudent } = useBatches();
+  const { batches, deleteBatch } = useBatches();
   const { staff, getStaff } = useStaff();
-  const { students } = useStudents();
+  const { students, withdrawStudent } = useStudents();
+  const { getCourse } = useAcademic();
   const [search, setSearch] = useState("");
   const [filterDirector, setFilterDirector] = useState("all");
   const [open, setOpen] = useState(false);
   const [editBatch, setEditBatch] = useState<Batch | null>(null);
   const [assignFor, setAssignFor] = useState<string | null>(null);
   const [openBatchId, setOpenBatchId] = useState<string | null>(null);
+  const [transferStudent, setTransferStudentTarget] = useState<Student | null>(null);
 
   const directors = staff.filter((s) => s.staffType === "Batch Director");
+  const courseName = (id?: string) => getCourse(id || "")?.name || "—";
+  const studentCount = (batchId: string) => students.filter((s) => s.batchId === batchId).length;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return batches.filter((b) => {
-      const matchSearch = !q || b.name.toLowerCase().includes(q) || b.course.toLowerCase().includes(q);
+      const matchSearch = !q || b.name.toLowerCase().includes(q) || courseName(b.courseId).toLowerCase().includes(q);
       const matchDir = filterDirector === "all" || b.directorId === filterDirector;
       return matchSearch && matchDir;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches, search, filterDirector]);
 
   const directorName = (id?: string) => (id ? getStaff(id)?.name || "—" : "—");
 
-  const handleDelete = (id: string) => {
-    deleteBatch(id);
-    toast.success("ব্যাচ মুছে ফেলা হয়েছে");
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteBatch(id);
+      toast.success("ব্যাচ মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
+  };
+
+  const handleWithdraw = async (studentId: string) => {
+    try {
+      await withdrawStudent(studentId);
+      toast.success("শিক্ষার্থী সরানো হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সরাতে ব্যর্থ হয়েছে");
+    }
   };
 
   const openBatch = batches.find((b) => b.id === openBatchId);
-  const openBatchStudents = openBatch ? students.filter((s) => openBatch.studentIds.includes(s.id)) : [];
+  const openBatchStudents = openBatch ? students.filter((s) => s.batchId === openBatch.id) : [];
 
   if (openBatch) {
     return (
@@ -60,7 +83,7 @@ const Batches = () => {
             <div className="flex-1">
               <h1 className="text-2xl font-bold">{openBatch.name}</h1>
               <p className="text-sm text-muted-foreground">
-                {openBatch.course} · {openBatch.batchTime} · রুম {openBatch.roomNumber || "—"} · ডিরেক্টর: {directorName(openBatch.directorId)}
+                {courseName(openBatch.courseId)} · {openBatch.batchTime} · রুম {openBatch.roomNumber || "—"} · ডিরেক্টর: {directorName(openBatch.directorId)}
               </p>
             </div>
             <Button onClick={() => setAssignFor(openBatch.id)}>
@@ -80,31 +103,40 @@ const Batches = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>আইডি</TableHead>
+                  <TableHead>রোল</TableHead>
                   <TableHead>নাম</TableHead>
                   <TableHead>মোবাইল</TableHead>
                   <TableHead>কোর্স</TableHead>
-                  <TableHead className="w-[100px] text-right">অপসারণ</TableHead>
+                  <TableHead className="w-[140px] text-right">অ্যাকশন</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {openBatchStudents.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-10">কোনো শিক্ষার্থী যোগ করা হয়নি</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">কোনো শিক্ষার্থী যোগ করা হয়নি</TableCell></TableRow>
                 ) : (
                   openBatchStudents.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-mono text-xs text-muted-foreground">{s.studentId}</TableCell>
+                      <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell>{s.mobile}</TableCell>
                       <TableCell>{s.course}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right space-x-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="অন্য ব্যাচে স্থানান্তর"
+                          onClick={() => setTransferStudentTarget(s)}
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive"
-                          onClick={() => {
-                            removeStudent(openBatch.id, s.id);
-                            toast.success("শিক্ষার্থী সরানো হয়েছে");
-                          }}
+                          title="ব্যাচ থেকে সরান"
+                          onClick={() => handleWithdraw(s.id)}
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -117,6 +149,7 @@ const Batches = () => {
           </Card>
 
           <AssignStudentsDialog open={!!assignFor} onOpenChange={(v) => !v && setAssignFor(null)} batchId={openBatch.id} />
+          <TransferDialog student={transferStudent} onOpenChange={(v) => !v && setTransferStudentTarget(null)} currentBatchId={openBatch.id} />
         </div>
       </DashboardLayout>
     );
@@ -172,13 +205,13 @@ const Batches = () => {
                 filtered.map((b) => (
                   <TableRow key={b.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setOpenBatchId(b.id)}>
                     <TableCell className="font-medium">{b.name}</TableCell>
-                    <TableCell>{b.course}</TableCell>
+                    <TableCell>{courseName(b.courseId)}</TableCell>
                     <TableCell className="text-sm">{b.batchTime}</TableCell>
                     <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{b.days.join(", ") || "—"}</TableCell>
                     <TableCell>{b.roomNumber || "—"}</TableCell>
                     <TableCell>{directorName(b.directorId)}</TableCell>
                     <TableCell className="text-center">
-                      <Badge variant="outline">{b.studentIds.length}</Badge>
+                      <Badge variant="outline">{studentCount(b.id)}</Badge>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
@@ -207,6 +240,75 @@ const Batches = () => {
     </DashboardLayout>
   );
 };
+
+/** Batch transfer — Phase 1 §3/§14: moves a student to a new batch while keeping every historical record exactly where it was. */
+function TransferDialog({
+  student,
+  onOpenChange,
+  currentBatchId,
+}: {
+  student: Student | null;
+  onOpenChange: (v: boolean) => void;
+  currentBatchId: string;
+}) {
+  const { batches } = useBatches();
+  const { transferStudent } = useStudents();
+  const [toBatchId, setToBatchId] = useState("");
+  const [reason, setReason] = useState("");
+  const [newRoll, setNewRoll] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const otherBatches = batches.filter((b) => b.id !== currentBatchId);
+
+  const submit = async () => {
+    if (!student) return;
+    if (!toBatchId) { toast.error("গন্তব্য ব্যাচ নির্বাচন করুন"); return; }
+    if (!reason.trim()) { toast.error("স্থানান্তরের কারণ লিখুন"); return; }
+    setSubmitting(true);
+    try {
+      await transferStudent(student.id, toBatchId, reason.trim(), newRoll.trim() || undefined);
+      toast.success(`${student.name}-কে স্থানান্তর করা হয়েছে`);
+      onOpenChange(false);
+      setToBatchId(""); setReason(""); setNewRoll("");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "স্থানান্তর ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!student} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>ব্যাচ স্থানান্তর — {student?.name}</DialogTitle></DialogHeader>
+        <div className="space-y-3 pt-2">
+          <div className="space-y-1.5">
+            <Label>গন্তব্য ব্যাচ *</Label>
+            <Select value={toBatchId} onValueChange={setToBatchId}>
+              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+              <SelectContent>
+                {otherBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>নতুন রোল নম্বর (ঐচ্ছিক)</Label>
+            <Input value={newRoll} onChange={(e) => setNewRoll(e.target.value)} placeholder={student?.rollNumber || ""} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>স্থানান্তরের কারণ *</Label>
+            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
+          </div>
+          <p className="text-xs text-muted-foreground">পূর্বের ব্যাচের উপস্থিতি, ফলাফল ও পেমেন্ট রেকর্ড অপরিবর্তিত থাকবে।</p>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={submit} disabled={submitting}>{submitting ? "স্থানান্তর হচ্ছে..." : "স্থানান্তর করুন"}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function StatBox({ label, value }: { label: string; value: string }) {
   return (

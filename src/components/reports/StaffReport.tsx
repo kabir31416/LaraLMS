@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useStaff } from "@/contexts/StaffContext";
@@ -10,19 +11,27 @@ import { format, subDays } from "date-fns";
 export default function StaffReport() {
   const { staff } = useStaff();
   const { batches } = useBatches();
-  const { entries } = useAttendance();
+  const { getStats } = useAttendance();
   const from = format(subDays(new Date(), 30), "yyyy-MM-dd");
 
+  const [pctByStaffId, setPctByStaffId] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const directors = staff.filter((s) => s.staffType === "Batch Director");
+    let cancelled = false;
+    Promise.all(
+      directors.map(async (s) => {
+        const batchIds = batches.filter((b) => b.directorId === s.id).map((b) => b.id);
+        if (batchIds.length === 0) return [s.id, "—"] as const;
+        const data = await getStats({ batchIds, from, to: format(new Date(), "yyyy-MM-dd") });
+        return [s.id, data.present + data.absent ? `${data.pct}%` : "—"] as const;
+      }),
+    ).then((entries) => { if (!cancelled) setPctByStaffId(Object.fromEntries(entries)); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [staff, batches, from, getStats]);
+
   const headers = ["নাম", "ধরন", "মোবাইল", "বেতন", "ব্যাচ উপস্থিতি (৩০দিন)"];
-  const rows = staff.map((s) => {
-    let pct: string | number = "—";
-    if (s.staffType === "Batch Director") {
-      const myBatchIds = new Set(batches.filter((b) => b.directorId === s.id).map((b) => b.id));
-      const list = entries.filter((e) => myBatchIds.has(e.batchId) && e.date >= from);
-      pct = list.length ? `${Math.round((list.filter((e) => e.status === "Present").length / list.length) * 100)}%` : "—";
-    }
-    return [s.name, STAFF_TYPE_LABELS[s.staffType], s.mobile, s.salary, pct];
-  });
+  const rows = staff.map((s) => [s.name, STAFF_TYPE_LABELS[s.staffType], s.mobile, s.salary, pctByStaffId[s.id] ?? "—"]);
 
   return (
     <div className="space-y-4">

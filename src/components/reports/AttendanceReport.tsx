@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { ReportToolbar } from "./ReportToolbar";
 import { format, subDays } from "date-fns";
 
 export default function AttendanceReport() {
-  const { entries } = useAttendance();
+  const { getStats, getByStudentStats } = useAttendance();
   const { batches } = useBatches();
   const { students } = useStudents();
 
@@ -27,31 +27,30 @@ export default function AttendanceReport() {
     return { actualFrom: from, actualTo: to };
   }, [range, from, to]);
 
-  const filtered = useMemo(() => entries.filter((e) => {
-    if (batch !== "all" && e.batchId !== batch) return false;
-    if (actualFrom && e.date < actualFrom) return false;
-    if (actualTo && e.date > actualTo) return false;
-    return true;
-  }), [entries, batch, actualFrom, actualTo]);
+  const batchId = batch === "all" ? undefined : batch;
 
-  const present = filtered.filter((e) => e.status === "Present").length;
-  const absent = filtered.filter((e) => e.status === "Absent").length;
-  const pct = filtered.length ? Math.round((present / filtered.length) * 100) : 0;
+  const [summary, setSummary] = useState({ present: 0, absent: 0, pct: 0 });
+  const [perStudentRaw, setPerStudentRaw] = useState<{ studentId: string; present: number; absent: number; pct: number }[]>([]);
 
-  // per-student aggregate
-  const perStudent = useMemo(() => {
-    const map = new Map<string, { p: number; a: number }>();
-    filtered.forEach((e) => {
-      const v = map.get(e.studentId) || { p: 0, a: 0 };
-      if (e.status === "Present") v.p++; else v.a++;
-      map.set(e.studentId, v);
-    });
-    return Array.from(map.entries()).map(([sid, v]) => {
-      const s = students.find((x) => x.id === sid);
-      const total = v.p + v.a;
-      return { name: s?.name || sid, sid: s?.studentId || sid, present: v.p, absent: v.a, pct: total ? Math.round((v.p / total) * 100) : 0 };
-    }).sort((a, b) => b.pct - a.pct);
-  }, [filtered, students]);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getStats({ batchId, from: actualFrom, to: actualTo }),
+      getByStudentStats({ batchId, from: actualFrom, to: actualTo }),
+    ])
+      .then(([stats, byStudent]) => {
+        if (cancelled) return;
+        setSummary({ present: stats.present, absent: stats.absent, pct: stats.pct });
+        setPerStudentRaw(byStudent);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [batchId, actualFrom, actualTo, getStats, getByStudentStats]);
+
+  const perStudent = useMemo(() => perStudentRaw.map((r) => {
+    const s = students.find((x) => x.id === r.studentId);
+    return { name: s?.name || r.studentId, sid: s?.studentId || r.studentId, present: r.present, absent: r.absent, pct: r.pct };
+  }), [perStudentRaw, students]);
 
   const headers = ["শিক্ষার্থী", "Student ID", "উপস্থিত", "অনুপস্থিত", "%"];
   const rows = perStudent.map((r) => [r.name, r.sid, r.present, r.absent, `${r.pct}%`]);
@@ -79,9 +78,9 @@ export default function AttendanceReport() {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিতি %</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{pct}%</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-success">{present}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">অনুপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-destructive">{absent}</CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিতি %</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{summary.pct}%</CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-success">{summary.present}</CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">অনুপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-destructive">{summary.absent}</CardContent></Card>
       </div>
 
       <div className="flex justify-end"><ReportToolbar data={{ filename: "attendance-report", title: "উপস্থিতি রিপোর্ট", headers, rows }} /></div>

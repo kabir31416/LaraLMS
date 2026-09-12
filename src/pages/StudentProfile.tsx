@@ -14,12 +14,14 @@ import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { usePayments } from "@/contexts/PaymentContext";
 
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudent, getPayments, getAttendance, getResults } = useStudents();
-  const { getBatchByStudent } = useBatches();
+  const { getStudent, getAttendance, getResults } = useStudents();
+  const { getPayments } = usePayments();
+  const { batches } = useBatches();
   const { getStaff } = useStaff();
   const [editOpen, setEditOpen] = useState(false);
 
@@ -81,10 +83,11 @@ const StudentProfile = () => {
                   <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {student.address}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
+                  {student.rollNumber && <Badge variant="outline">রোল: {student.rollNumber}</Badge>}
                   <Badge variant="outline">{student.class}</Badge>
                   <Badge variant="outline">{student.course}</Badge>
                   {(() => {
-                    const b = getBatchByStudent(student.id);
+                    const b = batches.find((x) => x.id === student.batchId);
                     return b ? (
                       <>
                         <Badge variant="outline">{b.name}</Badge>

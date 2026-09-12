@@ -13,6 +13,7 @@ import { useStaff } from "@/contexts/StaffContext";
 import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff } from "@/types/staff";
 import { StaffForm } from "@/components/staff/StaffForm";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 const StaffPage = () => {
   const { staff, deleteStaff } = useStaff();
@@ -31,9 +32,13 @@ const StaffPage = () => {
   }, [staff, search, type]);
 
   const handleEdit = (s: Staff) => { setEditStaff(s); setOpen(true); };
-  const handleDelete = (id: string) => {
-    deleteStaff(id);
-    toast.success("স্টাফ মুছে ফেলা হয়েছে");
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteStaff(id);
+      toast.success("স্টাফ মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   return (

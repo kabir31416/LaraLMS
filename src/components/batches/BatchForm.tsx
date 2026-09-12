@@ -16,6 +16,7 @@ import { useStaff } from "@/contexts/StaffContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { WEEK_DAYS, type Batch, type WeekDay } from "@/types/batch";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 interface Props {
   open: boolean;
@@ -36,10 +37,12 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
   );
   const [days, setDays] = useState<WeekDay[]>(editBatch?.days || []);
 
+  const [submitting, setSubmitting] = useState(false);
+
   function init(b?: Batch | null) {
     return {
       name: b?.name || "",
-      course: b?.course || "",
+      courseId: b?.courseId || "",
       batchTime: b?.batchTime || "",
       roomNumber: b?.roomNumber || "",
       directorId: b?.directorId || "",
@@ -50,28 +53,35 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
   const toggleDay = (d: WeekDay) =>
     setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
 
-  const handleSubmit = () => {
-    if (!form.name || !form.course || !form.batchTime) {
+  const handleSubmit = async () => {
+    if (!form.name || !form.courseId || !form.batchTime) {
       toast.error("নাম, কোর্স এবং সময় প্রয়োজন");
       return;
     }
     const data = {
       name: form.name,
-      course: form.course,
+      courseId: form.courseId,
       batchTime: form.batchTime,
       roomNumber: form.roomNumber,
       directorId: form.directorId || undefined,
       days,
       startDate: startDate ? format(startDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
     };
-    if (isEdit && editBatch) {
-      updateBatch(editBatch.id, data);
-      toast.success("ব্যাচ আপডেট হয়েছে");
-    } else {
-      addBatch(data);
-      toast.success("ব্যাচ তৈরি হয়েছে");
+    setSubmitting(true);
+    try {
+      if (isEdit && editBatch) {
+        await updateBatch(editBatch.id, data);
+        toast.success("ব্যাচ আপডেট হয়েছে");
+      } else {
+        await addBatch(data);
+        toast.success("ব্যাচ তৈরি হয়েছে");
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   };
 
   return (
@@ -87,13 +97,13 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label>কোর্স *</Label>
-            <Select value={form.course} onValueChange={(v) => update("course", v)}>
+            <Select value={form.courseId} onValueChange={(v) => update("courseId", v)}>
               <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
               <SelectContent>
                 {courses.length === 0 ? (
                   <SelectItem value="__empty" disabled>প্রথমে সেটিংস থেকে কোর্স যোগ করুন</SelectItem>
                 ) : (
-                  courses.map((c) => (<SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>))
+                  courses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))
                 )}
               </SelectContent>
             </Select>
@@ -148,8 +158,8 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-          <Button onClick={handleSubmit}>{isEdit ? "আপডেট" : "তৈরি"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : isEdit ? "আপডেট" : "তৈরি"}</Button>
         </div>
       </DialogContent>
     </Dialog>

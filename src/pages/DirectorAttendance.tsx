@@ -29,20 +29,31 @@ const DirectorAttendance = () => {
   const [batchId, setBatchId] = useState<string>(myBatches[0]?.id || "");
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [att, setAtt] = useState<Record<string, "Present" | "Absent">>({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const batch = myBatches.find((b) => b.id === batchId);
-  const batchStudents = students.filter((s) => batch?.studentIds.includes(s.id));
+  const batchStudents = students.filter((s) => s.batchId === batch?.id);
 
   // Load existing for batch+date
   useEffect(() => {
     if (!batch) return;
-    const existing = getByBatchDate(batch.id, date).filter((e) => e.source === "Manual");
-    const map: Record<string, "Present" | "Absent"> = {};
-    batchStudents.forEach((s) => {
-      const found = existing.find((e) => e.studentId === s.id);
-      map[s.id] = found?.status || "Present";
-    });
-    setAtt(map);
+    let cancelled = false;
+    setLoading(true);
+    getByBatchDate(batch.id, date)
+      .then((existing) => {
+        if (cancelled) return;
+        const manual = existing.filter((e) => e.source === "Manual");
+        const map: Record<string, "Present" | "Absent"> = {};
+        batchStudents.forEach((s) => {
+          const found = manual.find((e) => e.studentId === s.id);
+          map[s.id] = found?.status || "Present";
+        });
+        setAtt(map);
+      })
+      .catch(() => toast({ title: "লোড করা যায়নি", description: "উপস্থিতি ডাটা লোড ব্যর্থ হয়েছে" }))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, date]);
 
@@ -52,14 +63,21 @@ const DirectorAttendance = () => {
     setAtt(m);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!batch) return;
-    saveAttendance(
-      batch.id, date,
-      batchStudents.map((s) => ({ studentId: s.id, status: att[s.id] || "Present" })),
-      "Manual",
-    );
-    toast({ title: "সংরক্ষিত", description: `${batch.name} - ${date}` });
+    setSaving(true);
+    try {
+      await saveAttendance(
+        batch.id, date,
+        batchStudents.map((s) => ({ studentId: s.id, status: att[s.id] || "Present" })),
+        "Manual",
+      );
+      toast({ title: "সংরক্ষিত", description: `${batch.name} - ${date}` });
+    } catch {
+      toast({ title: "ব্যর্থ", description: "উপস্থিতি সংরক্ষণ করা যায়নি" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!user || user.role !== "Batch Director") return <Navigate to="/login" replace />;
@@ -106,7 +124,9 @@ const DirectorAttendance = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batchStudents.length === 0 ? (
+                {loading ? (
+                  <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                ) : batchStudents.length === 0 ? (
                   <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
                 ) : batchStudents.map((s) => (
                   <TableRow key={s.id}>
@@ -127,7 +147,7 @@ const DirectorAttendance = () => {
               </TableBody>
             </Table>
             <div className="flex justify-end mt-4">
-              <Button onClick={handleSave}>সংরক্ষণ করুন</Button>
+              <Button onClick={handleSave} disabled={saving || loading}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
             </div>
           </CardContent>
         </Card>
