@@ -37,25 +37,67 @@ interface CreateUserInput {
   linkedStudentId?: string;
 }
 
+function isDuplicateKeyError(err: unknown): boolean {
+  return !!(err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000);
+}
+
+/**
+ * "Create a login for this student/staff" needs to be safe to call more
+ * than once for the same owner — it's invoked automatically at admission
+ * (student.service.ts's syncStudentLogin) *and* manually from the Students
+ * page, and those two can race, or a caller's own "does one exist"
+ * pre-check can simply miss (a bug that shipped here once already: the
+ * pre-check below normalized case but not whitespace, so a value Mongoose's
+ * own schema-level `trim` would have matched slipped past it and hit a raw
+ * duplicate-key error instead of this function's own conflict handling).
+ * So: if the identifier collides with an existing login already linked to
+ * the *same* student/staff, treat it as a reset rather than a failure —
+ * and if a collision still reaches the database uncaught (a genuine race),
+ * translate that into the same clean error rather than leaking Mongo's.
+ */
 export async function createUser(req: Request, input: CreateUserInput): Promise<{ user: UserDoc; tempPassword?: string }> {
   const role = await Role.findById(input.roleId);
   if (!role) throw ApiError.badRequest("Unknown roleId");
 
-  const existing = await User.findOne({ identifier: input.identifier.toLowerCase() });
-  if (existing) throw ApiError.conflict("A user with this identifier already exists");
-
+  const normalizedIdentifier = input.identifier.trim().toLowerCase();
   const tempPassword = input.password ? undefined : generateTempPassword();
   const effectivePassword = input.password ?? tempPassword!;
-  const passwordHash = await hashPassword(effectivePassword);
 
-  const user = await User.create({
-    identifier: input.identifier.toLowerCase(),
-    passwordHash,
-    roleId: input.roleId,
-    linkedStaffId: input.linkedStaffId,
-    linkedStudentId: input.linkedStudentId,
-    mustChangePassword: !input.password,
-  });
+  const existing = await User.findOne({ identifier: normalizedIdentifier });
+  if (existing) {
+    const sameOwner =
+      (!!input.linkedStudentId && String(existing.linkedStudentId ?? "") === input.linkedStudentId) ||
+      (!!input.linkedStaffId && String(existing.linkedStaffId ?? "") === input.linkedStaffId);
+    if (!sameOwner) throw ApiError.conflict("A user with this identifier already exists");
+
+    const before = existing.toObject();
+    existing.passwordHash = await hashPassword(effectivePassword);
+    existing.roleId = input.roleId as never;
+    existing.mustChangePassword = !input.password;
+    existing.failedLoginCount = 0;
+    if (existing.status === "locked") existing.status = "active";
+    await existing.save();
+
+    await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(existing._id), before, after: { identifier: existing.identifier, roleId: existing.roleId } });
+    await notifyStudentCredential(existing.identifier, effectivePassword, input.linkedStudentId);
+    return { user: existing, tempPassword };
+  }
+
+  const passwordHash = await hashPassword(effectivePassword);
+  let user: UserDoc;
+  try {
+    user = await User.create({
+      identifier: normalizedIdentifier,
+      passwordHash,
+      roleId: input.roleId,
+      linkedStaffId: input.linkedStaffId,
+      linkedStudentId: input.linkedStudentId,
+      mustChangePassword: !input.password,
+    });
+  } catch (err) {
+    if (isDuplicateKeyError(err)) throw ApiError.conflict("A user with this identifier already exists");
+    throw err;
+  }
 
   await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(user._id), after: { identifier: user.identifier, roleId: user.roleId } });
   await notifyStudentCredential(user.identifier, effectivePassword, input.linkedStudentId);
@@ -111,7 +153,7 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
   const before = user.toObject();
 
   if (patch.identifier) {
-    const normalized = patch.identifier.toLowerCase();
+    const normalized = patch.identifier.trim().toLowerCase();
     if (normalized !== user.identifier) {
       const clash = await User.findOne({ identifier: normalized, _id: { $ne: user._id } });
       if (clash) throw ApiError.conflict("Another account already uses this identifier");
@@ -123,7 +165,12 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
   user.mustChangePassword = false;
   user.failedLoginCount = 0;
   if (user.status === "locked") user.status = "active";
-  await user.save();
+  try {
+    await user.save();
+  } catch (err) {
+    if (isDuplicateKeyError(err)) throw ApiError.conflict("Another account already uses this identifier");
+    throw err;
+  }
 
   await recordAudit({ req, action: "user.reset-credentials", module: "users", targetCollection: "users", targetId: id, before, after: { identifier: user.identifier } });
   await notifyStudentCredential(user.identifier, patch.password, user.linkedStudentId);
