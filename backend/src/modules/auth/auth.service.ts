@@ -20,10 +20,6 @@ function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
-function isDuplicateKeyError(err: unknown): boolean {
-  return !!(err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000);
-}
-
 async function resolvePermissions(user: UserDoc): Promise<{ role: { id: string; name: string }; permissions: string[] }> {
   const role = await Role.findById(user.roleId);
   if (!role) throw ApiError.internal("User has no valid role");
@@ -94,81 +90,59 @@ export async function login(req: Request, identifier: string, password: string) 
 }
 
 /**
- * Direct Student Portal login: no separately-maintained password at all —
- * a match against the student's own live phone number + Roll Number *is*
- * the credential, checked fresh every time against the Student collection
- * itself. This sidesteps the entire class of bugs a separate hashed
- * User-account password kept hitting (never created, created with a stale
- * value, digit-format mismatches): there's nothing to fall out of sync
- * with, because nothing is stored except the Student record admins
- * already maintain.
- *
- * A linked User account is still ensured behind the scenes (created with a
- * random, never-used password) purely so the rest of the session
- * machinery — access/refresh tokens, RBAC, audit logging — stays exactly
- * the one already used for Admin/Staff, rather than a second parallel
- * system. Its password is never what's checked here.
+ * A Bangladeshi mobile number can be typed as "01XXXXXXXXX" (local, 11
+ * digits — how every Student record in this app stores it) or with a
+ * country code ("+8801XXXXXXXXX" / "8801XXXXXXXXX", 13 digits once
+ * non-digits are stripped). This normalizes an input to the local form so
+ * either typing style matches the stored value, without ever touching the
+ * stored value itself.
  */
-export async function studentLogin(req: Request, phone: string, rollNumber: string) {
-  const genericError = () => ApiError.unauthorized("Invalid credentials");
+function normalizePhoneForLookup(input: string): string {
+  const digits = toAsciiDigits(input).replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("880")) return "0" + digits.slice(3);
+  return digits;
+}
 
-  const normalizedPhone = phone.trim();
+/**
+ * Student Portal login — a pure, read-only lookup. Phone + Roll Number
+ * matching the *same* Student record is the entire credential; there is no
+ * separate password, no login/User account, and this function performs no
+ * database write of any kind. A previous design lazily provisioned a
+ * linked User account behind the scenes so the existing Admin/Staff
+ * session machinery (issueTokens, backed by a User + Role document) could
+ * be reused — but that write path kept surfacing "already exists" whenever
+ * it raced or hit a stale record, which is exactly the class of bug a
+ * read-only design can't have. The access token is signed directly here,
+ * with the fixed default Student permission set (rbac/permissions.ts) —
+ * no Role document lookup either.
+ */
+export async function studentLogin(phone: string, rollNumber: string) {
+  const genericError = () => ApiError.unauthorized("Phone number or roll number is incorrect");
+
+  const normalizedPhone = normalizePhoneForLookup(phone);
   const normalizedRoll = toAsciiDigits(rollNumber).trim();
   if (!normalizedPhone || !normalizedRoll) throw genericError();
 
-  const student = await Student.findOne({ phone: normalizedPhone });
-  if (!student || !student.currentRollNumber) throw genericError();
-  if (toAsciiDigits(student.currentRollNumber).trim() !== normalizedRoll) throw genericError();
+  const student = await Student.findOne({ phone: normalizedPhone, currentRollNumber: normalizedRoll });
+  if (!student) throw genericError();
 
-  let role = await Role.findOne({ name: "student" });
-  if (!role) {
-    try {
-      role = await Role.create({ name: "student", permissions: DEFAULT_ROLE_PERMISSIONS.student, isSystem: true });
-    } catch (err) {
-      // A concurrent first-login raced this same creation and won —
-      // reuse what it created rather than leaking a raw duplicate-key error.
-      if (!isDuplicateKeyError(err)) throw err;
-      role = await Role.findOne({ name: "student" });
-      if (!role) throw err;
-    }
-  }
+  const accessToken = signAccessToken({
+    sub: String(student._id),
+    roleId: "",
+    role: "student",
+    permissions: DEFAULT_ROLE_PERMISSIONS.student,
+    studentId: String(student._id),
+  });
 
-  let user = await User.findOne({ linkedStudentId: student._id });
-  if (!user) {
-    const identifier = normalizedPhone.toLowerCase();
-    const clash = await User.findOne({ identifier });
-    if (clash) {
-      // Identifier taken by an account not linked to this student (e.g. a
-      // shared family phone used for a sibling/staff login already) — a
-      // real conflict for an admin to resolve, not something to paper over.
-      throw ApiError.conflict("This phone number is already linked to a different account — contact an administrator");
-    }
-    try {
-      user = await User.create({
-        identifier,
-        passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
-        roleId: role._id,
-        linkedStudentId: student._id,
-        mustChangePassword: false,
-      });
-    } catch (err) {
-      if (!isDuplicateKeyError(err)) throw err;
-      // Same race as above: another concurrent login attempt (a double
-      // click, a retried request) created this account a moment earlier.
-      const existing = await User.findOne({ identifier });
-      if (existing && String(existing.linkedStudentId || "") === String(student._id)) {
-        user = existing;
-      } else {
-        throw ApiError.conflict("This phone number is already linked to a different account — contact an administrator");
-      }
-    }
-  }
-
-  if (user.status === "locked") throw ApiError.forbidden("This account is locked — contact an administrator");
-
-  const result = await issueTokens(req, user);
-  await recordAudit({ req, action: "auth.student-login", module: "auth", targetCollection: "users", targetId: String(user._id) });
-  return result;
+  return {
+    accessToken,
+    student: {
+      id: String(student._id),
+      name: student.name,
+      phone: student.phone,
+      currentRollNumber: student.currentRollNumber,
+    },
+  };
 }
 
 export async function refresh(req: Request, rawRefreshToken: string) {

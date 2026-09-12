@@ -25,11 +25,11 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, { accessToken, user });
 });
 
+/** Pure read-only lookup — no refresh cookie: there is no server-side session record to rotate. */
 export const studentLogin = asyncHandler(async (req: Request, res: Response) => {
   const { phone, rollNumber } = req.body;
-  const { accessToken, refreshToken, user } = await authService.studentLogin(req, phone, rollNumber);
-  setRefreshCookie(res, refreshToken);
-  sendSuccess(res, { accessToken, user });
+  const { accessToken, student } = await authService.studentLogin(phone, rollNumber);
+  sendSuccess(res, { accessToken, student });
 });
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {

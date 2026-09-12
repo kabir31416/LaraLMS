@@ -25,9 +25,19 @@ interface LoginResponse {
   };
 }
 
+interface StudentLoginResponse {
+  accessToken: string;
+  student: {
+    id: string;
+    name: string;
+    phone: string;
+    currentRollNumber?: string;
+  };
+}
+
 interface AuthContextType {
   user: AuthUser | null;
-  /** True while the app is trying to restore a session from the refresh cookie on first load. */
+  /** True while the app is trying to restore a session from the refresh cookie (or, for a student, localStorage) on first load. */
   initializing: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   studentLogin: (phone: string, rollNumber: string) => Promise<void>;
@@ -36,6 +46,9 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/** Student sessions have no server-side refresh record (auth.service.ts's studentLogin writes nothing) — persisted here instead so a reload doesn't log them out. */
+const STUDENT_SESSION_KEY = "laralms_student_session";
 
 /**
  * Backend role names (Phase 2 §14, "module:action" / lowercase-snake convention)
@@ -63,6 +76,17 @@ function toAuthUser(u: LoginResponse["user"]): AuthUser {
   };
 }
 
+function studentToAuthUser(s: StudentLoginResponse["student"]): AuthUser {
+  return {
+    id: s.id,
+    identifier: s.phone,
+    studentId: s.id,
+    name: s.name,
+    role: "Student",
+    mustChangePassword: false,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [initializing, setInitializing] = useState(true);
@@ -70,18 +94,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     setAccessToken(null);
     setUser(null);
+    localStorage.removeItem(STUDENT_SESSION_KEY);
     api.post("/auth/logout").catch(() => {
-      /* best-effort — the cookie may already be gone */
+      /* best-effort — the cookie may already be gone (or never existed, for a student session) */
     });
   }, []);
 
-  // Silent-refresh on first load: the access token lives only in memory, so a
-  // hard reload has none — but the httpOnly refresh cookie may still be valid.
+  // Silent-restore on first load: the access token lives only in memory, so
+  // a hard reload has none. Admin/Staff restore via the httpOnly refresh
+  // cookie; a Student session has no server-side record to restore from at
+  // all (studentLogin writes nothing), so it's restored from localStorage
+  // instead — if the stored access token has since expired, the first
+  // authenticated request 401s and onSessionExpired below logs it out.
   useEffect(() => {
-    onSessionExpired(() => setUser(null));
+    onSessionExpired(() => {
+      setUser(null);
+      localStorage.removeItem(STUDENT_SESSION_KEY);
+    });
 
     let cancelled = false;
     (async () => {
+      const storedStudent = localStorage.getItem(STUDENT_SESSION_KEY);
+      if (storedStudent) {
+        try {
+          const { accessToken, user: storedUser } = JSON.parse(storedStudent) as { accessToken: string; user: AuthUser };
+          setAccessToken(accessToken);
+          setUser(storedUser);
+        } catch {
+          localStorage.removeItem(STUDENT_SESSION_KEY);
+        }
+        setInitializing(false);
+        return;
+      }
+
       try {
         const res = await api.post<LoginResponse>("/auth/refresh");
         if (cancelled) return;
@@ -106,14 +151,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
-   * Student Portal login: no separate password to remember or keep in
-   * sync — a phone number + Roll Number match against the live Student
-   * record *is* the credential (auth.service.ts's studentLogin).
+   * Student Portal login: a phone number + Roll Number match against the
+   * student's own record *is* the credential — no password, no login
+   * account (auth.service.ts's studentLogin is a pure read-only lookup).
    */
   const studentLogin = useCallback(async (phone: string, rollNumber: string) => {
-    const res = await api.post<LoginResponse>("/auth/student-login", { phone, rollNumber });
+    const res = await api.post<StudentLoginResponse>("/auth/student-login", { phone, rollNumber });
     setAccessToken(res.accessToken);
-    setUser(toAuthUser(res.user));
+    const authUser = studentToAuthUser(res.student);
+    setUser(authUser);
+    localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify({ accessToken: res.accessToken, user: authUser }));
   }, []);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {

@@ -1,11 +1,15 @@
 /**
  * One-shot health check for the Student Portal login path. Since
- * auth.service.ts's studentLogin checks phone + Roll Number directly
- * against the live Student record and creates its own linked User account
- * lazily on first successful login, the two things that actually matter
- * are: does the "student" system Role exist (created by `npm run seed`,
- * needed to assign correct permissions to that lazily-created account),
- * and do students actually have both a phone number and a Roll Number set.
+ * auth.service.ts's studentLogin is a pure read-only lookup against the
+ * Student collection (no Role or User document is read or written at
+ * login time — permissions are the fixed default set in
+ * modules/rbac/permissions.ts), the only thing that determines whether a
+ * student can log in is whether their record has both a phone number and a
+ * Roll Number set.
+ *
+ * Roles are still listed below purely as a general sanity check (Admin/
+ * Staff logins do still depend on them) — a missing "student" Role has no
+ * effect on Student Portal login.
  *
  * Usage: npm run check-setup
  */
@@ -16,23 +20,15 @@ import { Student } from "../modules/students/student.model";
 async function main() {
   await connectDB();
 
-  console.log("\n=== Roles ===");
+  console.log("\n=== Roles (Admin/Staff logins only — irrelevant to Student Portal login) ===");
   const roles = await Role.find({});
   if (roles.length === 0) {
     console.log('❌ কোনো Role-ই নেই। "npm run seed" চালান — এটা admin/batch_director/student তিনটা role এবং প্রথম Admin ইউজার তৈরি করবে।');
   } else {
     for (const r of roles) console.log(`  - "${r.name}" (isSystem: ${r.isSystem}, permissions: ${r.permissions.length})`);
   }
-  const studentRole = roles.find((r) => r.name === "student");
-  if (!studentRole) {
-    console.log(
-      '\n❌ "student" নামে কোনো Role পাওয়া যায়নি — একজন student প্রথমবার লগইন করার সময় এটা লাগবে সঠিক permission সেট করতে। "npm run seed" চালান।',
-    );
-  } else {
-    console.log('\n✅ "student" role পাওয়া গেছে।');
-  }
 
-  console.log("\n=== Students ===");
+  console.log("\n=== Students (this is all that matters for Student Portal login) ===");
   const totalStudents = await Student.countDocuments();
   const withCreds = await Student.countDocuments({ phone: { $exists: true, $ne: "" }, currentRollNumber: { $exists: true, $ne: "" } });
   console.log(`  মোট student: ${totalStudents}`);
