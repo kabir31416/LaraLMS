@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -71,6 +71,9 @@ const Login = () => {
               {submitting ? "লগইন হচ্ছে..." : "লগইন"}
             </Button>
           </form>
+          <p className="text-center text-sm text-muted-foreground mt-4">
+            <Link to="/info" className="text-primary hover:underline">শিক্ষার্থীর তথ্য খুঁজুন</Link>
+          </p>
         </CardContent>
       </Card>
     </main>
