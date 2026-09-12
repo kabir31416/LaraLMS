@@ -1,0 +1,33 @@
+import { NextFunction, Request, Response } from "express";
+import { ApiError } from "../utils/ApiError";
+
+/**
+ * Permission-key RBAC gate — answers "can this role do this action at all."
+ * Scope ("on which records") is a separate concern applied inside each
+ * module's service, e.g. filtering batches by directorId — Phase 2 §14.
+ */
+export function requirePermission(...anyOf: string[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    const has = req.user.permissions.includes("*") || anyOf.some((p) => req.user!.permissions.includes(p));
+    if (!has) return next(ApiError.forbidden(`Missing permission: ${anyOf.join(" or ")}`));
+    next();
+  };
+}
+
+export function requireRole(...roles: string[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    if (!roles.includes(req.user.role)) return next(ApiError.forbidden(`Requires role: ${roles.join(" or ")}`));
+    next();
+  };
+}
+
+/** For self-service routes like PATCH /students/:id/self — passes if the caller IS the resource, regardless of permissions. */
+export function requireSelf(paramName: string, resourceKey: "studentId" | "staffId" = "studentId") {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    if (req.user[resourceKey] && req.user[resourceKey] === req.params[paramName]) return next();
+    return next(ApiError.forbidden("You may only access your own record"));
+  };
+}
