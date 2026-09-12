@@ -6,6 +6,7 @@ import { buildMeta, buildSearchFilter, parsePagination } from "../../common/util
 import { generateRegistrationId } from "../../common/utils/idGenerators";
 import * as guardianService from "../guardians/guardian.service";
 import { logger } from "../../logger/logger";
+import { toAsciiDigits } from "../../common/utils/digits";
 
 interface GuardianInline {
   guardianName?: string;
@@ -171,16 +172,17 @@ async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
     const role = await Role.findOne({ name: "student" });
     if (!role) return;
 
+    const password = toAsciiDigits(doc.currentRollNumber);
     const existing = await User.findOne({ linkedStudentId: doc._id });
     if (existing) {
       await userService.resetCredentials(req, String(existing._id), {
         identifier: doc.phone,
-        password: doc.currentRollNumber,
+        password,
       });
     } else {
       await userService.createUser(req, {
         identifier: doc.phone,
-        password: doc.currentRollNumber,
+        password,
         roleId: String(role._id),
         linkedStudentId: String(doc._id),
       });

@@ -6,6 +6,7 @@ import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import type { Student } from "@/types/student";
+import { toAsciiDigits } from "@/lib/format";
 
 interface Props {
   student: Student | null;
@@ -50,7 +51,7 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
       }
       await api.post("/users", {
         identifier: student.mobile,
-        password: student.rollNumber,
+        password: toAsciiDigits(student.rollNumber),
         roleId: studentRoleId,
         linkedStudentId: student.id,
       });
@@ -69,6 +70,7 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
 
   if (!student) return null;
   const missing = !student.mobile || !student.rollNumber;
+  const loginPassword = student.rollNumber ? toAsciiDigits(student.rollNumber) : "";
 
   return (
     <Dialog open={!!student} onOpenChange={onOpenChange}>
@@ -90,12 +92,13 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">পাসওয়ার্ড (রোল নম্বর)</p>
-                  <p className="font-mono font-medium">{student.rollNumber}</p>
+                  <p className="text-xs text-muted-foreground">পাসওয়ার্ড (রোল নম্বর, ইংরেজি সংখ্যায়)</p>
+                  <p className="font-mono font-medium">{loginPassword}</p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => copy(student.rollNumber || "")}><Copy className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" variant="ghost" onClick={() => copy(loginPassword)}><Copy className="h-3.5 w-3.5" /></Button>
               </div>
               <p className="text-xs text-muted-foreground">
+                রোল নম্বর বাংলা সংখ্যায় (যেমন ০৭) দেওয়া থাকলেও লগইন পাসওয়ার্ড সবসময় ইংরেজি সংখ্যায় (07) — এখানে যা দেখানো হচ্ছে ঠিক তা-ই টাইপ করতে হবে।
                 নিচের বাটনে ক্লিক করলে এই তথ্য দিয়ে লগইন অ্যাকাউন্ট তৈরি/আপডেট হবে এবং শিক্ষার্থীর মোবাইলে SMS পাঠানো হবে।
               </p>
             </>
