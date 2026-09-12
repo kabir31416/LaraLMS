@@ -170,7 +170,13 @@ async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
     const userService = await import("../users/user.service");
 
     const role = await Role.findOne({ name: "student" });
-    if (!role) return;
+    if (!role) {
+      logger.warn(
+        { studentId: String(doc._id) },
+        'student login auto-sync skipped: no "student" role exists — run `npm run seed` (or `npm run check-setup` to confirm)',
+      );
+      return;
+    }
 
     const password = toAsciiDigits(doc.currentRollNumber);
     const existing = await User.findOne({ linkedStudentId: doc._id });
@@ -244,11 +250,38 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
   return withGuardian(doc);
 }
 
+/**
+ * The general edit form's body (createStudentSchema.partial(), via
+ * updateStudentSchema) includes `rollNumber` for symmetry with the create
+ * form, but the schema field is `currentRollNumber` — a plain
+ * Object.assign(doc, patch) silently drops it onto a non-schema path that
+ * Mongoose never persists. Editing Roll Number from the normal "সম্পাদনা"
+ * form looked like it worked (200 OK, no error) but never actually changed
+ * anything. Bridges the rename and reuses updateRoll()'s own collision
+ * scope-check so both entry points enforce the same uniqueness rule.
+ */
+async function applyRollNumberIfPresent(doc: StudentDoc, patch: Record<string, unknown>): Promise<void> {
+  if (typeof patch.rollNumber !== "string" || patch.rollNumber === doc.currentRollNumber) return;
+  const rollNumber = patch.rollNumber;
+  if (doc.currentBatchId) {
+    const { getSettings } = await import("../settings/settings.service");
+    const settings = await getSettings();
+    const scopeFilter: Record<string, unknown> = { currentRollNumber: rollNumber, _id: { $ne: doc._id } };
+    if (settings.rollNumberScope !== "global") scopeFilter.currentBatchId = doc.currentBatchId;
+    const clash = await Student.findOne(scopeFilter);
+    if (clash) throw ApiError.conflict(`Roll number "${rollNumber}" is already in use`);
+  }
+  doc.currentRollNumber = rollNumber;
+}
+
 async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, unknown> & GuardianInline) {
   const before = doc.toObject();
 
+  await applyRollNumberIfPresent(doc, patch);
+  const { rollNumber: _rollNumber, ...rest } = patch;
+
   const feeFieldsTouched = ["feeType", "totalCourseFee", "admissionFee", "monthlyFee", "courseDuration", "discount", "paid"].some((k) => k in patch);
-  Object.assign(doc, patch);
+  Object.assign(doc, rest);
   if (feeFieldsTouched) {
     const fees = computeFees({
       feeType: doc.feeType,
@@ -276,7 +309,12 @@ export async function update(req: Request, id: string, patch: Record<string, unk
   const doc = await getDocOrThrow(id);
   const before = await applyPatch(req, doc, patch);
   await recordAudit({ req, action: "student.update", module: "students", targetCollection: "students", targetId: id, before, after: doc.toObject() });
-  if ("phone" in patch) await syncStudentLogin(req, doc);
+  // The full Admission edit form sends rollNumber through this same general
+  // PATCH (createStudentSchema's rollNumber is included in updateStudentSchema),
+  // not through the dedicated PATCH /:id/roll — so a Roll Number set or
+  // changed here needs the same login re-sync "phone" already gets, or a
+  // student edited this way never gets a login at all.
+  if ("phone" in patch || "rollNumber" in patch) await syncStudentLogin(req, doc);
   return withGuardian(doc);
 }
 

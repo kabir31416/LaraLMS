@@ -28,12 +28,19 @@ async function main() {
 
   if (!user) {
     console.log(`❌ এই identifier দিয়ে কোনো লগইন অ্যাকাউন্ট পাওয়া যায়নি — মানে "তৈরি/রিসেট করুন" বাটনটা আসলে এই identifier দিয়ে কখনো সফল হয়নি।\n`);
-    const allUsers = await User.find({}).select("identifier status linkedStudentId").sort({ createdAt: -1 }).limit(20);
+    const allUsers = await User.find({}).select("identifier status linkedStudentId linkedStaffId").sort({ createdAt: -1 }).limit(20);
     if (allUsers.length === 0) {
       console.log("ডাটাবেসে কোনো User রেকর্ডই নেই।");
     } else {
       console.log("ডাটাবেসে এই মুহূর্তে থাকা সব লগইন identifier (সাম্প্রতিক ২০টি):");
-      for (const u of allUsers) console.log(`  - "${u.identifier}" (status: ${u.status}, linkedStudentId: ${u.linkedStudentId || "—"})`);
+      for (const u of allUsers) {
+        const link = u.linkedStudentId ? `student:${u.linkedStudentId}` : u.linkedStaffId ? `staff:${u.linkedStaffId}` : "কোনো লিংক নেই";
+        console.log(`  - "${u.identifier}" (status: ${u.status}, ${link})`);
+      }
+      console.log(
+        '\nℹ️  যদি "01712345678" বা "07" এর মতো উদাহরণ-সংখ্যা দিয়ে টেস্ট করে থাকেন — সেগুলো শুধু placeholder ছিল। ' +
+          "npm run list-logins চালিয়ে আপনার ডাটাবেসের আসল student-দের ফোন/রোল নম্বর দেখুন।",
+      );
     }
     await disconnectDB();
     process.exit(0);
