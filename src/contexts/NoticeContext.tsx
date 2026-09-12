@@ -1,89 +1,79 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Notice } from "@/types/notice";
+import { api } from "@/lib/apiClient";
 import { format } from "date-fns";
 
-const KEY = "lara-notices-v1";
-
-function seed(): Notice[] {
-  const today = format(new Date(), "yyyy-MM-dd");
-  return [
-    {
-      id: "n1",
-      title: "মাসিক পরীক্ষার সময়সূচি প্রকাশিত",
-      description: "আগামী ০১ তারিখ থেকে মাসিক পরীক্ষা শুরু হবে। সকল শিক্ষার্থীকে প্রস্তুতি নিতে অনুরোধ করা হলো।",
-      type: "All",
-      publishDate: today,
-      priority: "Important",
-      pinned: true,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "n2",
-      title: "বিজ্ঞান কোর্সের অতিরিক্ত ক্লাস",
-      description: "প্রতি বৃহস্পতিবার অতিরিক্ত ক্লাস হবে।",
-      type: "Course",
-      targetId: "c1",
-      publishDate: today,
-      priority: "Normal",
-      pinned: false,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "n3",
-      title: "ব্যাচ ডিরেক্টর মিটিং",
-      description: "আগামী শনিবার দুপুর ১২টায় ব্যাচ ডিরেক্টর মিটিং অনুষ্ঠিত হবে।",
-      type: "Director",
-      publishDate: today,
-      priority: "Urgent",
-      pinned: false,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+/** Notices are now backed by the real API (Phase 3, Module 25). Field names match exactly — no adapter needed. */
+interface ApiNotice {
+  _id: string;
+  title: string;
+  description: string;
+  type: Notice["type"];
+  targetId?: string;
+  publishDate: string;
+  expiryDate?: string;
+  priority: Notice["priority"];
+  pinned: boolean;
+  createdAt: string;
 }
 
-function load(): Notice[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as Notice[];
-  } catch { /* ignore */ }
-  return seed();
+function fromApi(doc: ApiNotice): Notice {
+  return {
+    id: doc._id, title: doc.title, description: doc.description, type: doc.type, targetId: doc.targetId,
+    publishDate: doc.publishDate, expiryDate: doc.expiryDate, priority: doc.priority, pinned: doc.pinned, createdAt: doc.createdAt,
+  };
 }
 
 interface Ctx {
   notices: Notice[];
-  addNotice: (n: Omit<Notice, "id" | "createdAt">) => void;
-  updateNotice: (id: string, n: Partial<Notice>) => void;
-  deleteNotice: (id: string) => void;
-  togglePin: (id: string) => void;
+  loading: boolean;
+  addNotice: (n: Omit<Notice, "id" | "createdAt">) => Promise<Notice>;
+  updateNotice: (id: string, n: Partial<Notice>) => Promise<Notice>;
+  deleteNotice: (id: string) => Promise<void>;
+  togglePin: (id: string) => Promise<Notice>;
 }
 
 const NoticeContext = createContext<Ctx | null>(null);
 
+const LIST_LIMIT = "?limit=100";
+
 export function NoticeProvider({ children }: { children: React.ReactNode }) {
-  const [notices, setNotices] = useState<Notice[]>(() => load());
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refreshNotices = useCallback(async () => {
+    const docs = await api.get<ApiNotice[]>(`/notices${LIST_LIMIT}`);
+    setNotices(docs.map(fromApi));
+  }, []);
 
   useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(notices)); } catch { /* ignore */ }
-  }, [notices]);
+    refreshNotices().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
+  }, [refreshNotices]);
 
-  const addNotice = useCallback((n: Omit<Notice, "id" | "createdAt">) => {
-    const item: Notice = { ...n, id: `n_${Date.now()}`, createdAt: new Date().toISOString() };
-    setNotices((p) => [item, ...p]);
+  const addNotice = useCallback(async (n: Omit<Notice, "id" | "createdAt">): Promise<Notice> => {
+    const created = fromApi(await api.post<ApiNotice>("/notices", n));
+    setNotices((p) => [created, ...p]);
+    return created;
   }, []);
 
-  const updateNotice = useCallback((id: string, n: Partial<Notice>) => {
-    setNotices((p) => p.map((x) => (x.id === id ? { ...x, ...n } : x)));
+  const updateNotice = useCallback(async (id: string, n: Partial<Notice>): Promise<Notice> => {
+    const updated = fromApi(await api.patch<ApiNotice>(`/notices/${id}`, n));
+    setNotices((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
   }, []);
 
-  const deleteNotice = useCallback((id: string) => {
+  const deleteNotice = useCallback(async (id: string) => {
+    await api.del(`/notices/${id}`);
     setNotices((p) => p.filter((x) => x.id !== id));
   }, []);
 
-  const togglePin = useCallback((id: string) => {
-    setNotices((p) => p.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
+  const togglePin = useCallback(async (id: string): Promise<Notice> => {
+    const updated = fromApi(await api.patch<ApiNotice>(`/notices/${id}/toggle-pin`));
+    setNotices((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
   }, []);
 
-  const value = useMemo(() => ({ notices, addNotice, updateNotice, deleteNotice, togglePin }), [notices, addNotice, updateNotice, deleteNotice, togglePin]);
+  const value = useMemo(() => ({ notices, loading, addNotice, updateNotice, deleteNotice, togglePin }), [notices, loading, addNotice, updateNotice, deleteNotice, togglePin]);
 
   return <NoticeContext.Provider value={value}>{children}</NoticeContext.Provider>;
 }

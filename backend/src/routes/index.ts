@@ -20,11 +20,12 @@ import bookRoutes from "../modules/books/book.routes";
 import branchRoutes from "../modules/branches/branch.routes";
 import accountsRoutes from "../modules/accounts/accounts.routes";
 import branchLedgerRoutes from "../modules/accounts/branchLedger.routes";
+import noticeRoutes from "../modules/notices/notice.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
- * Modules still pending (Video Class, Notice, Report Center, Public /info)
- * are added to this same list as each is implemented; see the task tracker.
+ * Modules still pending (Video Class, Report Center, Public /info) are
+ * added to this same list as each is implemented; see the task tracker.
  */
 const router = Router();
 
@@ -49,5 +50,6 @@ router.use("/books", bookRoutes);
 router.use("/branches", branchRoutes);
 router.use("/accounts", accountsRoutes);
 router.use("/branch-ledger", branchLedgerRoutes);
+router.use("/notices", noticeRoutes);
 
 export default router;
