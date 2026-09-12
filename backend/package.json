@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "seed": "ts-node-dev --transpile-only src/scripts/seed.ts",
+    "check-login": "ts-node-dev --transpile-only src/scripts/check-login.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
