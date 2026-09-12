@@ -7,7 +7,8 @@ interface Props {
 }
 
 export function ProtectedRoute({ children, roles }: Props) {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
+  if (initializing) return null; // avoid a flash-redirect to /login while the session cookie is being checked
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) {
     // Director hitting an admin page → send to director dashboard
