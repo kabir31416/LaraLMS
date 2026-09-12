@@ -63,6 +63,7 @@ const DirectorResults = () => {
   const batchStudents = students.filter((s) => s.batchId === batch?.id);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, "Present" | "Absent">>({});
+  const [saving, setSaving] = useState(false);
 
   // Auto: marks entered → Present
   const handleMarks = (sid: string, val: string) => {
@@ -70,28 +71,35 @@ const DirectorResults = () => {
     setAttendance((p) => ({ ...p, [sid]: val.trim() ? "Present" : "Absent" }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!batch || !subjectId || !lectureId || !title.trim()) {
       toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ, সাবজেক্ট, লেকচার ও এক্সাম শিরোনাম দিন।" });
       return;
     }
-    const exam = addExam({ batchId: batch.id, subjectId, lectureId, title, fullMarks, date });
-    saveResults(
-      exam.id,
-      batchStudents.map((s) => ({
-        studentId: s.id,
-        marks: marks[s.id]?.trim() ? Number(marks[s.id]) : null,
-      })),
-    );
-    saveAttendance(
-      batch.id,
-      date,
-      batchStudents.map((s) => ({ studentId: s.id, status: attendance[s.id] || "Absent" })),
-      "Exam",
-      exam.id,
-    );
-    toast({ title: "সংরক্ষিত", description: `${batchStudents.length} জনের রেজাল্ট ও উপস্থিতি সেভ হয়েছে।` });
-    setMarks({}); setAttendance({}); setTitle("");
+    setSaving(true);
+    try {
+      const exam = await addExam({ batchId: batch.id, subjectId, lectureId, title, fullMarks, date });
+      await saveResults(
+        exam.id,
+        batchStudents.map((s) => ({
+          studentId: s.id,
+          marks: marks[s.id]?.trim() ? Number(marks[s.id]) : null,
+        })),
+      );
+      await saveAttendance(
+        batch.id,
+        date,
+        batchStudents.map((s) => ({ studentId: s.id, status: attendance[s.id] || "Absent" })),
+        "Exam",
+        exam.id,
+      );
+      toast({ title: "সংরক্ষিত", description: `${batchStudents.length} জনের রেজাল্ট ও উপস্থিতি সেভ হয়েছে।` });
+      setMarks({}); setAttendance({}); setTitle("");
+    } catch {
+      toast({ title: "ব্যর্থ", description: "রেজাল্ট সংরক্ষণ করা যায়নি" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!user || user.role !== "Batch Director") return <Navigate to="/login" replace />;
@@ -208,7 +216,7 @@ const DirectorResults = () => {
               </TableBody>
             </Table>
             <div className="flex justify-end mt-4">
-              <Button onClick={handleSave}>সংরক্ষণ করুন</Button>
+              <Button onClick={handleSave} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
             </div>
           </CardContent>
         </Card>

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { format } from "date-fns";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,13 +9,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
-import { useAttendance } from "@/contexts/AttendanceContext";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
 
 interface DirectorDashboardSummary {
   totalBatches: number;
   totalStudents: number;
+  todayAttendancePct: number;
+  overallAttendancePct: number;
+  lowAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
+  myExams: { id: string; batchId: string; title: string; fullMarks: number; date: string }[];
   batches: {
     id: string;
     name: string;
@@ -34,12 +36,11 @@ const DirectorDashboard = () => {
   const { batches } = useBatches();
   const { students } = useStudents();
   const { getCourse } = useAcademic();
-  const { entries, exams, attendancePercent } = useAttendance();
 
-  // Module 4: server-side aggregation, scoped to this director's own batches
-  // — accurate roster counts beyond BatchContext/StudentContext's 100-row
-  // list cap. Attendance/exam sections below stay on the mock sources until
-  // Attendance/Exam (Modules 18-20) exist.
+  // Module 4, extended in Modules 18-20: server-side aggregation, scoped to
+  // this director's own batches — accurate roster/attendance beyond
+  // BatchContext/StudentContext's 100-row list cap, and AttendanceContext no
+  // longer caches a global array at all (see its own comment).
   const [summary, setSummary] = useState<DirectorDashboardSummary | null>(null);
   useEffect(() => {
     if (!user || user.role !== "Batch Director") return;
@@ -71,17 +72,10 @@ const DirectorDashboard = () => {
     studentCount: students.filter((s) => s.batchId === b.id).length,
   }));
 
-  const today = format(new Date(), "yyyy-MM-dd");
-  const todayEntries = entries.filter((e) => myBatchIds.has(e.batchId) && e.date === today);
-  const todayPct = todayEntries.length ? Math.round((todayEntries.filter((e) => e.status === "Present").length / todayEntries.length) * 100) : 0;
-  const allMine = entries.filter((e) => myBatchIds.has(e.batchId));
-  const overallPct = allMine.length ? Math.round((allMine.filter((e) => e.status === "Present").length / allMine.length) * 100) : 0;
-
-  const myExams = exams.filter((e) => myBatchIds.has(e.batchId)).slice(0, 5);
-  const lowAttendance = myStudents
-    .map((s) => ({ s, pct: attendancePercent(s.id) }))
-    .filter((x) => x.pct > 0 && x.pct < 60)
-    .sort((a, b) => a.pct - b.pct);
+  const todayPct = summary?.todayAttendancePct ?? 0;
+  const overallPct = summary?.overallAttendancePct ?? 0;
+  const myExams = summary?.myExams ?? [];
+  const lowAttendance = summary?.lowAttendance ?? [];
 
   if (!user || user.role !== "Batch Director") {
     return <Navigate to="/login" replace />;
@@ -165,10 +159,10 @@ const DirectorDashboard = () => {
                 {lowAttendance.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-muted-foreground text-center">কেউ নেই</p>
                 ) : lowAttendance.map((x) => (
-                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
                     <div>
-                      <p className="text-sm font-medium">{x.s.name}</p>
-                      <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                      <p className="text-sm font-medium">{x.name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{x.registrationId}</p>
                     </div>
                     <Badge className="bg-destructive/10 text-destructive border-destructive/20">{x.pct}%</Badge>
                   </div>

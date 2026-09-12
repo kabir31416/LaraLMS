@@ -4,20 +4,35 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClipboardCheck, DollarSign, AlertCircle, Award } from "lucide-react";
 import { useStudentSelf } from "./useStudentSelf";
 import { useAttendance } from "@/contexts/AttendanceContext";
+import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { Badge } from "@/components/ui/badge";
 import { Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 export default function StudentDashboard() {
   const { user, student, batch } = useStudentSelf();
-  const { attendancePercent, results, exams } = useAttendance();
+  const { attendancePercent, getResultsByStudent, listExams } = useAttendance();
+  const [pct, setPct] = useState(0);
+  const [latest, setLatest] = useState<OfflineResult | null>(null);
+  const [latestExam, setLatestExam] = useState<OfflineExam | null>(null);
+
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    attendancePercent(student.id).then((p) => { if (!cancelled) setPct(p); }).catch(() => {});
+    getResultsByStudent(student.id).then(async (results) => {
+      // Results come back newest-first (backend sorts by createdAt desc).
+      const mostRecent = results[0];
+      if (cancelled || !mostRecent) return;
+      setLatest(mostRecent);
+      const exams = await listExams();
+      if (!cancelled) setLatestExam(exams.find((e) => e.id === mostRecent.examId) || null);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [student, attendancePercent, getResultsByStudent, listExams]);
 
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
-
-  const pct = attendancePercent(student.id);
-  const myResults = results.filter((r) => r.studentId === student.id);
-  const latest = myResults[myResults.length - 1];
-  const latestExam = latest ? exams.find((e) => e.id === latest.examId) : null;
 
   return (
     <DashboardLayout>

@@ -1,21 +1,30 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function ResultReport() {
-  const { exams, results } = useAttendance();
+  const { listExams, getResultsByExams } = useAttendance();
   const { courses, subjects, lectures, settings } = useAcademic();
   const { students } = useStudents();
 
   const [subject, setSubject] = useState("all");
   const [lecture, setLecture] = useState("all");
   const [examId, setExamId] = useState("all");
+  const [exams, setExams] = useState<OfflineExam[]>([]);
+  const [results, setResults] = useState<OfflineResult[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listExams().then((data) => { if (!cancelled) setExams(data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [listExams]);
 
   const filteredExams = useMemo(() => exams.filter((e) => {
     if (subject !== "all" && e.subjectId !== subject) return false;
@@ -23,6 +32,12 @@ export default function ResultReport() {
     if (examId !== "all" && e.id !== examId) return false;
     return true;
   }), [exams, subject, lecture, examId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getResultsByExams(filteredExams.map((e) => e.id)).then((data) => { if (!cancelled) setResults(data); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [filteredExams, getResultsByExams]);
 
   const stats = useMemo(() => {
     const allMarks: number[] = [];

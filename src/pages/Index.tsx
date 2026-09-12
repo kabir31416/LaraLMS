@@ -4,7 +4,6 @@ import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
-import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
 import { format, subDays } from "date-fns";
@@ -23,6 +22,12 @@ interface AdminDashboardSummary {
   monthlyDue: number;
   todayCollection: number;
   monthlyCollection: { month: string; total: number }[];
+  todayPresent: number;
+  todayAbsent: number;
+  todayAttendancePct: number;
+  attendanceTrend: { date: string; pct: number }[];
+  topAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
+  lowAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
   recentAdmissions: { id: string; name: string; class?: string; course?: string; admissionDate: string; registrationId: string }[];
   recentPayments: { id: string; receiptNo: string; studentName?: string; date: string; paidAmount: number; method: string }[];
 }
@@ -30,17 +35,16 @@ interface AdminDashboardSummary {
 const Index = () => {
   const { students } = useStudents();
   const { payments } = usePayments();
-  const { entries, attendancePercent } = useAttendance();
   const { batches } = useBatches();
   const { notices } = useNotices();
 
-  // Module 4 (extended in Modules 15-17): server-side aggregation for the
-  // counts/sums that already have a real collection (Student, Batch,
-  // Payment) — StudentContext/BatchContext/PaymentContext cap their list
-  // fetch at 100 rows for the table views, which would silently under-count
-  // these once a coaching center passes 100 records. Attendance stats and
-  // notices stay on the mock sources below until Attendance/Notice
-  // (Modules 18-20, 25) exist.
+  // Module 4 (extended in Modules 15-20): server-side aggregation for
+  // everything that already has a real collection (Student, Batch, Payment,
+  // Attendance) — StudentContext/BatchContext/PaymentContext cap their list
+  // fetch at 100 rows for the table views, and Attendance isn't cached
+  // client-side at all (see AttendanceContext), so these stat cards and
+  // charts are computed server-side instead. Only notices stay mock until
+  // Module 25 exists.
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -53,38 +57,20 @@ const Index = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const today = format(new Date(), "yyyy-MM-dd");
   const totalStudents = summary?.totalStudents ?? students.length;
-  const todayAdmissions = summary?.todayAdmissions ?? students.filter((s) => s.admissionDate === today).length;
-  const todayCollection = summary?.todayCollection ?? payments.filter((p) => p.date === today).reduce((sum, p) => sum + p.paidAmount, 0);
+  const todayAdmissions = summary?.todayAdmissions ?? 0;
+  const todayCollection = summary?.todayCollection ?? 0;
   const totalDue = summary?.totalDue ?? students.reduce((sum, s) => sum + s.due, 0);
   const packageDue = summary?.packageDue ?? students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
   const monthlyDue = summary?.monthlyDue ?? students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
   const totalBatches = summary?.totalBatches ?? batches.length;
 
-  // Attendance stats
-  const todayEntries = entries.filter((e) => e.date === today);
-  const todayPresent = todayEntries.filter((e) => e.status === "Present").length;
-  const todayAbsent = todayEntries.filter((e) => e.status === "Absent").length;
-  const todayPct = todayEntries.length ? Math.round((todayPresent / todayEntries.length) * 100) : 0;
-
-  // Last 7 days trend
-  const trend = useMemo(() => {
-    return Array.from({ length: 7 }).map((_, i) => {
-      const d = format(subDays(new Date(), 6 - i), "yyyy-MM-dd");
-      const day = entries.filter((e) => e.date === d);
-      const pct = day.length ? Math.round((day.filter((e) => e.status === "Present").length / day.length) * 100) : 0;
-      return { date: d.slice(5), pct };
-    });
-  }, [entries]);
-
-  // Top 10 by attendance %
-  const monthStart = format(subDays(new Date(), 30), "yyyy-MM-dd");
-  const ranked = useMemo(() => students
-    .map((s) => ({ s, pct: attendancePercent(s.id, monthStart, today) }))
-    .sort((a, b) => b.pct - a.pct), [students, attendancePercent, monthStart, today]);
-  const top10 = ranked.slice(0, 10);
-  const lowAttendance = ranked.filter((x) => x.pct > 0 && x.pct < 60).slice(0, 8);
+  const todayPresent = summary?.todayPresent ?? 0;
+  const todayAbsent = summary?.todayAbsent ?? 0;
+  const todayPct = summary?.todayAttendancePct ?? 0;
+  const trend = summary?.attendanceTrend ?? [];
+  const top10 = summary?.topAttendance ?? [];
+  const lowAttendance = summary?.lowAttendance ?? [];
 
   const recentAdmissions = summary?.recentAdmissions ?? [...students]
     .sort((a, b) => b.admissionDate.localeCompare(a.admissionDate))
@@ -186,12 +172,12 @@ const Index = () => {
             <CardContent className="p-0">
               <div className="divide-y divide-border">
                 {top10.map((x, i) => (
-                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-semibold text-muted-foreground w-5">{i + 1}</span>
                       <div>
-                        <p className="text-sm font-medium">{x.s.name}</p>
-                        <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                        <p className="text-sm font-medium">{x.name || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{x.registrationId}</p>
                       </div>
                     </div>
                     <Badge className="bg-success/10 text-success border-success/20">{x.pct}%</Badge>
@@ -208,10 +194,10 @@ const Index = () => {
                 {lowAttendance.length === 0 ? (
                   <p className="px-5 py-6 text-sm text-muted-foreground text-center">কেউ নেই</p>
                 ) : lowAttendance.map((x) => (
-                  <div key={x.s.id} className="flex items-center justify-between px-5 py-2.5">
+                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
                     <div>
-                      <p className="text-sm font-medium">{x.s.name}</p>
-                      <p className="text-xs text-muted-foreground">{x.s.studentId}</p>
+                      <p className="text-sm font-medium">{x.name || "—"}</p>
+                      <p className="text-xs text-muted-foreground">{x.registrationId}</p>
                     </div>
                     <Badge className="bg-destructive/10 text-destructive border-destructive/20">{x.pct}%</Badge>
                   </div>

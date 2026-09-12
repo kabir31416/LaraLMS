@@ -1,24 +1,38 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 export default function StudentResults() {
   const { user, student } = useStudentSelf();
-  const { exams, results } = useAttendance();
+  const { listExams, getResultsByStudent } = useAttendance();
   const { getSubject, getLecture } = useAcademic();
+  const [exams, setExams] = useState<OfflineExam[]>([]);
+  const [results, setResults] = useState<OfflineResult[]>([]);
+
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    Promise.all([listExams(), getResultsByStudent(student.id)])
+      .then(([e, r]) => { if (!cancelled) { setExams(e); setResults(r); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [student, listExams, getResultsByStudent]);
+
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
-  const myResults = results.filter((r) => r.studentId === student.id);
-  const rows = myResults.map((r) => {
+  type ResultRow = { exam: OfflineExam; result: OfflineResult; subject?: string; lecture?: string };
+  const rows = results.map((r): ResultRow | null => {
     const ex = exams.find((e) => e.id === r.examId);
     if (!ex) return null;
     return { exam: ex, result: r, subject: getSubject(ex.subjectId)?.name, lecture: getLecture(ex.lectureId)?.title };
-  }).filter(Boolean) as { exam: any; result: any; subject?: string; lecture?: string }[];
+  }).filter((r): r is ResultRow => r !== null);
 
   return (
     <DashboardLayout>
