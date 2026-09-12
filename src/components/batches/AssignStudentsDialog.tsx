@@ -8,6 +8,7 @@ import { useStudents } from "@/contexts/StudentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 interface Props {
   open: boolean;
@@ -16,35 +17,46 @@ interface Props {
 }
 
 export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
-  const { students } = useStudents();
-  const { batches, assignStudents } = useBatches();
+  const { students, refreshStudents } = useStudents();
+  const { batches, enrollBulk } = useBatches();
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const currentBatch = batches.find((b) => b.id === batchId);
-  const alreadyInBatch = new Set(currentBatch?.studentIds || []);
 
+  // Only students with no current batch can be enrolled here — a student
+  // already in another batch needs Transfer instead (Phase 1 §14).
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return students.filter((s) => {
-      if (alreadyInBatch.has(s.id)) return false;
+      if (s.batchId) return false;
       return !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q);
     });
-  }, [students, search, alreadyInBatch]);
+  }, [students, search]);
 
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
-  const submit = () => {
+  const submit = async () => {
     if (picked.length === 0) {
       toast.error("কমপক্ষে একজন শিক্ষার্থী নির্বাচন করুন");
       return;
     }
-    assignStudents(batchId, picked);
-    toast.success(`${picked.length} জন শিক্ষার্থী যোগ হয়েছে`);
-    setPicked([]);
-    setSearch("");
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      const result = await enrollBulk(batchId, picked);
+      await refreshStudents();
+      if (result.succeeded.length) toast.success(`${result.succeeded.length} জন শিক্ষার্থী যোগ হয়েছে`);
+      if (result.failed.length) toast.warning(`${result.failed.length} জনকে যোগ করা যায়নি`);
+      setPicked([]);
+      setSearch("");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "যোগ করতে ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -78,8 +90,8 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
           <div className="flex items-center justify-between pt-2">
             <p className="text-sm text-muted-foreground">নির্বাচিত: {picked.length}</p>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>বাতিল</Button>
-              <Button onClick={submit}>যোগ করুন</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+              <Button onClick={submit} disabled={submitting}>{submitting ? "যোগ হচ্ছে..." : "যোগ করুন"}</Button>
             </div>
           </div>
         </div>

@@ -24,7 +24,7 @@ export default function FeeCollectionReport() {
       if (to && p.date > to) return false;
       const s = students.find((x) => x.id === p.studentId);
       if (course !== "all" && s?.course !== course) return false;
-      if (batch !== "all" && s?.batch !== batch) return false;
+      if (batch !== "all" && s?.batchId !== batch) return false;
       return true;
     });
   }, [payments, students, from, to, course, batch]);
@@ -45,7 +45,7 @@ export default function FeeCollectionReport() {
           <Select value={course} onValueChange={setCourse}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent></Select>
         </div>
         <div><Label className="text-xs">ব্যাচ</Label>
-          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}</SelectContent></Select>
+          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
         </div>
       </div>
 

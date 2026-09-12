@@ -1,29 +1,38 @@
 export type FeeType = "এককালীন" | "মাসিক";
 
+export interface ProfileCompletion {
+  status: "incomplete" | "complete";
+  percent: number;
+  missingFields: string[];
+}
+
 export interface Student {
   id: string;
-  studentId: string;
+  studentId: string; // permanent Registration ID — immutable, Phase 1 §13
+  rollNumber?: string; // admin-assigned, editable only via updateRoll — Phase 1 §13
+  batchId?: string; // current batch, kept in sync by enroll/transfer/withdraw — Phase 1 §14
   name: string;
   photo?: string;
   mobile: string;
   altMobile?: string;
   email?: string;
-  dob: string;
-  gender: "পুরুষ" | "মহিলা" | "অন্যান্য";
-  institution: string;
-  class: string;
+  dob?: string;
+  gender?: "পুরুষ" | "মহিলা" | "অন্যান্য";
+  institution?: string;
+  class?: string;
 
-  // Guardian
-  guardianName: string;
-  guardianRelation: string;
-  guardianMobile: string;
-  address: string;
+  // Guardian (stored server-side in its own collection — Phase 1 §17 — but
+  // still readable/writable here exactly as before; nothing else changes)
+  guardianName?: string;
+  guardianRelation?: string;
+  guardianMobile?: string;
+  address?: string;
 
-  // Academic
-  course: string;
-  batch: string;
-  section: string;
-  group: string;
+  // Academic (still free text pending the Course/Subject taxonomy unification
+  // tracked in the Phase 1 refactor plan — not part of this module)
+  course?: string;
+  section?: string;
+  group?: string;
   subjects: string[];
   admissionDate: string;
   admissionType: "নতুন" | "পুরাতন";
@@ -41,6 +50,7 @@ export interface Student {
 
   // Status
   status: "সক্রিয়" | "নিষ্ক্রিয়";
+  profileCompletion?: ProfileCompletion;
 }
 
 export interface Payment {

@@ -7,6 +7,9 @@ import academicSessionRoutes from "../modules/academicSessions/academicSession.r
 import courseRoutes from "../modules/courses/course.routes";
 import subjectRoutes from "../modules/subjects/subject.routes";
 import lectureRoutes from "../modules/lectures/lecture.routes";
+import studentRoutes from "../modules/students/student.routes";
+import guardianRoutes from "../modules/guardians/guardian.routes";
+import batchRoutes from "../modules/batches/batch.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -25,5 +28,8 @@ router.use("/sessions", academicSessionRoutes);
 router.use("/courses", courseRoutes);
 router.use("/subjects", subjectRoutes);
 router.use("/lectures", lectureRoutes);
+router.use("/students", studentRoutes);
+router.use("/guardians", guardianRoutes);
+router.use("/batches", batchRoutes);
 
 export default router;

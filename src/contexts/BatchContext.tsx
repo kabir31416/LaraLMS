@@ -1,104 +1,79 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Batch } from "@/types/batch";
-import { mockStudents } from "@/data/students";
+import { api } from "@/lib/apiClient";
 
-// Auto-build initial batches from existing students' static `batch` strings
-function buildInitialBatches(): Batch[] {
-  const map = new Map<string, string[]>();
-  for (const s of mockStudents) {
-    if (!s.batch) continue;
-    if (!map.has(s.batch)) map.set(s.batch, []);
-    map.get(s.batch)!.push(s.id);
-  }
-  const directorIds = ["s4", "s5"]; // demo directors from StaffContext
-  return Array.from(map.entries()).map(([name, studentIds], idx) => ({
-    id: `b${idx + 1}`,
-    name,
-    course: "বিজ্ঞান",
-    batchTime: idx % 2 === 0 ? "৫:০০ PM - ৭:০০ PM" : "৩:০০ PM - ৫:০০ PM",
-    days: ["শনিবার", "সোমবার", "বুধবার"],
-    roomNumber: `${101 + idx}`,
-    startDate: "2026-01-01",
-    directorId: directorIds[idx % directorIds.length],
-    studentIds,
-  }));
+/**
+ * Batches are now backed by the real API (Phase 3, Module 12). There is no
+ * `studentIds` here anymore — a batch's roster is simply "students whose
+ * `batchId` equals this batch's id" (see StudentContext), kept in sync
+ * server-side by the enroll/transfer/withdraw endpoints (Phase 1 §14).
+ */
+function withId<T extends { _id: string }>(doc: T): Omit<T, "_id"> & { id: string } {
+  const { _id, ...rest } = doc;
+  return { ...rest, id: _id };
 }
 
 interface BatchContextType {
   batches: Batch[];
-  addBatch: (data: Omit<Batch, "id" | "studentIds"> & { studentIds?: string[] }) => Batch;
-  updateBatch: (id: string, data: Partial<Batch>) => void;
-  deleteBatch: (id: string) => void;
+  loading: boolean;
+  addBatch: (data: Omit<Batch, "id">) => Promise<Batch>;
+  updateBatch: (id: string, data: Partial<Batch>) => Promise<Batch>;
+  deleteBatch: (id: string) => Promise<void>;
   getBatch: (id: string) => Batch | undefined;
-  assignStudents: (batchId: string, studentIds: string[]) => void;
-  removeStudent: (batchId: string, studentId: string) => void;
-  getBatchByStudent: (studentId: string) => Batch | undefined;
   getBatchesByDirector: (directorId: string) => Batch[];
+  refreshBatches: () => Promise<void>;
+  enrollBulk: (batchId: string, studentIds: string[]) => Promise<{ succeeded: string[]; failed: { studentId: string; reason: string }[] }>;
 }
 
 const BatchContext = createContext<BatchContextType | null>(null);
 
+const LIST_LIMIT = "?limit=100";
+
 export function BatchProvider({ children }: { children: React.ReactNode }) {
-  const [batches, setBatches] = useState<Batch[]>(() => buildInitialBatches());
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addBatch = useCallback((data: Omit<Batch, "id" | "studentIds"> & { studentIds?: string[] }): Batch => {
-    const b: Batch = { ...data, id: `b${Date.now()}`, studentIds: data.studentIds ?? [] };
-    setBatches((prev) => [b, ...prev]);
-    return b;
+  const refreshBatches = useCallback(async () => {
+    const docs = await api.get<{ _id: string }[]>(`/batches${LIST_LIMIT}`);
+    setBatches(docs.map(withId) as Batch[]);
   }, []);
 
-  const updateBatch = useCallback((id: string, data: Partial<Batch>) => {
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...data } : b)));
+  useEffect(() => {
+    refreshBatches().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
+  }, [refreshBatches]);
+
+  const addBatch = useCallback(async (data: Omit<Batch, "id">): Promise<Batch> => {
+    const created = withId(await api.post<{ _id: string }>("/batches", data)) as Batch;
+    setBatches((prev) => [created, ...prev]);
+    return created;
   }, []);
 
-  const deleteBatch = useCallback((id: string) => {
+  const updateBatch = useCallback(async (id: string, data: Partial<Batch>): Promise<Batch> => {
+    const updated = withId(await api.patch<{ _id: string }>(`/batches/${id}`, data)) as Batch;
+    setBatches((prev) => prev.map((b) => (b.id === id ? updated : b)));
+    return updated;
+  }, []);
+
+  const deleteBatch = useCallback(async (id: string) => {
+    await api.del(`/batches/${id}`);
     setBatches((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
   const getBatch = useCallback((id: string) => batches.find((b) => b.id === id), [batches]);
-
-  const assignStudents = useCallback((batchId: string, studentIds: string[]) => {
-    setBatches((prev) =>
-      prev.map((b) => {
-        // Remove these students from any other batch (one batch per student)
-        if (b.id !== batchId) {
-          return { ...b, studentIds: b.studentIds.filter((id) => !studentIds.includes(id)) };
-        }
-        const merged = Array.from(new Set([...b.studentIds, ...studentIds]));
-        return { ...b, studentIds: merged };
-      }),
-    );
-  }, []);
-
-  const removeStudent = useCallback((batchId: string, studentId: string) => {
-    setBatches((prev) =>
-      prev.map((b) => (b.id === batchId ? { ...b, studentIds: b.studentIds.filter((id) => id !== studentId) } : b)),
-    );
-  }, []);
-
-  const getBatchByStudent = useCallback(
-    (studentId: string) => batches.find((b) => b.studentIds.includes(studentId)),
-    [batches],
-  );
 
   const getBatchesByDirector = useCallback(
     (directorId: string) => batches.filter((b) => b.directorId === directorId),
     [batches],
   );
 
+  /** Bulk-enroll (Phase 1 §14) — backs AssignStudentsDialog; the Student list's batchId is refreshed by the caller afterwards. */
+  const enrollBulk = useCallback(async (batchId: string, studentIds: string[]) => {
+    return api.post<{ succeeded: string[]; failed: { studentId: string; reason: string }[] }>(`/batches/${batchId}/enroll-bulk`, { studentIds });
+  }, []);
+
   const value = useMemo(
-    () => ({
-      batches,
-      addBatch,
-      updateBatch,
-      deleteBatch,
-      getBatch,
-      assignStudents,
-      removeStudent,
-      getBatchByStudent,
-      getBatchesByDirector,
-    }),
-    [batches, addBatch, updateBatch, deleteBatch, getBatch, assignStudents, removeStudent, getBatchByStudent, getBatchesByDirector],
+    () => ({ batches, loading, addBatch, updateBatch, deleteBatch, getBatch, getBatchesByDirector, refreshBatches, enrollBulk }),
+    [batches, loading, addBatch, updateBatch, deleteBatch, getBatch, getBatchesByDirector, refreshBatches, enrollBulk],
   );
 
   return <BatchContext.Provider value={value}>{children}</BatchContext.Provider>;

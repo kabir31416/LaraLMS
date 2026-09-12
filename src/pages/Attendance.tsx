@@ -66,7 +66,7 @@ const Attendance = () => {
   const topStudents = useMemo(() => {
     const ids = batchFilter === "all"
       ? students.map((s) => s.id)
-      : (batches.find((b) => b.id === batchFilter)?.studentIds || []);
+      : students.filter((s) => s.batchId === batchFilter).map((s) => s.id);
     return ids
       .map((sid) => ({ student: students.find((s) => s.id === sid)!, pct: attendancePercent(sid, rangeBounds.from, rangeBounds.to) }))
       .filter((x) => x.student)

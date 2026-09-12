@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useStudents } from "@/contexts/StudentContext";
+import { useBatches } from "@/contexts/BatchContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,6 +257,7 @@ function PaymentDialog({
   addPayment: (p: Omit<Payment, "id" | "receiptNo">) => Payment;
   onSuccess?: (p: Payment) => void;
 }) {
+  const { batches } = useBatches();
   const [studentId, setStudentId] = useState("");
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [feeType, setFeeType] = useState<string>("এককালীন");
@@ -368,7 +370,7 @@ function PaymentDialog({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">কোর্স:</span>
-                <span>{selectedStudent.course} • {selectedStudent.batch}</span>
+                <span>{selectedStudent.course} • {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">ফি ধরন:</span>

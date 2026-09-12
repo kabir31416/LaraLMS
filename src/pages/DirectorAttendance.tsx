@@ -31,7 +31,7 @@ const DirectorAttendance = () => {
   const [att, setAtt] = useState<Record<string, "Present" | "Absent">>({});
 
   const batch = myBatches.find((b) => b.id === batchId);
-  const batchStudents = students.filter((s) => batch?.studentIds.includes(s.id));
+  const batchStudents = students.filter((s) => s.batchId === batch?.id);
 
   // Load existing for batch+date
   useEffect(() => {

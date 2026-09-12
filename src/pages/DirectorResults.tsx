@@ -34,13 +34,8 @@ const DirectorResults = () => {
   }, [myBatches, batchId]);
 
   const batch = myBatches.find((b) => b.id === batchId);
-  // Batch.course may hold either the course id or the course name — match both,
-  // so the subject list always stays in sync with একাডেমিক সেটিংস.
-  const batchCourse = useMemo(() => {
-    if (!batch?.course) return undefined;
-    const key = String(batch.course).trim().toLowerCase();
-    return courses.find((c) => c.id === batch.course) || courses.find((c) => c.name.trim().toLowerCase() === key);
-  }, [courses, batch]);
+  // Batch.courseId is a real Course reference (Phase 1 §3 fix), so this is a direct lookup.
+  const batchCourse = useMemo(() => courses.find((c) => c.id === batch?.courseId), [courses, batch]);
   const courseSubjects = useMemo(
     () => (batchCourse ? subjects.filter((s) => s.courseId === batchCourse.id) : []),
     [subjects, batchCourse],
@@ -65,7 +60,7 @@ const DirectorResults = () => {
   const [fullMarks, setFullMarks] = useState<number>(50);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const batchStudents = students.filter((s) => batch?.studentIds.includes(s.id));
+  const batchStudents = students.filter((s) => s.batchId === batch?.id);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, "Present" | "Absent">>({});
 
@@ -125,7 +120,7 @@ const DirectorResults = () => {
             )}
             <div>
               <Label>কোর্স</Label>
-              <Input value={batchCourse?.name || batch?.course || "—"} disabled />
+              <Input value={batchCourse?.name || "—"} disabled />
             </div>
             <div>
               <Label>সাবজেক্ট</Label>

@@ -1,13 +1,16 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useStudents } from "@/contexts/StudentContext";
+import { useBatches } from "@/contexts/BatchContext";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function DueReport() {
   const { students } = useStudents();
+  const { batches } = useBatches();
+  const batchName = (id?: string) => batches.find((b) => b.id === id)?.name || "—";
   const dues = students.filter((s) => s.due > 0).sort((a, b) => b.due - a.due);
   const headers = ["শিক্ষার্থী", "কোর্স", "ব্যাচ", "মোট বকেয়া"];
-  const rows = dues.map((s) => [s.name, s.course, s.batch, s.due]);
+  const rows = dues.map((s) => [s.name, s.course, batchName(s.batchId), s.due]);
   const total = dues.reduce((sum, s) => sum + s.due, 0);
 
   return (

@@ -19,7 +19,7 @@ const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getStudent, getPayments, getAttendance, getResults } = useStudents();
-  const { getBatchByStudent } = useBatches();
+  const { batches } = useBatches();
   const { getStaff } = useStaff();
   const [editOpen, setEditOpen] = useState(false);
 
@@ -81,10 +81,11 @@ const StudentProfile = () => {
                   <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {student.address}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
+                  {student.rollNumber && <Badge variant="outline">রোল: {student.rollNumber}</Badge>}
                   <Badge variant="outline">{student.class}</Badge>
                   <Badge variant="outline">{student.course}</Badge>
                   {(() => {
-                    const b = getBatchByStudent(student.id);
+                    const b = batches.find((x) => x.id === student.batchId);
                     return b ? (
                       <>
                         <Badge variant="outline">{b.name}</Badge>

@@ -6,19 +6,19 @@ interface Props {
   onValueChange: (v: string) => void;
   /** Restrict list to batches owned by this director. */
   directorId?: string;
-  /** Restrict to batches of a specific course name. */
-  courseName?: string;
+  /** Restrict to batches of a specific course id. */
+  courseId?: string;
   placeholder?: string;
   includeAll?: boolean;
 }
 
 export function BatchSelect({
-  value, onValueChange, directorId, courseName,
+  value, onValueChange, directorId, courseId,
   placeholder = "ব্যাচ নির্বাচন করুন", includeAll,
 }: Props) {
   const { batches, getBatchesByDirector } = useBatches();
   let list = directorId ? getBatchesByDirector(directorId) : batches;
-  if (courseName) list = list.filter((b) => b.course === courseName);
+  if (courseId) list = list.filter((b) => b.courseId === courseId);
   return (
     <Select value={value || ""} onValueChange={onValueChange}>
       <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>

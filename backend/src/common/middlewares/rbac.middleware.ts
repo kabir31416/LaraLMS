@@ -31,3 +31,26 @@ export function requireSelf(paramName: string, resourceKey: "studentId" | "staff
     return next(ApiError.forbidden("You may only access your own record"));
   };
 }
+
+/**
+ * For a GET that both staff (broad permission) and the resource's own owner
+ * (a narrower "self" permission) may call — e.g. GET /students/:id, where
+ * Admin/Director hold STUDENTS_READ* and a Student only holds
+ * STUDENTS_UPDATE_SELF. Without this, granting a student that self-service
+ * permission at all would let requirePermission's OR-of-keys check pass it
+ * straight through to read *any* student's record, not just their own.
+ */
+export function requirePermissionOrSelf(
+  broadPermissions: string[],
+  selfPermission: string,
+  paramName: string,
+  resourceKey: "studentId" | "staffId" = "studentId",
+) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    const perms = req.user.permissions;
+    if (perms.includes("*") || broadPermissions.some((p) => perms.includes(p))) return next();
+    if (perms.includes(selfPermission)) return requireSelf(paramName, resourceKey)(req, _res, next);
+    return next(ApiError.forbidden("Missing permission"));
+  };
+}

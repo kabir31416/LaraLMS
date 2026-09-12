@@ -24,6 +24,11 @@ Implemented so far:
 - **Settings** (Module 5) — `Settings` + `PublicInfoSettings` singletons
 - **Session, Course, Subject, Lecture** (Modules 6–9) — academic master data,
   each with a delete guard against orphaning the level below it
+- **Student, Admission, Batch** (Modules 10–12) — Guardian as its own
+  collection, quick admission + full admission in one form, admin-only Roll
+  Number (`PATCH /students/:id/roll`), and `BatchEnrollment` for transfer
+  history (`POST /students/:id/enroll|transfer|withdraw`,
+  `GET /batches/:id/roster`) — see Phase 1 §13/§14
 
 **Dashboard (Module 4)** is deliberately built last among this group — it
 aggregates Students/Batches/Attendance/Payments, none of which exist as

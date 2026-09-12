@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useBooks } from "@/contexts/BookContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { useBatches } from "@/contexts/BatchContext";
 import { CLASSES, SUBJECTS } from "@/types/student";
 import { Plus, Minus, AlertTriangle, ArrowRightLeft, BookPlus, Undo2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -407,6 +408,7 @@ function BranchStockTab() {
 function DistributeTab() {
   const { books, issues, issueMultipleToStudent, returnFromStudent } = useBooks();
   const { students } = useStudents();
+  const { batches } = useBatches();
 
   const [search, setSearch] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -482,7 +484,7 @@ function DistributeTab() {
             <div className="rounded-md bg-muted/50 p-3 text-sm">
               <div><span className="text-muted-foreground">নাম:</span> {selectedStudent.name}</div>
               <div><span className="text-muted-foreground">কোর্স:</span> {selectedStudent.course}</div>
-              <div><span className="text-muted-foreground">ব্যাচ:</span> {selectedStudent.batch}</div>
+              <div><span className="text-muted-foreground">ব্যাচ:</span> {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</div>
             </div>
           )}
 

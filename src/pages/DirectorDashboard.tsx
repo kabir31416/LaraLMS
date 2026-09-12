@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Users, Layers, ClipboardCheck, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 
@@ -15,15 +16,16 @@ const DirectorDashboard = () => {
   const { user } = useAuth();
   const { batches } = useBatches();
   const { students } = useStudents();
+  const { getCourse } = useAcademic();
   const { entries, exams, attendancePercent } = useAttendance();
 
   const myBatches = useMemo(
     () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
     [batches, user],
   );
-  const myStudentIds = useMemo(() => new Set(myBatches.flatMap((b) => b.studentIds)), [myBatches]);
-  const myStudents = students.filter((s) => myStudentIds.has(s.id));
   const myBatchIds = new Set(myBatches.map((b) => b.id));
+  const myStudents = students.filter((s) => s.batchId && myBatchIds.has(s.batchId));
+  const studentCountByBatch = (batchId: string) => students.filter((s) => s.batchId === batchId).length;
 
   const today = format(new Date(), "yyyy-MM-dd");
   const todayEntries = entries.filter((e) => myBatchIds.has(e.batchId) && e.date === today);
@@ -79,11 +81,11 @@ const DirectorDashboard = () => {
                   myBatches.map((b) => (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">{b.name}</TableCell>
-                      <TableCell>{b.course}</TableCell>
+                      <TableCell>{getCourse(b.courseId)?.name || "—"}</TableCell>
                       <TableCell className="text-sm">{b.batchTime}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{b.days.join(", ") || "—"}</TableCell>
                       <TableCell>{b.roomNumber || "—"}</TableCell>
-                      <TableCell className="text-center"><Badge variant="outline">{b.studentIds.length}</Badge></TableCell>
+                      <TableCell className="text-center"><Badge variant="outline">{studentCountByBatch(b.id)}</Badge></TableCell>
                     </TableRow>
                   ))
                 )}

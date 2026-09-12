@@ -29,8 +29,9 @@ interface StudentTableProps {
 
 export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) {
   const navigate = useNavigate();
-  const { getBatchByStudent } = useBatches();
+  const { batches } = useBatches();
   const { getStaff } = useStaff();
+  const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
 
   if (students.length === 0) {
     return (
@@ -47,6 +48,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
           <TableRow>
             <TableHead className="w-[60px]">ছবি</TableHead>
             <TableHead>আইডি</TableHead>
+            <TableHead>রোল</TableHead>
             <TableHead>নাম</TableHead>
             <TableHead className="hidden lg:table-cell">ব্যাচ</TableHead>
             <TableHead className="hidden lg:table-cell">সময়</TableHead>
@@ -60,7 +62,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
         </TableHeader>
         <TableBody>
           {students.map((student) => {
-            const batch = getBatchByStudent(student.id);
+            const batch = getBatchByStudent(student.batchId);
             const directorName = batch?.directorId ? getStaff(batch.directorId)?.name : undefined;
             return (
               <TableRow
@@ -78,6 +80,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {student.studentId}
                 </TableCell>
+                <TableCell className="font-mono text-xs">{student.rollNumber || "—"}</TableCell>
                 <TableCell className="font-medium">{student.name}</TableCell>
                 <TableCell className="hidden lg:table-cell text-xs">
                   {batch ? batch.name : <span className="text-muted-foreground italic">Batch assigned হয়নি</span>}

@@ -10,6 +10,7 @@ import { StudentTable } from "@/components/students/StudentTable";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import type { Student } from "@/types/student";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 const Students = () => {
   const { students, deleteStudent } = useStudents();
@@ -35,7 +36,7 @@ const Students = () => {
       const matchSection = section === "all" || s.section === section;
       const matchDue = !dueOnly || s.due > 0;
 
-      const studentBatch = batches.find((b) => b.studentIds.includes(s.id));
+      const studentBatch = batches.find((b) => b.id === s.batchId);
       let matchBatch = true;
       if (batchFilter === "unassigned") matchBatch = !studentBatch;
       else if (batchFilter !== "all") matchBatch = studentBatch?.id === batchFilter;
@@ -52,9 +53,13 @@ const Students = () => {
     setFormOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    deleteStudent(id);
-    toast.success("শিক্ষার্থী মুছে ফেলা হয়েছে");
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteStudent(id);
+      toast.success("শিক্ষার্থী মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   return (
