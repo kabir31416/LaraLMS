@@ -44,6 +44,8 @@ export async function listUsers(req: Request) {
   };
   if (req.query.roleId) filter.roleId = req.query.roleId;
   if (req.query.status) filter.status = req.query.status;
+  if (req.query.linkedStaffId) filter.linkedStaffId = req.query.linkedStaffId;
+  if (req.query.linkedStudentId) filter.linkedStudentId = req.query.linkedStudentId;
 
   const [items, total] = await Promise.all([
     User.find(filter).populate("roleId", "name").sort(sort).skip(skip).limit(limit),
@@ -69,6 +71,36 @@ export async function updateUser(req: Request, id: string, patch: { roleId?: str
   if (patch.overridePermissions) user.overridePermissions = patch.overridePermissions;
   await user.save();
   await recordAudit({ req, action: "user.update", module: "users", targetCollection: "users", targetId: id, before, after: user.toObject() });
+  return user;
+}
+
+/**
+ * Admin-forced reset of an existing login's identifier/password — the fix
+ * for a stale credential (e.g. a Student's Roll Number was changed after
+ * their login was created, so the old password hash no longer matches what
+ * the admin now shows them). Self-service change-password can't help here
+ * since it requires the *current* password, which is exactly what's wrong.
+ */
+export async function resetCredentials(req: Request, id: string, patch: { identifier?: string; password: string }): Promise<UserDoc> {
+  const user = await getUserById(id);
+  const before = user.toObject();
+
+  if (patch.identifier) {
+    const normalized = patch.identifier.toLowerCase();
+    if (normalized !== user.identifier) {
+      const clash = await User.findOne({ identifier: normalized, _id: { $ne: user._id } });
+      if (clash) throw ApiError.conflict("Another account already uses this identifier");
+      user.identifier = normalized;
+    }
+  }
+
+  user.passwordHash = await hashPassword(patch.password);
+  user.mustChangePassword = false;
+  user.failedLoginCount = 0;
+  if (user.status === "locked") user.status = "active";
+  await user.save();
+
+  await recordAudit({ req, action: "user.reset-credentials", module: "users", targetCollection: "users", targetId: id, before, after: { identifier: user.identifier } });
   return user;
 }
 

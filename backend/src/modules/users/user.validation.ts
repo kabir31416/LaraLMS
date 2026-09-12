@@ -33,7 +33,23 @@ export const listUsersQuerySchema = z.object({
     search: z.string().optional(),
     roleId: z.string().length(24).optional(),
     status: z.enum(["active", "locked"]).optional(),
+    linkedStaffId: z.string().length(24).optional(),
+    linkedStudentId: z.string().length(24).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
+  }),
+});
+
+/**
+ * Admin-forced credential reset — the only way to fix a login whose
+ * password no longer matches (e.g. a Student's Roll Number was changed
+ * after their login was created). Distinct from self-service change-password,
+ * which requires knowing the current password.
+ */
+export const resetCredentialsSchema = z.object({
+  params: z.object({ id: z.string().length(24) }),
+  body: z.object({
+    identifier: z.string().trim().min(3).optional(),
+    password: z.string().min(1),
   }),
 });
