@@ -20,6 +20,10 @@ function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+function isDuplicateKeyError(err: unknown): boolean {
+  return !!(err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000);
+}
+
 async function resolvePermissions(user: UserDoc): Promise<{ role: { id: string; name: string }; permissions: string[] }> {
   const role = await Role.findById(user.roleId);
   if (!role) throw ApiError.internal("User has no valid role");
@@ -118,7 +122,15 @@ export async function studentLogin(req: Request, phone: string, rollNumber: stri
 
   let role = await Role.findOne({ name: "student" });
   if (!role) {
-    role = await Role.create({ name: "student", permissions: DEFAULT_ROLE_PERMISSIONS.student, isSystem: true });
+    try {
+      role = await Role.create({ name: "student", permissions: DEFAULT_ROLE_PERMISSIONS.student, isSystem: true });
+    } catch (err) {
+      // A concurrent first-login raced this same creation and won —
+      // reuse what it created rather than leaking a raw duplicate-key error.
+      if (!isDuplicateKeyError(err)) throw err;
+      role = await Role.findOne({ name: "student" });
+      if (!role) throw err;
+    }
   }
 
   let user = await User.findOne({ linkedStudentId: student._id });
@@ -131,13 +143,25 @@ export async function studentLogin(req: Request, phone: string, rollNumber: stri
       // real conflict for an admin to resolve, not something to paper over.
       throw ApiError.conflict("This phone number is already linked to a different account — contact an administrator");
     }
-    user = await User.create({
-      identifier,
-      passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
-      roleId: role._id,
-      linkedStudentId: student._id,
-      mustChangePassword: false,
-    });
+    try {
+      user = await User.create({
+        identifier,
+        passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
+        roleId: role._id,
+        linkedStudentId: student._id,
+        mustChangePassword: false,
+      });
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      // Same race as above: another concurrent login attempt (a double
+      // click, a retried request) created this account a moment earlier.
+      const existing = await User.findOne({ identifier });
+      if (existing && String(existing.linkedStudentId || "") === String(student._id)) {
+        user = existing;
+      } else {
+        throw ApiError.conflict("This phone number is already linked to a different account — contact an administrator");
+      }
+    }
   }
 
   if (user.status === "locked") throw ApiError.forbidden("This account is locked — contact an administrator");
