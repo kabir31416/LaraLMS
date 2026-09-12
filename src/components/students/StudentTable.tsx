@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { Student } from "@/types/student";
 import {
   Table,
@@ -16,10 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Eye, Pencil, Trash2, MoreVertical } from "lucide-react";
+import { Eye, Pencil, Trash2, MoreVertical, KeyRound } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
+import { api } from "@/lib/apiClient";
+import { ApiClientError } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface StudentTableProps {
   students: Student[];
@@ -32,6 +36,44 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
+  const [creatingLoginId, setCreatingLoginId] = useState<string | null>(null);
+
+  // Login credential convention for the Student Portal: identifier = phone
+  // number, password = Roll Number — both already assigned during
+  // admission, so no separate credential needs to be communicated.
+  const handleCreateLogin = async (student: Student) => {
+    if (!student.mobile || !student.rollNumber) {
+      toast.error("লগইন তৈরির জন্য মোবাইল নম্বর ও রোল নম্বর থাকা আবশ্যক");
+      return;
+    }
+    setCreatingLoginId(student.id);
+    try {
+      const roles = await api.get<{ _id: string; name: string }[]>("/roles");
+      const studentRoleId = roles.find((r) => r.name === "student")?._id;
+      if (!studentRoleId) {
+        toast.error("Student role খুঁজে পাওয়া যায়নি");
+        return;
+      }
+      await api.post("/users", {
+        identifier: student.mobile,
+        password: student.rollNumber,
+        roleId: studentRoleId,
+        linkedStudentId: student.id,
+      });
+      toast.success(
+        `লগইন তৈরি হয়েছে — মোবাইল: ${student.mobile}, পাসওয়ার্ড: ${student.rollNumber}`,
+        { duration: 15000 },
+      );
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === "CONFLICT") {
+        toast.error("এই শিক্ষার্থীর জন্য লগইন আগে থেকেই তৈরি করা আছে");
+      } else {
+        toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি ব্যর্থ হয়েছে");
+      }
+    } finally {
+      setCreatingLoginId(null);
+    }
+  };
 
   if (students.length === 0) {
     return (
@@ -121,6 +163,13 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(student); }}>
                         <Pencil className="mr-2 h-4 w-4" /> সম্পাদনা
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={creatingLoginId === student.id}
+                        onClick={(e) => { e.stopPropagation(); handleCreateLogin(student); }}
+                      >
+                        <KeyRound className="mr-2 h-4 w-4" />
+                        {creatingLoginId === student.id ? "তৈরি হচ্ছে..." : "লগইন তৈরি করুন"}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
