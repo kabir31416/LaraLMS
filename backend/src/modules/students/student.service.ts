@@ -5,9 +5,15 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateRegistrationId } from "../../common/utils/idGenerators";
 import * as guardianService from "../guardians/guardian.service";
-import { logger } from "../../logger/logger";
-import { passwordFromPhone } from "../../common/utils/digits";
 
+/**
+ * No student-create/update path here provisions a Portal login anymore.
+ * The Student Portal authenticates by matching phone + Roll Number
+ * directly against the live Student record (auth.service.ts's
+ * studentLogin) and creates its own linked User account lazily, on first
+ * successful login — so nothing here needs to keep a separate account or
+ * password in sync with this collection at all.
+ */
 interface GuardianInline {
   guardianName?: string;
   guardianRelation?: string;
@@ -153,59 +159,6 @@ async function getDocOrThrow(id: string): Promise<StudentDoc> {
   return doc;
 }
 
-/**
- * Keeps a Student's Portal login (identifier = phone, password = the
- * phone's last 6 digits) automatically in sync with their record — created
- * the moment a phone number is known, and re-synced whenever it changes.
- * The password is deliberately derived from the phone number rather than
- * the Roll Number: a Roll Number can be typed in Bengali numerals, edited
- * later, or left unset, all of which previously left a student unable to
- * log in for reasons invisible from the admin UI. A phone number is
- * required on every student and is always digits, so this is the more
- * reliable source. Best-effort and non-blocking: it must never fail a
- * student create/update, so every failure mode here is swallowed and
- * logged rather than thrown.
- */
-async function syncStudentLogin(req: Request, doc: StudentDoc): Promise<void> {
-  if (!doc.phone) return;
-  try {
-    const { Role } = await import("../rbac/role.model");
-    const { User } = await import("../users/user.model");
-    const userService = await import("../users/user.service");
-
-    const role = await Role.findOne({ name: "student" });
-    if (!role) {
-      logger.warn(
-        { studentId: String(doc._id) },
-        'student login auto-sync skipped: no "student" role exists — run `npm run seed` (or `npm run check-setup` to confirm)',
-      );
-      return;
-    }
-
-    const password = passwordFromPhone(doc.phone);
-    const existing = await User.findOne({ linkedStudentId: doc._id });
-    if (existing) {
-      await userService.resetCredentials(req, String(existing._id), {
-        identifier: doc.phone,
-        password,
-      });
-    } else {
-      await userService.createUser(req, {
-        identifier: doc.phone,
-        password,
-        roleId: String(role._id),
-        linkedStudentId: String(doc._id),
-      });
-    }
-  } catch (err) {
-    // Most commonly: another student already used this phone number as
-    // their login identifier (a shared family phone) — that's a real
-    // conflict for the admin to resolve manually, not a bug, so it's only
-    // logged here rather than blocking the student operation that triggered it.
-    logger.warn({ err, studentId: String(doc._id) }, "student login auto-sync skipped");
-  }
-}
-
 /** Roll + Name + Phone only — Phase 1 §2/§13. */
 export async function quickCreate(req: Request, data: { rollNumber: string; name: string; phone: string }): Promise<Record<string, unknown>> {
   const registrationId = await generateRegistrationId();
@@ -221,7 +174,6 @@ export async function quickCreate(req: Request, data: { rollNumber: string; name
     profileCompletion: { status: "incomplete", percent: 0, missingFields: COMPLETION_FIELDS.concat("guardian" as never) },
   });
   await recordAudit({ req, action: "student.quick-create", module: "students", targetCollection: "students", targetId: String(doc._id), after: doc.toObject() });
-  await syncStudentLogin(req, doc);
   return withGuardian(doc);
 }
 
@@ -250,7 +202,6 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
   await refreshProfileCompletion(doc);
 
   await recordAudit({ req, action: "student.create", module: "students", targetCollection: "students", targetId: String(doc._id), after: doc.toObject() });
-  await syncStudentLogin(req, doc);
   return withGuardian(doc);
 }
 
@@ -313,9 +264,6 @@ export async function update(req: Request, id: string, patch: Record<string, unk
   const doc = await getDocOrThrow(id);
   const before = await applyPatch(req, doc, patch);
   await recordAudit({ req, action: "student.update", module: "students", targetCollection: "students", targetId: id, before, after: doc.toObject() });
-  // The login password is derived from the phone number, so only a phone
-  // change needs a re-sync — a Roll Number edit no longer affects login.
-  if ("phone" in patch) await syncStudentLogin(req, doc);
   return withGuardian(doc);
 }
 
@@ -344,7 +292,6 @@ export async function updateRoll(req: Request, id: string, rollNumber: string): 
   doc.currentRollNumber = rollNumber;
   await doc.save();
   await recordAudit({ req, action: "student.update-roll", module: "students", targetCollection: "students", targetId: id, before, after: doc.toObject() });
-  await syncStudentLogin(req, doc);
   return doc;
 }
 

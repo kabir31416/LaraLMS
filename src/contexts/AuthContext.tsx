@@ -30,6 +30,7 @@ interface AuthContextType {
   /** True while the app is trying to restore a session from the refresh cookie on first load. */
   initializing: boolean;
   login: (identifier: string, password: string) => Promise<void>;
+  studentLogin: (phone: string, rollNumber: string) => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
@@ -104,14 +105,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(toAuthUser(res.user));
   }, []);
 
+  /**
+   * Student Portal login: no separate password to remember or keep in
+   * sync — a phone number + Roll Number match against the live Student
+   * record *is* the credential (auth.service.ts's studentLogin).
+   */
+  const studentLogin = useCallback(async (phone: string, rollNumber: string) => {
+    const res = await api.post<LoginResponse>("/auth/student-login", { phone, rollNumber });
+    setAccessToken(res.accessToken);
+    setUser(toAuthUser(res.user));
+  }, []);
+
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     await api.post("/auth/change-password", { currentPassword, newPassword });
     setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : prev));
   }, []);
 
   const value = useMemo(
-    () => ({ user, initializing, login, logout, changePassword }),
-    [user, initializing, login, logout, changePassword],
+    () => ({ user, initializing, login, studentLogin, logout, changePassword }),
+    [user, initializing, login, studentLogin, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

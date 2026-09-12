@@ -2,6 +2,7 @@ import { Request } from "express";
 import crypto from "crypto";
 import { User, UserDoc } from "../users/user.model";
 import { Role } from "../rbac/role.model";
+import { Student } from "../students/student.model";
 import { RefreshToken } from "./refreshToken.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { comparePassword, hashPassword } from "../../common/utils/password";
@@ -10,6 +11,8 @@ import { parseDurationToMs } from "../../common/utils/duration";
 import { env } from "../../config/env";
 import { MAX_FAILED_LOGIN_ATTEMPTS } from "../../config/constants";
 import { recordAudit } from "../../audit/auditLog.service";
+import { DEFAULT_ROLE_PERMISSIONS } from "../rbac/permissions";
+import { toAsciiDigits } from "../../common/utils/digits";
 
 const REFRESH_BYTES = 48;
 
@@ -83,6 +86,64 @@ export async function login(req: Request, identifier: string, password: string) 
 
   const result = await issueTokens(req, user);
   await recordAudit({ req, action: "auth.login", module: "auth", targetCollection: "users", targetId: String(user._id) });
+  return result;
+}
+
+/**
+ * Direct Student Portal login: no separately-maintained password at all —
+ * a match against the student's own live phone number + Roll Number *is*
+ * the credential, checked fresh every time against the Student collection
+ * itself. This sidesteps the entire class of bugs a separate hashed
+ * User-account password kept hitting (never created, created with a stale
+ * value, digit-format mismatches): there's nothing to fall out of sync
+ * with, because nothing is stored except the Student record admins
+ * already maintain.
+ *
+ * A linked User account is still ensured behind the scenes (created with a
+ * random, never-used password) purely so the rest of the session
+ * machinery — access/refresh tokens, RBAC, audit logging — stays exactly
+ * the one already used for Admin/Staff, rather than a second parallel
+ * system. Its password is never what's checked here.
+ */
+export async function studentLogin(req: Request, phone: string, rollNumber: string) {
+  const genericError = () => ApiError.unauthorized("Invalid credentials");
+
+  const normalizedPhone = phone.trim();
+  const normalizedRoll = toAsciiDigits(rollNumber).trim();
+  if (!normalizedPhone || !normalizedRoll) throw genericError();
+
+  const student = await Student.findOne({ phone: normalizedPhone });
+  if (!student || !student.currentRollNumber) throw genericError();
+  if (toAsciiDigits(student.currentRollNumber).trim() !== normalizedRoll) throw genericError();
+
+  let role = await Role.findOne({ name: "student" });
+  if (!role) {
+    role = await Role.create({ name: "student", permissions: DEFAULT_ROLE_PERMISSIONS.student, isSystem: true });
+  }
+
+  let user = await User.findOne({ linkedStudentId: student._id });
+  if (!user) {
+    const identifier = normalizedPhone.toLowerCase();
+    const clash = await User.findOne({ identifier });
+    if (clash) {
+      // Identifier taken by an account not linked to this student (e.g. a
+      // shared family phone used for a sibling/staff login already) — a
+      // real conflict for an admin to resolve, not something to paper over.
+      throw ApiError.conflict("This phone number is already linked to a different account — contact an administrator");
+    }
+    user = await User.create({
+      identifier,
+      passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
+      roleId: role._id,
+      linkedStudentId: student._id,
+      mustChangePassword: false,
+    });
+  }
+
+  if (user.status === "locked") throw ApiError.forbidden("This account is locked — contact an administrator");
+
+  const result = await issueTokens(req, user);
+  await recordAudit({ req, action: "auth.student-login", module: "auth", targetCollection: "users", targetId: String(user._id) });
   return result;
 }
 

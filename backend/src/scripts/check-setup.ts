@@ -1,16 +1,17 @@
 /**
- * One-shot health check for the most common reason Student Portal logins
- * never get created: the "student" system Role doesn't exist (created by
- * `npm run seed`), so student.service.ts's syncStudentLogin() silently
- * bails out on every single student create/update — no error, no login,
- * just nothing happens. This makes that visible instead of guessing.
+ * One-shot health check for the Student Portal login path. Since
+ * auth.service.ts's studentLogin checks phone + Roll Number directly
+ * against the live Student record and creates its own linked User account
+ * lazily on first successful login, the two things that actually matter
+ * are: does the "student" system Role exist (created by `npm run seed`,
+ * needed to assign correct permissions to that lazily-created account),
+ * and do students actually have both a phone number and a Roll Number set.
  *
  * Usage: npm run check-setup
  */
 import { connectDB, disconnectDB } from "../config/db";
 import { Role } from "../modules/rbac/role.model";
 import { Student } from "../modules/students/student.model";
-import { User } from "../modules/users/user.model";
 
 async function main() {
   await connectDB();
@@ -25,29 +26,18 @@ async function main() {
   const studentRole = roles.find((r) => r.name === "student");
   if (!studentRole) {
     console.log(
-      '\n❌ "student" নামে কোনো Role পাওয়া যায়নি — এটাই সবচেয়ে সম্ভাব্য কারণ কেন কোনো student-এর জন্য login স্বয়ংক্রিয়ভাবে তৈরি হচ্ছে না। "npm run seed" চালান।',
+      '\n❌ "student" নামে কোনো Role পাওয়া যায়নি — একজন student প্রথমবার লগইন করার সময় এটা লাগবে সঠিক permission সেট করতে। "npm run seed" চালান।',
     );
   } else {
-    console.log('\n✅ "student" role পাওয়া গেছে — auto-login-creation চলার কথা।');
+    console.log('\n✅ "student" role পাওয়া গেছে।');
   }
 
   console.log("\n=== Students ===");
   const totalStudents = await Student.countDocuments();
   const withCreds = await Student.countDocuments({ phone: { $exists: true, $ne: "" }, currentRollNumber: { $exists: true, $ne: "" } });
   console.log(`  মোট student: ${totalStudents}`);
-  console.log(`  ফোন নম্বর + রোল নম্বর দুটোই আছে এমন student: ${withCreds}`);
-
-  console.log("\n=== Users (logins) ===");
-  const totalUsers = await User.countDocuments();
-  const studentLogins = await User.countDocuments({ linkedStudentId: { $exists: true, $ne: null } });
-  console.log(`  মোট User (login) রেকর্ড: ${totalUsers}`);
-  console.log(`  কোনো student-এর সাথে লিংক করা login: ${studentLogins}`);
-
-  if (withCreds > 0 && studentLogins === 0) {
-    console.log(
-      `\n⚠️  ${withCreds}টা student-এর ফোন+রোল নম্বর দুটোই আছে, কিন্তু একটাও student-লিংকড login নেই — এটাই মূল সমস্যার প্রমাণ। উপরে "student" role আছে কিনা দেখুন।`,
-    );
-  }
+  console.log(`  ফোন নম্বর + রোল নম্বর দুটোই আছে (তাই এখনই লগইন করতে পারবে) এমন student: ${withCreds}/${totalStudents}`);
+  console.log('\n  বিস্তারিত তালিকার জন্য: npm run list-logins');
 
   await disconnectDB();
 }

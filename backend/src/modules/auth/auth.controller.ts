@@ -25,6 +25,13 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, { accessToken, user });
 });
 
+export const studentLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { phone, rollNumber } = req.body;
+  const { accessToken, refreshToken, user } = await authService.studentLogin(req, phone, rollNumber);
+  setRefreshCookie(res, refreshToken);
+  sendSuccess(res, { accessToken, user });
+});
+
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
   const token = req.cookies?.[REFRESH_COOKIE];
   if (!token) throw ApiError.unauthorized("No refresh token supplied");

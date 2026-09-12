@@ -8,37 +8,38 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { GraduationCap } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { passwordFromPhone } from "@/lib/format";
 
 /**
- * Two tabs sharing the same /auth/login call underneath — the backend
- * doesn't distinguish "staff login" from "student login" at all (it's
- * always just identifier+password). This split exists purely to remove a
- * real source of confusion: the generic "মোবাইল নম্বর / আইডি" label reads
- * ambiguously to a student, who might reasonably type their Registration
- * ID there instead of their phone number. The Student tab spells out
- * exactly which two values are the credential.
+ * Two tabs, two different auth calls underneath. Staff/Admin still use
+ * identifier+password (/auth/login). The Student tab uses a dedicated
+ * /auth/student-login that checks phone + Roll Number directly against the
+ * live Student record instead of a separately-maintained password — no
+ * login account has to be created/kept in sync ahead of time by an admin
+ * at all (auth.service.ts's studentLogin creates one transparently on
+ * first successful match, purely to reuse the same session machinery).
  */
 const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, studentLogin } = useAuth();
   const [tab, setTab] = useState<"staff" | "student">("staff");
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
 
   const [studentPhone, setStudentPhone] = useState("");
+  const [studentRoll, setStudentRoll] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
 
-  const doLogin = async (id: string, pass: string) => {
-    if (!id.trim() || !pass) {
+  const handleStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifier.trim() || !password) {
       toast.error("সব তথ্য দিন");
       return;
     }
     setSubmitting(true);
     try {
-      await login(id.trim(), pass);
+      await login(identifier.trim(), password);
       toast.success("লগইন সফল");
       navigate("/");
     } catch (err) {
@@ -48,19 +49,22 @@ const Login = () => {
     }
   };
 
-  const handleStaffSubmit = (e: React.FormEvent) => {
+  const handleStudentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    doLogin(identifier, password);
-  };
-
-  const handleStudentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Only the phone number is asked for — the password (its last 6
-    // digits) is derived automatically, the same way
-    // student.service.ts's syncStudentLogin sets it server-side. This
-    // removes the one remaining way a student could type a mismatched
-    // credential.
-    doLogin(studentPhone, passwordFromPhone(studentPhone));
+    if (!studentPhone.trim() || !studentRoll.trim()) {
+      toast.error("ফোন নম্বর ও রোল নম্বর দিন");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await studentLogin(studentPhone.trim(), studentRoll.trim());
+      toast.success("লগইন সফল");
+      navigate("/");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -120,7 +124,17 @@ const Login = () => {
                     placeholder="01XXXXXXXXX"
                     autoComplete="username"
                   />
-                  <p className="text-xs text-muted-foreground">শুধু আপনার মোবাইল নম্বর দিন — আলাদা পাসওয়ার্ড লাগবে না</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="student-roll">রোল নম্বর</Label>
+                  <Input
+                    id="student-roll"
+                    value={studentRoll}
+                    onChange={(e) => setStudentRoll(e.target.value)}
+                    placeholder="যেমন: 07"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">ভর্তির সময় দেওয়া ফোন নম্বর ও রোল নম্বর মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "লগইন হচ্ছে..." : "লগইন"}

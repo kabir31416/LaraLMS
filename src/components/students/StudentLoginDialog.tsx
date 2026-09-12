@@ -1,12 +1,8 @@
-import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Copy, Send } from "lucide-react";
-import { api } from "@/lib/apiClient";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import type { Student } from "@/types/student";
-import { passwordFromPhone } from "@/lib/format";
 
 interface Props {
   student: Student | null;
@@ -14,18 +10,12 @@ interface Props {
 }
 
 /**
- * Student Portal login credential convention: identifier = mobile number,
- * password = the last 6 digits of that same number (Phase 3 addendum,
- * revised — a Roll Number turned out to be an unreliable password source:
- * it could be in Bengali numerals, get edited later, or be left unset).
- * Since the password is always derived from the phone number shown right
- * above it, there's nothing to "reveal" from the server — this dialog just
- * displays it plainly and offers to (re)create the actual login account,
- * which also texts the credential to the student via the SMS gateway.
+ * Student Portal login credential: phone number + Roll Number, checked
+ * directly against the live Student record (auth.service.ts's
+ * studentLogin) — there is no separate login account to create or reset
+ * ahead of time anymore, so this is a pure info display, not an action.
  */
 export function StudentLoginDialog({ student, onOpenChange }: Props) {
-  const [submitting, setSubmitting] = useState(false);
-
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -35,44 +25,8 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
     }
   };
 
-  // POST /users is idempotent per student now — the backend resets the
-  // existing login when one is already linked to this student, so there's
-  // no need to look it up here first (that separate lookup-then-branch was
-  // itself a source of bugs: any miss on the lookup fell through to a
-  // plain create, which used to fail with a raw, unhelpful duplicate-key
-  // error instead of just fixing the existing login).
-  const handleCreateOrReset = async () => {
-    if (!student || !student.mobile) return;
-    setSubmitting(true);
-    try {
-      const roles = await api.get<{ _id: string; name: string }[]>("/roles");
-      const studentRoleId = roles.find((r) => r.name === "student")?._id;
-      if (!studentRoleId) {
-        toast.error("Student role খুঁজে পাওয়া যায়নি");
-        return;
-      }
-      await api.post("/users", {
-        identifier: student.mobile,
-        password: passwordFromPhone(student.mobile),
-        roleId: studentRoleId,
-        linkedStudentId: student.id,
-      });
-      toast.success("লগইন তৈরি/আপডেট হয়েছে — শিক্ষার্থীর মোবাইলে SMS পাঠানো হয়েছে", { duration: 8000 });
-      onOpenChange(false);
-    } catch (err) {
-      if (err instanceof ApiClientError && err.code === "CONFLICT") {
-        toast.error("এই মোবাইল নম্বরে অন্য একটি অ্যাকাউন্ট (অন্য শিক্ষার্থী/স্টাফ) আগে থেকেই আছে");
-      } else {
-        toast.error(err instanceof ApiClientError ? err.message : "লগইন তৈরি/আপডেট ব্যর্থ হয়েছে");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   if (!student) return null;
-  const missing = !student.mobile;
-  const loginPassword = student.mobile ? passwordFromPhone(student.mobile) : "";
+  const missing = !student.mobile || !student.rollNumber;
 
   return (
     <Dialog open={!!student} onOpenChange={onOpenChange}>
@@ -82,34 +36,31 @@ export function StudentLoginDialog({ student, onOpenChange }: Props) {
         </DialogHeader>
         <div className="space-y-3">
           {missing ? (
-            <p className="text-sm text-destructive">লগইন তৈরির জন্য মোবাইল নম্বর থাকা আবশ্যক — আগে এডিট করে যোগ করুন।</p>
+            <p className="text-sm text-destructive">লগইনের জন্য মোবাইল নম্বর ও রোল নম্বর — দুটোই থাকা আবশ্যক।</p>
           ) : (
             <>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">মোবাইল নম্বর (আইডি)</p>
+                  <p className="text-xs text-muted-foreground">ফোন নম্বর</p>
                   <p className="font-mono font-medium">{student.mobile}</p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => copy(student.mobile)}><Copy className="h-3.5 w-3.5" /></Button>
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">পাসওয়ার্ড (মোবাইল নম্বরের শেষ ৬ ডিজিট)</p>
-                  <p className="font-mono font-medium">{loginPassword}</p>
+                  <p className="text-xs text-muted-foreground">রোল নম্বর</p>
+                  <p className="font-mono font-medium">{student.rollNumber}</p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => copy(loginPassword)}><Copy className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" variant="ghost" onClick={() => copy(student.rollNumber || "")}><Copy className="h-3.5 w-3.5" /></Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                নিচের বাটনে ক্লিক করলে এই তথ্য দিয়ে লগইন অ্যাকাউন্ট তৈরি/আপডেট হবে এবং শিক্ষার্থীর মোবাইলে SMS পাঠানো হবে।
+                শিক্ষার্থী `/login` পেজের "শিক্ষার্থী" ট্যাবে এই ফোন নম্বর ও রোল নম্বর দিয়েই সরাসরি লগইন করতে পারবে — আলাদা কোনো পাসওয়ার্ড বা সেটআপের প্রয়োজন নেই।
               </p>
             </>
           )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>বন্ধ করুন</Button>
-          <Button onClick={handleCreateOrReset} disabled={missing || submitting}>
-            <Send className="h-4 w-4 mr-1" /> {submitting ? "পাঠানো হচ্ছে..." : "তৈরি/রিসেট করুন (SMS সহ)"}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

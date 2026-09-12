@@ -7,6 +7,13 @@ export const loginSchema = z.object({
   }),
 });
 
+export const studentLoginSchema = z.object({
+  body: z.object({
+    phone: z.string().trim().min(6),
+    rollNumber: z.string().trim().min(1),
+  }),
+});
+
 export const changePasswordSchema = z.object({
   body: z.object({
     currentPassword: z.string().min(1),

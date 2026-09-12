@@ -13,16 +13,3 @@ const BENGALI_DIGITS = "০১২৩৪৫৬৭৮৯";
 export function toAsciiDigits(input: string): string {
   return input.replace(/[০-৯]/g, (d) => String(BENGALI_DIGITS.indexOf(d)));
 }
-
-/**
- * Student Portal login credential (Phase 3 addendum, revised): the phone
- * number is required on every student and is always digits, so its last 6
- * digits make a far more reliable password source than the Roll Number —
- * no Bengali/ASCII numeral ambiguity, no dependency on a Roll Number ever
- * being (correctly) set/edited. Strips everything but digits first (spaces,
- * dashes, a "+880" country code) so formatting differences never matter.
- */
-export function passwordFromPhone(phone: string): string {
-  const digitsOnly = toAsciiDigits(phone).replace(/\D/g, "");
-  return digitsOnly.slice(-6);
-}
