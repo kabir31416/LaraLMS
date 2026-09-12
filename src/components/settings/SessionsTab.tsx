@@ -9,6 +9,7 @@ import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useAcademic } from "@/contexts/AcademicContext";
 import type { Session } from "@/types/academic";
 import { toast } from "sonner";
+import { ApiClientError } from "@/contexts/AuthContext";
 
 export function SessionsTab() {
   const { sessions, addSession, updateSession, deleteSession } = useAcademic();
@@ -19,11 +20,24 @@ export function SessionsTab() {
   const openNew = () => { setEdit(null); setForm({ name: "", startDate: "", endDate: "" }); setOpen(true); };
   const openEdit = (s: Session) => { setEdit(s); setForm({ name: s.name, startDate: s.startDate, endDate: s.endDate }); setOpen(true); };
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name || !form.startDate || !form.endDate) { toast.error("সব ফিল্ড পূরণ করুন"); return; }
-    if (edit) { updateSession(edit.id, form); toast.success("সেশন আপডেট"); }
-    else { addSession(form); toast.success("সেশন যোগ"); }
-    setOpen(false);
+    try {
+      if (edit) { await updateSession(edit.id, form); toast.success("সেশন আপডেট"); }
+      else { await addSession(form); toast.success("সেশন যোগ"); }
+      setOpen(false);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteSession(id);
+      toast.success("মুছে ফেলা হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "মুছতে ব্যর্থ হয়েছে");
+    }
   };
 
   return (
@@ -45,7 +59,7 @@ export function SessionsTab() {
                 <TableCell>{s.endDate}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { deleteSession(s.id); toast.success("মুছে ফেলা হয়েছে"); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>
                 </TableCell>
               </TableRow>
             ))}
