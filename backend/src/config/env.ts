@@ -25,6 +25,14 @@ const envSchema = z.object({
   ADMIN_SEED_PHONE: z.string().optional().default("01700000000"),
   ADMIN_SEED_PASSWORD: z.string().optional().default("ChangeMe123!"),
   ADMIN_SEED_NAME: z.string().optional().default("Admin"),
+
+  // BulkSMSBD (or compatible) gateway for login-credential SMS. Left blank,
+  // sendSms() no-ops (logs and returns) instead of failing — SMS is a
+  // best-effort side effect, never something that should block a student
+  // being created or a login being (re)set.
+  SMS_API_KEY: z.string().optional().default(""),
+  SMS_SENDER_ID: z.string().optional().default(""),
+  SMS_API_URL: z.string().optional().default("http://bulksmsbd.net/api/smsapi"),
 });
 
 const parsed = envSchema.safeParse(process.env);
