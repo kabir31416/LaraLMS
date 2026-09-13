@@ -33,3 +33,17 @@ export const publicBatchListQuerySchema = z.object({
     courseId: z.string().length(24).optional(),
   }),
 });
+
+/**
+ * Batch-wise Master Sheet (Part 2). `startDate`/`endDate` are both optional
+ * — omitting them shows every published exam this batch ever held. The
+ * startDate <= endDate rule again lives in the service as a plain ApiError,
+ * for the same reason noted above.
+ */
+export const publicBatchMasterSheetQuerySchema = z.object({
+  query: z.object({
+    batchName: z.string().trim().min(1, "সঠিক ব্যাচ নির্বাচন করুন।").max(100),
+    startDate: dateStringSchema.optional(),
+    endDate: dateStringSchema.optional(),
+  }),
+});

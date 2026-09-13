@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { validate } from "../../common/middlewares/validate.middleware";
 import { publicResultLimiter } from "../../common/middlewares/rateLimit.middleware";
-import { publicBatchListQuerySchema, publicIndividualResultQuerySchema } from "./publicResults.validation";
+import { publicBatchListQuerySchema, publicBatchMasterSheetQuerySchema, publicIndividualResultQuerySchema } from "./publicResults.validation";
 import * as controller from "./publicResults.controller";
 
 /**
@@ -13,5 +13,6 @@ const router = Router();
 
 router.get("/individual", publicResultLimiter, validate(publicIndividualResultQuerySchema), controller.getIndividualResult);
 router.get("/batches", publicResultLimiter, validate(publicBatchListQuerySchema), controller.listBatches);
+router.get("/batch-master-sheet", publicResultLimiter, validate(publicBatchMasterSheetQuerySchema), controller.getBatchMasterSheet);
 
 export default router;

@@ -30,3 +30,35 @@ export interface PublicBatchOption {
   name: string;
   courseName: string | null;
 }
+
+/** Mirrors publicResults.service.ts's BatchMasterSheetView exactly — Part 2's batch master-sheet response shape. */
+export interface MasterSheetColumn {
+  date: string;
+  subject: string;
+  examTitle: string;
+  fullMarks: number;
+}
+
+export interface MasterSheetCell {
+  value: number | null;
+  status: "present" | "absent" | "na";
+}
+
+export interface MasterSheetRow {
+  rollNumber: string;
+  name: string;
+  cells: MasterSheetCell[];
+  totalObtained: number;
+  totalFullMarks: number;
+  percentage: number;
+  grade: string;
+  rank: number | null;
+}
+
+export interface BatchMasterSheetView {
+  batch: { name: string; courseName: string | null };
+  dateRange: { start: string | null; end: string | null };
+  columns: MasterSheetColumn[];
+  rows: MasterSheetRow[];
+  generatedAt: string;
+}

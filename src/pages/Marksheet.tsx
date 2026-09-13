@@ -1,24 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GraduationCap, Users, UserRound, Printer, FileDown, ArrowLeft } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
-import { printIndividualMarksheet, downloadIndividualMarksheetPdf } from "@/lib/marksheetExport";
-import type { IndividualResultView } from "@/types/marksheet";
+import {
+  printIndividualMarksheet,
+  downloadIndividualMarksheetPdf,
+  printBatchMasterSheet,
+  downloadBatchMasterSheetPdf,
+} from "@/lib/marksheetExport";
+import type { BatchMasterSheetView, IndividualResultView, MasterSheetCell, PublicBatchOption } from "@/types/marksheet";
 import { toast } from "sonner";
 
 /**
  * Public Marksheet (Phase 6) — no login, no ProtectedRoute, same as
- * PublicInfo.tsx. This is Part 1: the "ব্যক্তিগত ফলাফল" (Individual Result)
- * flow is fully implemented; "ব্যাচ ভিত্তিক ফলাফল" (Batch Master Sheet) is
- * shown as a real option on the initial screen per the spec, but its own
- * UI is Part 2 and deliberately not built here yet.
+ * PublicInfo.tsx. Both flows are fully implemented: "ব্যক্তিগত ফলাফল"
+ * (Individual Result, Part 1) and "ব্যাচ ভিত্তিক ফলাফল" (Batch Master
+ * Sheet, Part 2).
  */
 type ScreenType = "select" | "individual" | "batch";
 
@@ -43,7 +48,7 @@ export default function Marksheet() {
 
         {screen === "select" && <SelectScreen onSelect={setScreen} />}
         {screen === "individual" && <IndividualScreen onBack={() => setScreen("select")} />}
-        {screen === "batch" && <BatchComingSoon onBack={() => setScreen("select")} />}
+        {screen === "batch" && <BatchScreen onBack={() => setScreen("select")} />}
 
         <div className="text-center">
           <Link to="/login" className="text-sm text-primary hover:underline">লগইন পেইজে ফিরে যান</Link>
@@ -83,15 +88,179 @@ function SelectScreen({ onSelect }: { onSelect: (s: ScreenType) => void }) {
   );
 }
 
-function BatchComingSoon({ onBack }: { onBack: () => void }) {
+function BatchScreen({ onBack }: { onBack: () => void }) {
+  const [batches, setBatches] = useState<PublicBatchOption[] | null>(null);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [batchName, setBatchName] = useState<string>("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<BatchMasterSheetView | null>(null);
+
+  useEffect(() => {
+    api
+      .get<PublicBatchOption[]>("/public/results/batches")
+      .then(setBatches)
+      .catch(() => setBatches([]))
+      .finally(() => setLoadingBatches(false));
+  }, []);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searching) return; // duplicate-submit prevention
+    if (!batchName) { toast.error("সঠিক ব্যাচ নির্বাচন করুন।"); return; }
+    if (startDate && endDate && startDate > endDate) { toast.error("শুরু তারিখ শেষ তারিখের পরে হতে পারবে না।"); return; }
+
+    setSearching(true);
+    setError(null);
+    setResult(null);
+    try {
+      const params = new URLSearchParams({ batchName });
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+      const data = await api.get<BatchMasterSheetView>(`/public/results/batch-master-sheet?${params.toString()}`);
+      setResult(data);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setSearching(false);
+      setSearched(true);
+    }
+  };
+
   return (
-    <Card>
-      <CardContent className="py-12 text-center space-y-3">
-        <Users className="h-8 w-8 text-muted-foreground mx-auto" />
-        <p className="text-muted-foreground">ব্যাচ ভিত্তিক ফলাফল শীঘ্রই আসছে।</p>
-        <Button variant="outline" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" /> পিছনে যান</Button>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="pt-6">
+          <form className="space-y-4" onSubmit={handleSearch}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>ব্যাচ নির্বাচন করুন</Label>
+                <Select value={batchName} onValueChange={setBatchName} disabled={loadingBatches}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingBatches ? "লোড হচ্ছে..." : "ব্যাচ নির্বাচন করুন"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(batches ?? []).map((b) => (
+                      <SelectItem key={b.name} value={b.name}>
+                        {b.name}{b.courseName ? ` (${b.courseName})` : ""}
+                      </SelectItem>
+                    ))}
+                    {batches?.length === 0 && (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">কোনো ব্যাচ পাওয়া যায়নি</div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>শুরু তারিখ (ঐচ্ছিক)</Label>
+                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>শেষ তারিখ (ঐচ্ছিক)</Label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={searching}>{searching ? "খোঁজা হচ্ছে..." : "ফলাফল দেখুন"}</Button>
+              <Button type="button" variant="outline" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" /> পিছনে যান</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {searched && !searching && error && (
+        <Card><CardContent className="py-10 text-center text-muted-foreground">{error}</CardContent></Card>
+      )}
+
+      {result && <BatchMasterSheetDisplay data={result} />}
+    </div>
+  );
+}
+
+function rankBadgeClass(rank: number): string {
+  if (rank === 1) return "bg-amber-100 text-amber-800 border-amber-200";
+  if (rank === 2) return "bg-slate-200 text-slate-700 border-slate-300";
+  return "bg-orange-100 text-orange-800 border-orange-200";
+}
+
+const RANK_LABEL: Record<number, string> = { 1: "১ম", 2: "২য়", 3: "৩য়" };
+
+function MasterSheetCellValue({ cell }: { cell: MasterSheetCell }) {
+  if (cell.status === "na") return <span className="text-muted-foreground">—</span>;
+  if (cell.status === "absent") return <span className="text-destructive text-xs">অনুপস্থিত</span>;
+  return <>{cell.value}</>;
+}
+
+function BatchMasterSheetDisplay({ data }: { data: BatchMasterSheetView }) {
+  const { batch, dateRange, columns, rows } = data;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
+          <div>
+            <CardTitle className="text-base">{batch.name}{batch.courseName ? ` — ${batch.courseName}` : ""}</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              সময়সীমা: {dateRange.start ?? "শুরু থেকে"} থেকে {dateRange.end ?? "বর্তমান পর্যন্ত"} • মোট শিক্ষার্থী: {rows.length}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => printBatchMasterSheet(data)}>
+              <Printer className="h-4 w-4 mr-1" /> প্রিন্ট
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => downloadBatchMasterSheetPdf(data)}>
+              <FileDown className="h-4 w-4 mr-1" /> PDF
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto border rounded-lg">
+            <Table className="text-sm">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 z-20 bg-muted/70 min-w-[80px]">রোল</TableHead>
+                  <TableHead className="sticky left-[80px] z-20 bg-muted/70 min-w-[140px]">নাম</TableHead>
+                  {columns.map((c, i) => (
+                    <TableHead key={i} className="text-center whitespace-nowrap min-w-[90px]">
+                      <div className="font-medium">{c.subject}</div>
+                      <div className="text-[10px] text-muted-foreground font-normal">{c.date} • পূর্ণ {c.fullMarks}</div>
+                    </TableHead>
+                  ))}
+                  <TableHead className="text-right whitespace-nowrap">মোট প্রাপ্ত</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">মোট পূর্ণমান</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">শতাংশ</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">গ্রেড</TableHead>
+                  <TableHead className="text-center whitespace-nowrap">অবস্থান</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.rollNumber + r.name}>
+                    <TableCell className="sticky left-0 z-10 bg-background font-medium">{r.rollNumber}</TableCell>
+                    <TableCell className="sticky left-[80px] z-10 bg-background whitespace-nowrap">{r.name}</TableCell>
+                    {r.cells.map((c, i) => (
+                      <TableCell key={i} className="text-center">
+                        <MasterSheetCellValue cell={c} />
+                      </TableCell>
+                    ))}
+                    <TableCell className="text-right">{r.totalObtained}</TableCell>
+                    <TableCell className="text-right">{r.totalFullMarks}</TableCell>
+                    <TableCell className="text-right font-medium">{r.percentage}%</TableCell>
+                    <TableCell className="text-right">{r.grade}</TableCell>
+                    <TableCell className="text-center">
+                      {r.rank ? <Badge className={rankBadgeClass(r.rank)}>{RANK_LABEL[r.rank]}</Badge> : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
