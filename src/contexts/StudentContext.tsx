@@ -1,15 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { Student, ProfileCompletion } from "@/types/student";
-import { mockAttendance, mockResults } from "@/data/students";
-import type { AttendanceRecord, ExamResult } from "@/types/student";
 import { api } from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Students are now backed by the real API (Phase 3, Modules 10-12).
  * Payments moved to their own PaymentContext (Modules 15-17). Attendance/
- * Results stay on the old mock data until their own modules (18-20) exist —
- * the same phased approach already used for Academic's classExams/videos.
+ * Offline-Exam/Offline-Result are backed by the real API too (Modules
+ * 18-20) — read them via AttendanceContext's getByStudent/getResultsByStudent
+ * (see StudentAttendance.tsx/StudentResults.tsx/StudentProfile.tsx), not
+ * through this context.
  *
  * Field names are translated at this boundary (phone <-> mobile, photoUrl <->
  * photo, registrationId <-> studentId, currentRollNumber <-> rollNumber,
@@ -148,8 +148,6 @@ interface StudentContextType {
   updateRoll: (id: string, rollNumber: string) => Promise<Student>;
   deleteStudent: (id: string) => Promise<void>;
   getStudent: (id: string) => Student | undefined;
-  getAttendance: (studentId: string) => AttendanceRecord[];
-  getResults: (studentId: string) => ExamResult[];
   // Batch enrollment — Phase 1 §14
   enrollStudent: (studentId: string, batchId: string) => Promise<void>;
   transferStudent: (studentId: string, toBatchId: string, reason: string, newRollNumber?: string) => Promise<void>;
@@ -215,9 +213,6 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
 
   const getStudent = useCallback((id: string) => students.find((s) => s.id === id), [students]);
 
-  const getAttendance = useCallback((studentId: string) => mockAttendance[studentId] || [], []);
-  const getResults = useCallback((studentId: string) => mockResults[studentId] || [], []);
-
   const enrollStudent = useCallback(async (studentId: string, batchId: string) => {
     await api.post(`/students/${studentId}/enroll`, { batchId });
     await refreshStudents();
@@ -237,11 +232,10 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
     () => ({
       students, loading,
       addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
-      getAttendance, getResults,
       enrollStudent, transferStudent, withdrawStudent, refreshStudents,
     }),
     [students, loading, addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
-      getAttendance, getResults, enrollStudent, transferStudent, withdrawStudent, refreshStudents],
+      enrollStudent, transferStudent, withdrawStudent, refreshStudents],
   );
 
   return <StudentContext.Provider value={value}>{children}</StudentContext.Provider>;

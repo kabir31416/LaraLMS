@@ -11,21 +11,50 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, Pencil, Phone, Mail, MapPin } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePayments } from "@/contexts/PaymentContext";
+import { useAttendance } from "@/contexts/AttendanceContext";
+import { useAcademic } from "@/contexts/AcademicContext";
+import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudent, getAttendance, getResults } = useStudents();
+  const { getStudent } = useStudents();
   const { getPayments } = usePayments();
   const { batches } = useBatches();
   const { getStaff } = useStaff();
+  const { getByStudent, getResultsByStudent, listExams } = useAttendance();
+  const { getSubject, getLecture } = useAcademic();
   const [editOpen, setEditOpen] = useState(false);
+  const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
+  const [exams, setExams] = useState<OfflineExam[]>([]);
+  const [results, setResults] = useState<OfflineResult[]>([]);
 
   const student = getStudent(id || "");
+
+  // Real Attendance/Offline-Result data (Modules 18-20) — the same
+  // per-student API the Student Portal itself reads, so a mark/attendance
+  // entry a Batch Director saves on Result Entry shows up here too, not
+  // just on the student's own dashboard.
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    Promise.all([
+      getByStudent(student.id),
+      getResultsByStudent(student.id),
+      listExams(student.batchId ? { batchId: student.batchId } : undefined),
+    ]).then(([a, r, e]) => {
+      if (cancelled) return;
+      setAttendance(a);
+      setResults(r);
+      setExams(e);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [student, getByStudent, getResultsByStudent, listExams]);
+
   if (!student) {
     return (
       <DashboardLayout>
@@ -35,13 +64,19 @@ const StudentProfile = () => {
   }
 
   const payments = getPayments(student.id);
-  const attendance = getAttendance(student.id);
-  const results = getResults(student.id);
 
-  const present = attendance.filter((a) => a.status === "উপস্থিত").length;
-  const absent = attendance.filter((a) => a.status === "অনুপস্থিত").length;
-  const late = attendance.filter((a) => a.status === "দেরি").length;
+  const present = attendance.filter((a) => a.status === "Present").length;
+  const absent = attendance.filter((a) => a.status === "Absent").length;
   const attendanceRate = attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0;
+
+  type ResultRow = { result: OfflineResult; exam: OfflineExam; subject?: string; lecture?: string };
+  const resultRows = results
+    .map((r): ResultRow | null => {
+      const exam = exams.find((e) => e.id === r.examId);
+      if (!exam) return null;
+      return { result: r, exam, subject: getSubject(exam.subjectId)?.name, lecture: getLecture(exam.lectureId)?.title };
+    })
+    .filter((r): r is ResultRow => r !== null);
 
   const installmentCount = payments.length;
 
@@ -189,7 +224,7 @@ const StudentProfile = () => {
 
           {/* Attendance */}
           <TabsContent value="attendance">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               <Card className="border-none shadow-sm p-4 text-center">
                 <p className="text-2xl font-bold text-primary">{attendanceRate}%</p>
                 <p className="text-xs text-muted-foreground">উপস্থিতির হার</p>
@@ -202,10 +237,6 @@ const StudentProfile = () => {
                 <p className="text-2xl font-bold text-destructive">{absent}</p>
                 <p className="text-xs text-muted-foreground">অনুপস্থিত</p>
               </Card>
-              <Card className="border-none shadow-sm p-4 text-center">
-                <p className="text-2xl font-bold text-warning">{late}</p>
-                <p className="text-xs text-muted-foreground">দেরি</p>
-              </Card>
             </div>
             <Card className="border-none shadow-sm">
               <Table>
@@ -213,22 +244,23 @@ const StudentProfile = () => {
                   <TableRow>
                     <TableHead>তারিখ</TableHead>
                     <TableHead>অবস্থা</TableHead>
+                    <TableHead>উৎস</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {attendance.length === 0 ? (
-                    <TableRow><TableCell colSpan={2} className="text-center text-muted-foreground py-8">কোনো তথ্য নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-8">কোনো তথ্য নেই</TableCell></TableRow>
                   ) : (
-                    attendance.map((a, i) => (
-                      <TableRow key={i}>
+                    attendance.map((a) => (
+                      <TableRow key={a.id}>
                         <TableCell>{a.date}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={
-                            a.status === "উপস্থিত" ? "bg-success/10 text-success border-success/20" :
-                            a.status === "অনুপস্থিত" ? "bg-destructive/10 text-destructive border-destructive/20" :
-                            "bg-warning/10 text-warning border-warning/20"
-                          }>{a.status}</Badge>
+                            a.status === "Present" ? "bg-success/10 text-success border-success/20" :
+                            "bg-destructive/10 text-destructive border-destructive/20"
+                          }>{a.status === "Present" ? "উপস্থিত" : "অনুপস্থিত"}</Badge>
                         </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{a.source === "Exam" ? "এক্সাম" : "ম্যানুয়াল"}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -245,22 +277,24 @@ const StudentProfile = () => {
                   <TableRow>
                     <TableHead>পরীক্ষা</TableHead>
                     <TableHead>বিষয়</TableHead>
-                    <TableHead className="text-center">পূর্ণমান</TableHead>
-                    <TableHead className="text-center">প্রাপ্ত নম্বর</TableHead>
-                    <TableHead className="text-center">গ্রেড</TableHead>
+                    <TableHead>লেকচার</TableHead>
+                    <TableHead>তারিখ</TableHead>
+                    <TableHead className="text-center">নম্বর</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.length === 0 ? (
+                  {resultRows.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">কোনো ফলাফল নেই</TableCell></TableRow>
                   ) : (
-                    results.map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{r.exam}</TableCell>
-                        <TableCell>{r.subject}</TableCell>
-                        <TableCell className="text-center">{r.totalMarks}</TableCell>
-                        <TableCell className="text-center font-semibold">{r.obtained}</TableCell>
-                        <TableCell className="text-center"><Badge variant="outline">{r.grade}</Badge></TableCell>
+                    resultRows.map((r) => (
+                      <TableRow key={r.result.id}>
+                        <TableCell className="font-medium">{r.exam.title}</TableCell>
+                        <TableCell>{r.subject || "—"}</TableCell>
+                        <TableCell>{r.lecture || "—"}</TableCell>
+                        <TableCell>{r.exam.date}</TableCell>
+                        <TableCell className="text-center font-semibold">
+                          {r.result.marks ?? "অনুপস্থিত"} / {r.exam.fullMarks}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}

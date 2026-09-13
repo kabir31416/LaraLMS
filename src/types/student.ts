@@ -90,19 +90,6 @@ export interface Payment {
   note?: string;
 }
 
-export interface AttendanceRecord {
-  date: string;
-  status: "উপস্থিত" | "অনুপস্থিত" | "দেরি";
-}
-
-export interface ExamResult {
-  exam: string;
-  subject: string;
-  totalMarks: number;
-  obtained: number;
-  grade: string;
-}
-
 export const FEE_TYPES: FeeType[] = ["এককালীন", "মাসিক"];
 export const COURSES = ["বিজ্ঞান", "বাণিজ্য", "মানবিক", "সাধারণ"];
 export const BATCHES = ["ব্যাচ-২০২৬-A", "ব্যাচ-২০২৬-B", "ব্যাচ-২০২৫-A", "ব্যাচ-২০২৫-B"];
