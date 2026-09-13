@@ -13,6 +13,18 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
+  /**
+   * The Student/Staff Portal (auth.service.ts's studentLogin/staffLogin) has
+   * no refresh mechanism at all — no httpOnly cookie is ever issued for it,
+   * since those logins write nothing server-side to back one with. Reusing
+   * the 15-minute admin access-token lifetime there meant a portal session
+   * silently died mid-use: a reload after ~15 minutes restored an already-
+   * expired token from localStorage, the first request 401'd, the doomed
+   * refresh attempt (no cookie to refresh) added a slow round-trip, and the
+   * user was logged out. This is a separate, much longer lifetime for those
+   * two logins only — Admin/Staff-password logins are unaffected.
+   */
+  PORTAL_ACCESS_EXPIRES_IN: z.string().default("12h"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
 

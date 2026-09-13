@@ -25,12 +25,22 @@ export class ApiClientError extends Error {
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+// A Student/Staff Portal session (auth.service.ts's studentLogin/staffLogin)
+// has no httpOnly refresh cookie at all — /auth/refresh can never succeed
+// for one. Without this flag, a 401 on an expired portal token still tried
+// that doomed refresh first, adding a full extra round-trip of visible
+// "stuck loading" before the inevitable logout. AuthContext toggles this
+// depending on which kind of session is active.
+let hasRefreshCapability = true;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 export function getAccessToken() {
   return accessToken;
+}
+export function setHasRefreshCapability(v: boolean) {
+  hasRefreshCapability = v;
 }
 /** AuthContext registers this once to hear "the session is gone, log the UI out." */
 export function onSessionExpired(cb: () => void) {
@@ -76,7 +86,7 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
   const { body, status } = await rawRequest<T>(path, options);
 
   if (status === 401 && !isRetry && path !== "/auth/login" && path !== "/auth/refresh") {
-    const refreshed = await tryRefresh();
+    const refreshed = hasRefreshCapability && (await tryRefresh());
     if (refreshed) return request<T>(path, options, true);
     setAccessToken(null);
     onUnauthorized?.();

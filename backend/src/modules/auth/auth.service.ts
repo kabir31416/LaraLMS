@@ -127,13 +127,16 @@ export async function studentLogin(phone: string, rollNumber: string) {
   const student = await Student.findOne({ phone: normalizedPhone, currentRollNumber: normalizedRoll });
   if (!student) throw genericError();
 
-  const accessToken = signAccessToken({
-    sub: String(student._id),
-    roleId: "",
-    role: "student",
-    permissions: DEFAULT_ROLE_PERMISSIONS.student,
-    studentId: String(student._id),
-  });
+  const accessToken = signAccessToken(
+    {
+      sub: String(student._id),
+      roleId: "",
+      role: "student",
+      permissions: DEFAULT_ROLE_PERMISSIONS.student,
+      studentId: String(student._id),
+    },
+    env.PORTAL_ACCESS_EXPIRES_IN,
+  );
 
   return {
     accessToken,
@@ -182,13 +185,16 @@ export async function staffLogin(phone: string, staffId: string) {
     throw ApiError.forbidden("এই স্টাফ টাইপের জন্য এখনো কোনো পোর্টাল চালু নেই — Batch Director ছাড়া অন্য কেউ এই লগইন ব্যবহার করতে পারবে না");
   }
 
-  const accessToken = signAccessToken({
-    sub: String(staff._id),
-    roleId: "",
-    role: roleName,
-    permissions: DEFAULT_ROLE_PERMISSIONS[roleName],
-    staffId: String(staff._id),
-  });
+  const accessToken = signAccessToken(
+    {
+      sub: String(staff._id),
+      roleId: "",
+      role: roleName,
+      permissions: DEFAULT_ROLE_PERMISSIONS[roleName],
+      staffId: String(staff._id),
+    },
+    env.PORTAL_ACCESS_EXPIRES_IN,
+  );
 
   return {
     accessToken,

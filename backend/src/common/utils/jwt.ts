@@ -10,8 +10,8 @@ export interface AccessTokenPayload {
   studentId?: string;
 }
 
-export function signAccessToken(payload: AccessTokenPayload): string {
-  const options: SignOptions = { expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions["expiresIn"] };
+export function signAccessToken(payload: AccessTokenPayload, expiresIn: string = env.JWT_ACCESS_EXPIRES_IN): string {
+  const options: SignOptions = { expiresIn: expiresIn as SignOptions["expiresIn"] };
   return jwt.sign(payload, env.JWT_ACCESS_SECRET, options);
 }
 
