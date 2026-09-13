@@ -56,8 +56,8 @@ const adminMenu = [
 const directorMenu = [
   { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
-  { title: "রেজাল্ট", url: "/director/results", icon: ClipboardList },
-  { title: "উপস্থিতি", url: "/director/attendance", icon: ClipboardCheck },
+  // Marks and attendance are both entered together here now — there's no separate attendance page for directors anymore.
+  { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];

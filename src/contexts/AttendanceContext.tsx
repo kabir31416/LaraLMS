@@ -52,16 +52,33 @@ function resultFromApi(doc: ApiOfflineResult): OfflineResult {
   return { id: doc._id, examId: doc.examId, studentId: doc.studentId, marks: doc.marks };
 }
 
+export interface SubmitResultItem {
+  studentId: string;
+  marks: number | null;
+  attendance: AttendanceStatus;
+}
+
+export interface SubmitResultSummary {
+  examId: string;
+  resultsSaved: number;
+  smsSent: number;
+  smsFailed: number;
+  failedStudents: { studentId: string; name: string; roll?: string }[];
+}
+
 interface Ctx {
   saveAttendance: (batchId: string, date: string, items: { studentId: string; status: AttendanceStatus }[], source?: "Manual" | "Exam", examId?: string) => Promise<void>;
   getByBatchDate: (batchId: string, date: string) => Promise<AttendanceEntry[]>;
   getByStudent: (studentId: string) => Promise<AttendanceEntry[]>;
   addExam: (exam: Omit<OfflineExam, "id" | "createdAt">) => Promise<OfflineExam>;
-  listExams: (params?: { batchId?: string }) => Promise<OfflineExam[]>;
+  listExams: (params?: { batchId?: string; subjectId?: string; lectureId?: string; date?: string }) => Promise<OfflineExam[]>;
   saveResults: (examId: string, items: { studentId: string; marks: number | null }[]) => Promise<void>;
   getResultsByExam: (examId: string) => Promise<OfflineResult[]>;
   getResultsByExams: (examIds: string[]) => Promise<OfflineResult[]>;
   getResultsByStudent: (studentId: string) => Promise<OfflineResult[]>;
+  /** Result Entry's single "Send Result" action — upserts the exam, saves marks + attendance together, and best-effort texts guardians. */
+  submitResult: (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
+  resendSms: (examId: string, studentIds: string[]) => Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">>;
   attendancePercent: (studentId: string, from?: string, to?: string) => Promise<number>;
   attendancePercentages: (params: { studentIds?: string[]; batchId?: string; batchIds?: string[] }, from?: string, to?: string) => Promise<Record<string, number>>;
   getByStudentStats: (params: { batchId?: string; from?: string; to?: string }) => Promise<{ studentId: string; present: number; absent: number; pct: number }[]>;
@@ -100,15 +117,26 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     return examFromApi(await api.post<ApiOfflineExam>("/exams", exam));
   }, []);
 
-  const listExams = useCallback(async (params?: { batchId?: string }): Promise<OfflineExam[]> => {
+  const listExams = useCallback(async (params?: { batchId?: string; subjectId?: string; lectureId?: string; date?: string }): Promise<OfflineExam[]> => {
     const qs = new URLSearchParams({ limit: "100", sortBy: "date", sortOrder: "desc" });
     if (params?.batchId) qs.set("batchId", params.batchId);
+    if (params?.subjectId) qs.set("subjectId", params.subjectId);
+    if (params?.lectureId) qs.set("lectureId", params.lectureId);
+    if (params?.date) qs.set("date", params.date);
     const docs = await api.get<ApiOfflineExam[]>(`/exams?${qs.toString()}`);
     return docs.map(examFromApi);
   }, []);
 
   const saveResults = useCallback(async (examId: string, items: { studentId: string; marks: number | null }[]) => {
     await api.post(`/exams/${examId}/results`, { items });
+  }, []);
+
+  const submitResult = useCallback(async (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
+    return api.post<SubmitResultSummary>("/exams/submit-result", data);
+  }, []);
+
+  const resendSms = useCallback(async (examId: string, studentIds: string[]): Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">> => {
+    return api.post(`/exams/${examId}/resend-sms`, { studentIds });
   }, []);
 
   const getResultsByExam = useCallback(async (examId: string): Promise<OfflineResult[]> => {
@@ -171,6 +199,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   const value: Ctx = {
     saveAttendance, getByBatchDate, getByStudent,
     addExam, listExams, saveResults, getResultsByExam, getResultsByExams, getResultsByStudent,
+    submitResult, resendSms,
     attendancePercent, attendancePercentages, getByStudentStats, getStats,
   };
 

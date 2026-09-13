@@ -24,5 +24,12 @@ const offlineExamSchema = new Schema<OfflineExamDoc>(
 );
 
 offlineExamSchema.index({ batchId: 1, date: -1 });
+// A result entry is conceptually unique per batch+subject+lecture+date —
+// exam.service.ts's create()/submitResult() enforce this with a
+// findOneAndUpdate(upsert) rather than a DB-level unique index, since a
+// hard unique index here could fail to build against any duplicate rows
+// that already exist from before this fix (Phase 5 §9/§19 — no destructive
+// migration on top of existing data).
+offlineExamSchema.index({ batchId: 1, subjectId: 1, lectureId: 1, date: 1 });
 
 export const OfflineExam = model<OfflineExamDoc>("OfflineExam", offlineExamSchema);

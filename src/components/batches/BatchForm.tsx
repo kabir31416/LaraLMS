@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,24 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
   const [days, setDays] = useState<WeekDay[]>(editBatch?.days || []);
 
   const [submitting, setSubmitting] = useState(false);
+
+  // `<BatchForm>` is rendered once by Batches.tsx and stays mounted for the
+  // page's whole lifetime — the Dialog only toggles visibility, it never
+  // unmounts/remounts this component. useState's lazy initializer therefore
+  // only ran once, on the very first open, so every subsequent "নতুন ব্যাচ"
+  // silently kept whatever Course (and every other field) was left over
+  // from the last batch that was created or edited — e.g. a Course that
+  // happened to be "Diploma" would keep reappearing pre-selected on brand
+  // new batches even though nothing auto-assigns Diploma anywhere in the
+  // schema. Re-seeding the form here every time the dialog actually opens
+  // (or the batch being edited changes) is the fix.
+  useEffect(() => {
+    if (!open) return;
+    setForm(init(editBatch));
+    setStartDate(editBatch?.startDate ? new Date(editBatch.startDate) : new Date());
+    setDays(editBatch?.days || []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editBatch]);
 
   function init(b?: Batch | null) {
     return {

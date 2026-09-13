@@ -1,4 +1,4 @@
-import { Outlet, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
@@ -28,7 +28,6 @@ import VideoClasses from "./pages/VideoClasses";
 import DirectorDashboard from "./pages/DirectorDashboard";
 import DirectorStudents from "./pages/DirectorStudents";
 import DirectorResults from "./pages/DirectorResults";
-import DirectorAttendance from "./pages/DirectorAttendance";
 
 // Student portal
 import StudentDashboard from "./pages/student/StudentDashboard";
@@ -80,7 +79,8 @@ export function AppRoutes() {
         <Route path="/director" element={<DirectorDashboard />} />
         <Route path="/director/students" element={<DirectorStudents />} />
         <Route path="/director/results" element={<DirectorResults />} />
-        <Route path="/director/attendance" element={<DirectorAttendance />} />
+        {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}
+        <Route path="/director/attendance" element={<Navigate to="/director/results" replace />} />
       </Route>
 
       {/* Student */}
