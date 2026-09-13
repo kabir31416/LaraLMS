@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { User, UserDoc } from "../users/user.model";
 import { Role } from "../rbac/role.model";
 import { Student } from "../students/student.model";
+import { Staff, StaffDoc } from "../staff/staff.model";
 import { RefreshToken } from "./refreshToken.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { comparePassword, hashPassword } from "../../common/utils/password";
@@ -141,6 +142,63 @@ export async function studentLogin(phone: string, rollNumber: string) {
       name: student.name,
       phone: student.phone,
       currentRollNumber: student.currentRollNumber,
+    },
+  };
+}
+
+/**
+ * Only staff types with a real portal home page today map to a role here —
+ * currently just Batch Director (see routes.tsx's "/director" section on
+ * the frontend). Admin keeps its existing identifier+password login
+ * (User/Role model, via login() above) — this map deliberately excludes
+ * "Admin" so a Staff row of that type can't also get in through the
+ * phone+staffId door.
+ */
+const STAFF_TYPE_TO_ROLE: Partial<Record<StaffDoc["staffType"], "batch_director">> = {
+  "Batch Director": "batch_director",
+};
+
+/**
+ * Staff Portal login — the same pure read-only design as studentLogin
+ * above, and for the same reason: an earlier "create a User account for
+ * this staff member" flow (still used for Admin logins) kept hitting
+ * duplicate-key conflicts when identifiers collided or a create/re-create
+ * raced. Phone + Staff ID matching the *same* Staff record is the entire
+ * credential — no password, no login/User account, no database write here
+ * at all.
+ */
+export async function staffLogin(phone: string, staffId: string) {
+  const genericError = () => ApiError.unauthorized("Phone number or staff ID is incorrect");
+
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  const normalizedStaffId = toAsciiDigits(staffId).trim();
+  if (!normalizedPhone || !normalizedStaffId) throw genericError();
+
+  const staff = await Staff.findOne({ phone: normalizedPhone, staffId: normalizedStaffId });
+  if (!staff) throw genericError();
+
+  const roleName = STAFF_TYPE_TO_ROLE[staff.staffType];
+  if (!roleName) {
+    throw ApiError.forbidden("এই স্টাফ টাইপের জন্য এখনো কোনো পোর্টাল চালু নেই — Batch Director ছাড়া অন্য কেউ এই লগইন ব্যবহার করতে পারবে না");
+  }
+
+  const accessToken = signAccessToken({
+    sub: String(staff._id),
+    roleId: "",
+    role: roleName,
+    permissions: DEFAULT_ROLE_PERMISSIONS[roleName],
+    staffId: String(staff._id),
+  });
+
+  return {
+    accessToken,
+    staff: {
+      id: String(staff._id),
+      name: staff.name,
+      phone: staff.phone,
+      staffId: staff.staffId,
+      staffType: staff.staffType,
+      role: roleName,
     },
   };
 }

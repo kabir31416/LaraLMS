@@ -11,6 +11,9 @@ export const createStaffSchema = z.object({
     staffType: z.enum(STAFF_TYPES),
     salary: z.number().min(0).default(0),
     joinDate: z.string().min(1),
+    // The Staff Portal login credential (phone + staffId, see auth.service.ts's staffLogin) — required
+    // up front so a newly-added staff member can log in immediately, same as a Student's Roll Number.
+    staffId: z.string().trim().min(1),
   }),
 });
 

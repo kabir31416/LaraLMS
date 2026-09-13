@@ -3,6 +3,22 @@ import { Staff, StaffDoc } from "./staff.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
+import { toAsciiDigits } from "../../common/utils/digits";
+
+/**
+ * Normalizes and uniqueness-checks a staffId before it's written, the same
+ * way applyRollNumberIfPresent does for a Student's Roll Number — this is
+ * the credential auth.service.ts's staffLogin matches against, so a
+ * silent collision here would surface as a raw duplicate-key error at
+ * save time instead of a clean message.
+ */
+async function normalizeAndCheckStaffId(staffId: string, excludeId?: string): Promise<string> {
+  const normalized = toAsciiDigits(staffId).trim();
+  if (!normalized) throw ApiError.badRequest("Staff ID cannot be empty");
+  const clash = await Staff.findOne({ staffId: normalized, ...(excludeId ? { _id: { $ne: excludeId } } : {}) });
+  if (clash) throw ApiError.conflict(`Staff ID "${normalized}" is already in use`);
+  return normalized;
+}
 
 export async function list(req: Request) {
   const { page, limit, skip, sort } = parsePagination(req, { createdAt: -1 });
@@ -29,7 +45,9 @@ export async function listDirectors(): Promise<StaffDoc[]> {
 }
 
 export async function create(req: Request, data: Partial<StaffDoc>): Promise<StaffDoc> {
-  const doc = await Staff.create(data);
+  const payload = { ...data };
+  if (payload.staffId) payload.staffId = await normalizeAndCheckStaffId(payload.staffId);
+  const doc = await Staff.create(payload);
   await recordAudit({ req, action: "staff.create", module: "staff", targetCollection: "staff", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
@@ -37,6 +55,9 @@ export async function create(req: Request, data: Partial<StaffDoc>): Promise<Sta
 export async function update(req: Request, id: string, patch: Partial<StaffDoc>): Promise<StaffDoc> {
   const doc = await getById(id);
   const before = doc.toObject();
+  if (typeof patch.staffId === "string" && patch.staffId.trim() !== (doc.staffId ?? "")) {
+    patch = { ...patch, staffId: await normalizeAndCheckStaffId(patch.staffId, id) };
+  }
   Object.assign(doc, patch);
   await doc.save();
   await recordAudit({ req, action: "staff.update", module: "staff", targetCollection: "staff", targetId: id, before, after: doc.toObject() });

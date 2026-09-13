@@ -35,12 +35,25 @@ interface StudentLoginResponse {
   };
 }
 
+interface StaffLoginResponse {
+  accessToken: string;
+  staff: {
+    id: string;
+    name: string;
+    phone: string;
+    staffId?: string;
+    staffType: string;
+    role: string;
+  };
+}
+
 interface AuthContextType {
   user: AuthUser | null;
-  /** True while the app is trying to restore a session from the refresh cookie (or, for a student, localStorage) on first load. */
+  /** True while the app is trying to restore a session from the refresh cookie (or, for a student/staff, localStorage) on first load. */
   initializing: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   studentLogin: (phone: string, rollNumber: string) => Promise<void>;
+  staffLogin: (phone: string, staffId: string) => Promise<void>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
@@ -49,6 +62,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 /** Student sessions have no server-side refresh record (auth.service.ts's studentLogin writes nothing) — persisted here instead so a reload doesn't log them out. */
 const STUDENT_SESSION_KEY = "laralms_student_session";
+/** Same reasoning as STUDENT_SESSION_KEY, for a Staff Portal (phone + Staff ID) session — see auth.service.ts's staffLogin. */
+const STAFF_SESSION_KEY = "laralms_staff_session";
 
 /**
  * Backend role names (Phase 2 §14, "module:action" / lowercase-snake convention)
@@ -87,6 +102,17 @@ function studentToAuthUser(s: StudentLoginResponse["student"]): AuthUser {
   };
 }
 
+function staffToAuthUser(s: StaffLoginResponse["staff"]): AuthUser {
+  return {
+    id: s.id,
+    identifier: s.phone,
+    staffId: s.id,
+    name: s.name,
+    role: toDisplayRole(s.role),
+    mustChangePassword: false,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [initializing, setInitializing] = useState(true);
@@ -95,33 +121,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     setUser(null);
     localStorage.removeItem(STUDENT_SESSION_KEY);
+    localStorage.removeItem(STAFF_SESSION_KEY);
     api.post("/auth/logout").catch(() => {
-      /* best-effort — the cookie may already be gone (or never existed, for a student session) */
+      /* best-effort — the cookie may already be gone (or never existed, for a student/staff session) */
     });
   }, []);
 
   // Silent-restore on first load: the access token lives only in memory, so
-  // a hard reload has none. Admin/Staff restore via the httpOnly refresh
-  // cookie; a Student session has no server-side record to restore from at
-  // all (studentLogin writes nothing), so it's restored from localStorage
-  // instead — if the stored access token has since expired, the first
-  // authenticated request 401s and onSessionExpired below logs it out.
+  // a hard reload has none. Admin restores via the httpOnly refresh cookie;
+  // a Student or Staff-Portal session has no server-side record to restore
+  // from at all (studentLogin/staffLogin write nothing), so those are
+  // restored from localStorage instead — if the stored access token has
+  // since expired, the first authenticated request 401s and
+  // onSessionExpired below logs it out.
   useEffect(() => {
     onSessionExpired(() => {
       setUser(null);
       localStorage.removeItem(STUDENT_SESSION_KEY);
+      localStorage.removeItem(STAFF_SESSION_KEY);
     });
 
     let cancelled = false;
     (async () => {
-      const storedStudent = localStorage.getItem(STUDENT_SESSION_KEY);
-      if (storedStudent) {
+      const storedLocal = localStorage.getItem(STUDENT_SESSION_KEY) || localStorage.getItem(STAFF_SESSION_KEY);
+      if (storedLocal) {
         try {
-          const { accessToken, user: storedUser } = JSON.parse(storedStudent) as { accessToken: string; user: AuthUser };
+          const { accessToken, user: storedUser } = JSON.parse(storedLocal) as { accessToken: string; user: AuthUser };
           setAccessToken(accessToken);
           setUser(storedUser);
         } catch {
           localStorage.removeItem(STUDENT_SESSION_KEY);
+          localStorage.removeItem(STAFF_SESSION_KEY);
         }
         setInitializing(false);
         return;
@@ -163,14 +193,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify({ accessToken: res.accessToken, user: authUser }));
   }, []);
 
+  /**
+   * Staff Portal login: a phone number + Staff ID match against the staff
+   * member's own record *is* the credential — no password, no login
+   * account (auth.service.ts's staffLogin is a pure read-only lookup).
+   * Admin keeps using login() above, unaffected.
+   */
+  const staffLogin = useCallback(async (phone: string, staffId: string) => {
+    const res = await api.post<StaffLoginResponse>("/auth/staff-login", { phone, staffId });
+    setAccessToken(res.accessToken);
+    const authUser = staffToAuthUser(res.staff);
+    setUser(authUser);
+    localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify({ accessToken: res.accessToken, user: authUser }));
+  }, []);
+
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     await api.post("/auth/change-password", { currentPassword, newPassword });
     setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : prev));
   }, []);
 
   const value = useMemo(
-    () => ({ user, initializing, login, studentLogin, logout, changePassword }),
-    [user, initializing, login, studentLogin, logout, changePassword],
+    () => ({ user, initializing, login, studentLogin, staffLogin, logout, changePassword }),
+    [user, initializing, login, studentLogin, staffLogin, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

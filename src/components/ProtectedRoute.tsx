@@ -6,8 +6,8 @@ interface Props {
   roles?: Role[];
 }
 
-/** Each role's own landing page — "/" itself is Admin-only, so anything that falls through to it for a non-Admin role would just bounce straight back here. */
-function homeRouteFor(role: Role): string {
+/** Each role's own landing page — "/" itself is Admin-only, so anything that falls through to it for a non-Admin role would just bounce straight back here. Exported so Login.tsx can send a freshly-logged-in user to the right place too. */
+export function homeRouteFor(role: Role): string {
   if (role === "Batch Director") return "/director";
   if (role === "Student") return "/student";
   return "/";

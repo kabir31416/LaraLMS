@@ -10,28 +10,35 @@ import { useAuth, ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 /**
- * Two tabs, two different auth calls underneath. Staff/Admin still use
- * identifier+password (/auth/login) and land on "/" (Admin) or "/director"
- * (Batch Director) after login. The Student tab uses a dedicated
- * /auth/student-login that checks phone + Roll Number directly against the
- * live Student record — no password, no login account at all
- * (auth.service.ts's studentLogin is a pure read-only lookup) — and lands
- * on "/student", the only route a Student role is allowed into.
+ * Three tabs, three different auth calls underneath.
+ * - Admin: identifier+password (/auth/login, the real User/Role model) —
+ *   lands on "/", the only route an Admin role is allowed into.
+ * - Staff: phone + Staff ID checked directly against the live Staff record
+ *   (/auth/staff-login) — no password, no login account at all
+ *   (auth.service.ts's staffLogin is a pure read-only lookup, same design
+ *   as the Student Portal below). Lands on "/director" — currently the
+ *   only staff type with a real portal home page is Batch Director;
+ *   staffLogin itself rejects any other staff type with a clear error.
+ * - Student: phone + Roll Number checked directly against the live Student
+ *   record (/auth/student-login) — lands on "/student".
  */
 const Login = () => {
   const navigate = useNavigate();
-  const { login, studentLogin } = useAuth();
-  const [tab, setTab] = useState<"staff" | "student">("staff");
+  const { login, studentLogin, staffLogin } = useAuth();
+  const [tab, setTab] = useState<"admin" | "staff" | "student">("admin");
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+
+  const [staffPhone, setStaffPhone] = useState("");
+  const [staffId, setStaffId] = useState("");
 
   const [studentPhone, setStudentPhone] = useState("");
   const [studentRoll, setStudentRoll] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
 
-  const handleStaffSubmit = async (e: React.FormEvent) => {
+  const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim() || !password) {
       toast.error("সব তথ্য দিন");
@@ -42,6 +49,24 @@ const Login = () => {
       await login(identifier.trim(), password);
       toast.success("লগইন সফল");
       navigate("/");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffPhone.trim() || !staffId.trim()) {
+      toast.error("ফোন নম্বর ও স্টাফ আইডি দিন");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await staffLogin(staffPhone.trim(), staffId.trim());
+      toast.success("লগইন সফল");
+      navigate("/director");
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
     } finally {
@@ -78,14 +103,15 @@ const Login = () => {
           <p className="text-sm text-muted-foreground">আপনার অ্যাকাউন্টে লগইন করুন</p>
         </CardHeader>
         <CardContent>
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "staff" | "student")}>
-            <TabsList className="grid grid-cols-2 w-full mb-4">
-              <TabsTrigger value="staff">স্টাফ / এডমিন</TabsTrigger>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as "admin" | "staff" | "student")}>
+            <TabsList className="grid grid-cols-3 w-full mb-4">
+              <TabsTrigger value="admin">এডমিন</TabsTrigger>
+              <TabsTrigger value="staff">স্টাফ</TabsTrigger>
               <TabsTrigger value="student">শিক্ষার্থী</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="staff">
-              <form className="space-y-4" onSubmit={handleStaffSubmit}>
+            <TabsContent value="admin">
+              <form className="space-y-4" onSubmit={handleAdminSubmit}>
                 <div className="space-y-1.5">
                   <Label htmlFor="login-identifier">মোবাইল নম্বর / আইডি</Label>
                   <Input
@@ -106,6 +132,35 @@ const Login = () => {
                     placeholder="••••••••"
                     autoComplete="current-password"
                   />
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "লগইন হচ্ছে..." : "লগইন"}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="staff">
+              <form className="space-y-4" onSubmit={handleStaffSubmit}>
+                <div className="space-y-1.5">
+                  <Label htmlFor="staff-phone">ফোন নম্বর</Label>
+                  <Input
+                    id="staff-phone"
+                    value={staffPhone}
+                    onChange={(e) => setStaffPhone(e.target.value)}
+                    placeholder="01XXXXXXXXX"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="staff-id">স্টাফ আইডি</Label>
+                  <Input
+                    id="staff-id"
+                    value={staffId}
+                    onChange={(e) => setStaffId(e.target.value)}
+                    placeholder="যেমন: T-01"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">নিয়োগের সময় দেওয়া ফোন নম্বর ও স্টাফ আইডি মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "লগইন হচ্ছে..." : "লগইন"}

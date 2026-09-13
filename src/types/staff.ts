@@ -20,4 +20,6 @@ export interface Staff {
   salary: number;
   joinDate: string; // ISO
   status: StaffStatus;
+  /** Staff Portal login credential — phone + staffId matching this record is the login itself (no password). */
+  staffId?: string;
 }
