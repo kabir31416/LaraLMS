@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Branch } from "@/types/branch";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Branch is now backed by the real API (Phase 3, Module 23) — the single
@@ -35,6 +36,7 @@ const BranchContext = createContext<BranchContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function BranchProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,9 +45,14 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
     setBranches(docs.map(fromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
-    refreshBranches().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
-  }, [refreshBranches]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshBranches().catch(() => { /* offline */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshBranches]);
 
   const addBranch = useCallback(async (data: Omit<Branch, "id">): Promise<Branch> => {
     const created = fromApi(await api.post<ApiBranch>("/branches", data));

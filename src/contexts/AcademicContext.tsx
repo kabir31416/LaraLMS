@@ -3,6 +3,7 @@ import type {
   Session, Course, Subject, Lecture, ClassExam, VideoClass, Question, AcademicSettings,
 } from "@/types/academic";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Sessions/Courses/Subjects/Lectures/Settings are now backed by the real API
@@ -96,6 +97,7 @@ const AcademicContext = createContext<Ctx | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function AcademicProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -123,9 +125,22 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setSettings(set);
   }, []);
 
+  // Every provider here is mounted inside AuthProvider (see AppProviders.tsx),
+  // and React fires child effects before parent effects on mount — so
+  // without this gate, this fired its one-shot fetch with no access token at
+  // all *every single load*, before AuthContext had restored one from
+  // localStorage or the refresh cookie. For Admin that raced with apiClient's
+  // own 401-retry-refresh and usually self-healed (invisible, but a wasted
+  // round trip); for a Student/Staff Portal session (no refresh cookie) it
+  // couldn't self-heal, and worse, the stale 401 arriving back *after*
+  // AuthContext had already restored a valid session would wipe it out and
+  // log the user straight back out. Waiting for `initializing` to clear
+  // before ever fetching removes the race entirely.
   useEffect(() => {
-    refreshAll().catch(() => { /* not logged in yet, or offline — dropdowns just stay empty */ }).finally(() => setLoading(false));
-  }, [refreshAll]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshAll().catch(() => { /* offline, or this role lacks access */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshAll]);
 
   // -------------------- Sessions --------------------
   const addSession = useCallback(async (s: Omit<Session, "id">) => {

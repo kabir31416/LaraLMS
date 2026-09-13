@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Payment } from "@/types/student";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Payments are now backed by the real API (Phase 3, Modules 15-17). Receipt
@@ -53,6 +54,7 @@ const PaymentContext = createContext<PaymentContextType | null>(null);
 const LIST_LIMIT = "?limit=100&sortBy=date&sortOrder=desc";
 
 export function PaymentProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -61,12 +63,16 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
     setPayments(docs.map(fromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
     // A Batch Director holds neither payments:read nor payments:read:own by
-    // default, so this 403s for them — same "not logged in yet, or offline"
-    // catch-and-ignore every other context list-fetch already uses.
+    // default, so this 403s for them — silently ignored, same as offline.
     refreshPayments().catch(() => {}).finally(() => setLoading(false));
-  }, [refreshPayments]);
+  }, [initializing, user, refreshPayments]);
 
   const getPayments = useCallback((studentId: string) => payments.filter((p) => p.studentId === studentId), [payments]);
 

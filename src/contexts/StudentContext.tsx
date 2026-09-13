@@ -3,6 +3,7 @@ import { Student, ProfileCompletion } from "@/types/student";
 import { mockAttendance, mockResults } from "@/data/students";
 import type { AttendanceRecord, ExamResult } from "@/types/student";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Students are now backed by the real API (Phase 3, Modules 10-12).
@@ -161,6 +162,7 @@ const StudentContext = createContext<StudentContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function StudentProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -169,9 +171,14 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
     setStudents(docs.map(fromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
-    refreshStudents().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
-  }, [refreshStudents]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshStudents().catch(() => { /* offline */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshStudents]);
 
   const upsertLocal = useCallback((student: Student) => {
     setStudents((prev) => (prev.some((s) => s.id === student.id) ? prev.map((s) => (s.id === student.id ? student : s)) : [student, ...prev]));
