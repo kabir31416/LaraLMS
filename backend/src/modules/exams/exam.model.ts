@@ -7,6 +7,19 @@ export interface OfflineExamDoc extends Document {
   title: string;
   fullMarks: number;
   date: string; // yyyy-mm-dd
+  /**
+   * Gates visibility on the *public* marksheet only (publicResults module) —
+   * Admin/Batch Director/Student Portal result views are completely
+   * unaffected by this and keep seeing everything, exactly as before
+   * (Phase 6 §5). Defaults to true: today's Result Entry has no
+   * draft/staging step at all — a result is final the moment a Batch
+   * Director sends it — so making every *existing* exam publicly visible
+   * by default preserves that same behavior for the new public surface
+   * rather than silently hiding a coaching centre's entire result history
+   * behind a publish action nothing yet exposes. An explicit "unpublish
+   * this exam" admin action can flip individual exams later if needed.
+   */
+  isPublished: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +32,7 @@ const offlineExamSchema = new Schema<OfflineExamDoc>(
     title: { type: String, required: true, trim: true },
     fullMarks: { type: Number, required: true, min: 1 },
     date: { type: String, required: true },
+    isPublished: { type: Boolean, default: true },
   },
   { timestamps: true },
 );
