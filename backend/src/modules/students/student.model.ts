@@ -22,9 +22,31 @@ export interface StudentDoc extends Document {
 
   institution?: string;
   class?: string;
+  /** Admin-controlled (Phase 4). */
+  bloodGroup?: string;
 
+  /** Legacy single field — kept for backward compatibility, no longer part of the admission/self-edit flow (superseded by present/permanentAddress below). */
   address?: string;
+  /** Student-editable (Phase 4). */
+  presentAddress?: string;
+  permanentAddress?: string;
 
+  /** Student-editable HSC info (Phase 4). */
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
+  hscGpa?: string;
+
+  /** Student-editable SSC info (Phase 4). */
+  sscInstitution?: string;
+  sscBoard?: string;
+  sscPassingYear?: string;
+  sscGroup?: string;
+  sscGpa?: string;
+
+  /** Real Course reference — admission's source of truth for Course Fee (Phase 4). `course` (free text) is kept in sync for existing UI/reports that read it as a string. */
+  courseId?: Types.ObjectId;
   course?: string;
   section?: string;
   group?: string;
@@ -75,9 +97,25 @@ const studentSchema = new Schema<StudentDoc>(
 
     institution: { type: String, trim: true },
     class: { type: String, trim: true },
+    bloodGroup: { type: String, trim: true },
 
     address: { type: String, trim: true },
+    presentAddress: { type: String, trim: true },
+    permanentAddress: { type: String, trim: true },
 
+    hscInstitution: { type: String, trim: true },
+    hscBoard: { type: String, trim: true },
+    hscPassingYear: { type: String, trim: true },
+    hscGroup: { type: String, trim: true },
+    hscGpa: { type: String, trim: true },
+
+    sscInstitution: { type: String, trim: true },
+    sscBoard: { type: String, trim: true },
+    sscPassingYear: { type: String, trim: true },
+    sscGroup: { type: String, trim: true },
+    sscGpa: { type: String, trim: true },
+
+    courseId: { type: Schema.Types.ObjectId, ref: "Course" },
     course: { type: String, trim: true },
     section: { type: String, trim: true },
     group: { type: String, trim: true },

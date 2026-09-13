@@ -20,16 +20,38 @@ export interface Student {
   gender?: "পুরুষ" | "মহিলা" | "অন্যান্য";
   institution?: string;
   class?: string;
+  /** Admin-controlled (Phase 4). */
+  bloodGroup?: string;
 
   // Guardian (stored server-side in its own collection — Phase 1 §17 — but
-  // still readable/writable here exactly as before; nothing else changes)
+  // still readable/writable here exactly as before; nothing else changes).
+  // guardianMobile is admin-controlled; the rest are student-editable (Phase 4).
   guardianName?: string;
   guardianRelation?: string;
   guardianMobile?: string;
+  guardianOccupation?: string;
+  guardianAddress?: string;
+  /** Legacy single field — superseded by present/permanentAddress below, kept for backward compatibility. */
   address?: string;
+  /** Student-editable (Phase 4). */
+  presentAddress?: string;
+  permanentAddress?: string;
 
-  // Academic (still free text pending the Course/Subject taxonomy unification
-  // tracked in the Phase 1 refactor plan — not part of this module)
+  // Student-editable HSC/SSC info (Phase 4)
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
+  hscGpa?: string;
+  sscInstitution?: string;
+  sscBoard?: string;
+  sscPassingYear?: string;
+  sscGroup?: string;
+  sscGpa?: string;
+
+  // Academic — courseId is the real Course reference (Phase 4); `course` stays
+  // as free text for existing UI/reports that read it as a string.
+  courseId?: string;
   course?: string;
   section?: string;
   group?: string;

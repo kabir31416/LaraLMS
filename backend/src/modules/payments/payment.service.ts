@@ -53,6 +53,9 @@ export async function create(
     feeType: string;
     month?: string;
     note?: string;
+    source?: "admission" | "regular";
+    admissionFeeComponent?: number;
+    courseFeeComponent?: number;
   },
 ): Promise<PaymentDoc> {
   const student = await Student.findById(data.studentId);
@@ -61,6 +64,7 @@ export async function create(
   const paidAmount = data.amount - data.discount + data.fine;
   if (paidAmount < 0) throw ApiError.badRequest("Discount cannot exceed amount + fine");
 
+  const previousDue = student.due;
   const receiptNo = await generateReceiptNumber();
   const doc = await Payment.create({
     ...data,
@@ -68,6 +72,9 @@ export async function create(
     date: data.date || new Date().toISOString().slice(0, 10),
     paidAmount,
     batchId: student.currentBatchId,
+    courseId: student.courseId,
+    previousDue,
+    createdBy: req.user?.id,
   });
 
   // Same due formula as student.service.ts's computeFees — kept local here
@@ -93,7 +100,7 @@ export async function create(
   try {
     const defaultBranch = await Branch.findOne().sort({ createdAt: 1 });
     if (defaultBranch) {
-      const isAdmission = (data.note || "").includes("ভর্তি") || data.feeType === "এককালীন";
+      const isAdmission = data.source === "admission" || (data.note || "").includes("ভর্তি") || data.feeType === "এককালীন";
       await accountsService.recordAutoIncome({
         date: doc.date,
         category: isAdmission ? "ভর্তি ফি" : "কোর্স ফি",

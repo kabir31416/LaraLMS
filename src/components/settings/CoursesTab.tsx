@@ -16,10 +16,10 @@ export function CoursesTab() {
   const { courses, sessions, addCourse, updateCourse, deleteCourse } = useAcademic();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Course | null>(null);
-  const [form, setForm] = useState({ name: "", sessionId: "", duration: 12 });
+  const [form, setForm] = useState({ name: "", sessionId: "", duration: 12, fee: 0 });
 
-  const openNew = () => { setEdit(null); setForm({ name: "", sessionId: sessions[0]?.id || "", duration: 12 }); setOpen(true); };
-  const openEdit = (c: Course) => { setEdit(c); setForm({ name: c.name, sessionId: c.sessionId, duration: c.duration }); setOpen(true); };
+  const openNew = () => { setEdit(null); setForm({ name: "", sessionId: sessions[0]?.id || "", duration: 12, fee: 0 }); setOpen(true); };
+  const openEdit = (c: Course) => { setEdit(c); setForm({ name: c.name, sessionId: c.sessionId, duration: c.duration, fee: c.fee || 0 }); setOpen(true); };
 
   const submit = async () => {
     if (!form.name || !form.sessionId) { toast.error("সব ফিল্ড পূরণ করুন"); return; }
@@ -51,15 +51,16 @@ export function CoursesTab() {
       </div>
       <Card className="border-none shadow-sm">
         <Table>
-          <TableHeader><TableRow><TableHead>নাম</TableHead><TableHead>সেশন</TableHead><TableHead>মেয়াদ</TableHead><TableHead className="w-[120px] text-right">অ্যাকশন</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>নাম</TableHead><TableHead>সেশন</TableHead><TableHead>মেয়াদ</TableHead><TableHead>কোর্স ফি</TableHead><TableHead className="w-[120px] text-right">অ্যাকশন</TableHead></TableRow></TableHeader>
           <TableBody>
             {courses.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-10">কোনো কোর্স নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-10">কোনো কোর্স নেই</TableCell></TableRow>
             ) : courses.map((c) => (
               <TableRow key={c.id}>
                 <TableCell className="font-medium">{c.name}</TableCell>
                 <TableCell>{sessionName(c.sessionId)}</TableCell>
                 <TableCell>{c.duration} মাস</TableCell>
+                <TableCell>৳ {(c.fee || 0).toLocaleString("bn-BD")}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(c.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -82,6 +83,7 @@ export function CoursesTab() {
               </Select>
             </div>
             <div><Label>মেয়াদ (মাস)</Label><Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) || 0 })} /></div>
+            <div><Label>কোর্স ফি (৳)</Label><Input type="number" value={form.fee} onChange={(e) => setForm({ ...form, fee: Number(e.target.value) || 0 })} placeholder="15000" /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2"><Button variant="outline" onClick={() => setOpen(false)}>বাতিল</Button><Button onClick={submit}>{edit ? "আপডেট" : "যোগ"}</Button></div>
         </DialogContent>

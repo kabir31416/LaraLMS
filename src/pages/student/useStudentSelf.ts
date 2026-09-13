@@ -3,6 +3,6 @@ import { useStudentSelfContext } from "@/contexts/StudentSelfContext";
 
 export function useStudentSelf() {
   const { user } = useAuth();
-  const { student, batch, director } = useStudentSelfContext();
-  return { user, student, batch, director };
+  const { student, batch, director, updateProfile } = useStudentSelfContext();
+  return { user, student, batch, director, updateProfile };
 }

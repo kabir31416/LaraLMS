@@ -10,6 +10,8 @@ export interface Course {
   name: string;
   sessionId: string;
   duration: number; // months
+  /** Source of truth for admission-time Course Fee — never hard-coded in the admission form. */
+  fee: number;
 }
 
 export interface Subject {

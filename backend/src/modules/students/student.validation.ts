@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ADMISSION_TYPES, FEE_TYPES, GENDERS, STUDENT_STATUS } from "./student.constants";
 import { RELATIONS } from "./student.constants";
+import { PAYMENT_METHODS } from "../payments/payment.constants";
 
 export const idParamSchema = z.object({ params: z.object({ id: z.string().length(24) }) });
 
@@ -13,25 +14,46 @@ export const quickCreateStudentSchema = z.object({
   }),
 });
 
-const guardianFields = {
-  guardianName: z.string().trim().optional(),
-  guardianRelation: z.enum(RELATIONS).optional(),
-  guardianMobile: z.string().trim().optional(),
-};
-
-/** The existing full Admission form, unchanged field-for-field. */
+/**
+ * The Admission form's minimum required fields (Phase 4): Registration
+ * Number/previous Roll Number, Name, DOB, Student Mobile, Guardian Mobile
+ * and Course. Everything else stays optional — Admin can submit an
+ * admission with just these six.
+ *
+ * totalCourseFee and admissionFee are deliberately ABSENT: the server always
+ * resolves totalCourseFee from the selected Course's own `fee` field (never
+ * trusts a client-typed value) and always applies the fixed
+ * ADMISSION_FEE_BDT, so neither can be typed or accidentally changed from
+ * this form (student.service.ts's create).
+ */
 export const createStudentSchema = z.object({
   body: z.object({
     name: z.string().trim().min(2),
     phone: z.string().trim().min(6),
+    dob: z.string().min(1),
+    rollNumber: z.string().trim().min(1),
+    courseId: z.string().length(24),
+    guardianMobile: z.string().trim().min(6),
+
     altPhone: z.string().trim().optional(),
     email: z.string().trim().email().optional().or(z.literal("")),
-    dob: z.string().optional(),
     gender: z.enum(GENDERS).optional(),
     institution: z.string().trim().optional(),
     class: z.string().trim().optional(),
+    bloodGroup: z.string().trim().optional(),
     address: z.string().trim().optional(),
-    course: z.string().trim().optional(),
+    presentAddress: z.string().trim().optional(),
+    permanentAddress: z.string().trim().optional(),
+    hscInstitution: z.string().trim().optional(),
+    hscBoard: z.string().trim().optional(),
+    hscPassingYear: z.string().trim().optional(),
+    hscGroup: z.string().trim().optional(),
+    hscGpa: z.string().trim().optional(),
+    sscInstitution: z.string().trim().optional(),
+    sscBoard: z.string().trim().optional(),
+    sscPassingYear: z.string().trim().optional(),
+    sscGroup: z.string().trim().optional(),
+    sscGpa: z.string().trim().optional(),
     section: z.string().trim().optional(),
     group: z.string().trim().optional(),
     subjects: z.array(z.string()).default([]),
@@ -39,13 +61,16 @@ export const createStudentSchema = z.object({
     admissionType: z.enum(ADMISSION_TYPES).default("নতুন"),
     feeType: z.enum(FEE_TYPES).default("এককালীন"),
     courseDuration: z.number().default(0),
-    totalCourseFee: z.number().default(0),
-    admissionFee: z.number().default(0),
     monthlyFee: z.number().default(0),
-    discount: z.number().default(0),
-    paid: z.number().default(0),
-    rollNumber: z.string().trim().optional(),
-    ...guardianFields,
+    discount: z.number().min(0).default(0),
+    paid: z.number().min(0).default(0),
+    /** Only meaningful when paid > 0 — the admission-time Payment record's method (Phase 4). */
+    paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+
+    guardianName: z.string().trim().optional(),
+    guardianRelation: z.enum(RELATIONS).optional(),
+    guardianOccupation: z.string().trim().optional(),
+    guardianAddress: z.string().trim().optional(),
   }),
 });
 
@@ -54,21 +79,34 @@ export const updateStudentSchema = z.object({
   body: createStudentSchema.shape.body.partial(),
 });
 
-/** Student-editable subset only — Phase 1 §13. Admin-controlled fields (roll, fees, status, enrollment) are absent by construction, not by a role check inside a shared schema. */
+/**
+ * Student-editable subset only (Phase 4 field-ownership split). Everything
+ * admin-controlled — registrationId, currentRollNumber, name, phone, dob,
+ * guardianMobile, bloodGroup, courseId, currentBatchId/status — is absent by
+ * construction, not by a role check inside a shared schema, so there is no
+ * way for a student's own PATCH .../self request to ever touch them.
+ */
 export const updateSelfSchema = z.object({
   params: z.object({ id: z.string().length(24) }),
   body: z
     .object({
       photoUrl: z.string().optional(),
-      dob: z.string().optional(),
-      gender: z.enum(GENDERS).optional(),
-      altPhone: z.string().trim().optional(),
-      email: z.string().trim().email().optional().or(z.literal("")),
-      institution: z.string().trim().optional(),
-      address: z.string().trim().optional(),
+      presentAddress: z.string().trim().optional(),
+      permanentAddress: z.string().trim().optional(),
+      hscInstitution: z.string().trim().optional(),
+      hscBoard: z.string().trim().optional(),
+      hscPassingYear: z.string().trim().optional(),
+      hscGroup: z.string().trim().optional(),
+      hscGpa: z.string().trim().optional(),
+      sscInstitution: z.string().trim().optional(),
+      sscBoard: z.string().trim().optional(),
+      sscPassingYear: z.string().trim().optional(),
+      sscGroup: z.string().trim().optional(),
+      sscGpa: z.string().trim().optional(),
       guardianName: z.string().trim().optional(),
       guardianRelation: z.enum(RELATIONS).optional(),
-      guardianMobile: z.string().trim().optional(),
+      guardianOccupation: z.string().trim().optional(),
+      guardianAddress: z.string().trim().optional(),
     })
     .strict(),
 });

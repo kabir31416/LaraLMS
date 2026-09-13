@@ -1,5 +1,7 @@
 import { Request } from "express";
 import { Student, StudentDoc, ProfileCompletion } from "./student.model";
+import { Course } from "../courses/course.model";
+import { ADMISSION_FEE_BDT } from "./student.constants";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
@@ -18,6 +20,8 @@ interface GuardianInline {
   guardianName?: string;
   guardianRelation?: string;
   guardianMobile?: string;
+  guardianOccupation?: string;
+  guardianAddress?: string;
 }
 
 function computeFees(input: {
@@ -37,13 +41,26 @@ function computeFees(input: {
   return { totalFee, due };
 }
 
-const COMPLETION_FIELDS: (keyof StudentDoc)[] = ["dob", "gender", "institution", "address", "photoUrl"];
+async function resolveCourseOrThrow(courseId: string) {
+  const course = await Course.findById(courseId);
+  if (!course) throw ApiError.badRequest("Invalid course");
+  return course;
+}
+
+/** The student-editable subset (Phase 4) — dob/gender/institution/address/guardianMobile are admin-controlled and always present after admission, so they'd make "complete" trivially true and are deliberately excluded here. */
+const COMPLETION_FIELDS: (keyof StudentDoc)[] = [
+  "photoUrl",
+  "presentAddress",
+  "permanentAddress",
+  "hscInstitution",
+  "sscInstitution",
+];
 
 async function computeProfileCompletion(doc: StudentDoc): Promise<ProfileCompletion> {
   const missing: string[] = [];
   for (const field of COMPLETION_FIELDS) if (!doc[field]) missing.push(field);
   const guardian = await guardianService.getPrimary(String(doc._id));
-  if (!guardian || !guardian.phone) missing.push("guardian");
+  if (!guardian || !guardian.name || guardian.name === "—") missing.push("guardianName");
 
   const total = COMPLETION_FIELDS.length + 1;
   const percent = Math.round(((total - missing.length) / total) * 100);
@@ -69,6 +86,8 @@ async function withGuardian(doc: StudentDoc): Promise<Record<string, unknown>> {
     guardianName: guardian?.name,
     guardianRelation: guardian?.relation,
     guardianMobile: guardian?.phone,
+    guardianOccupation: guardian?.occupation,
+    guardianAddress: guardian?.address,
   };
 }
 
@@ -79,7 +98,14 @@ async function withGuardians(docs: StudentDoc[]): Promise<Record<string, unknown
   for (const g of guardians) if (!byStudent.has(String(g.studentId))) byStudent.set(String(g.studentId), g);
   return docs.map((doc) => {
     const g = byStudent.get(String(doc._id));
-    return { ...doc.toObject(), guardianName: g?.name, guardianRelation: g?.relation, guardianMobile: g?.phone };
+    return {
+      ...doc.toObject(),
+      guardianName: g?.name,
+      guardianRelation: g?.relation,
+      guardianMobile: g?.phone,
+      guardianOccupation: g?.occupation,
+      guardianAddress: g?.address,
+    };
   });
 }
 
@@ -171,38 +197,84 @@ export async function quickCreate(req: Request, data: { rollNumber: string; name
     admissionDate: new Date().toISOString().slice(0, 10),
     admissionType: "নতুন",
     feeType: "এককালীন",
-    profileCompletion: { status: "incomplete", percent: 0, missingFields: COMPLETION_FIELDS.concat("guardian" as never) },
+    profileCompletion: { status: "incomplete", percent: 0, missingFields: COMPLETION_FIELDS.concat("guardianName" as never) },
   });
   await recordAudit({ req, action: "student.quick-create", module: "students", targetCollection: "students", targetId: String(doc._id), after: doc.toObject() });
   return withGuardian(doc);
 }
 
+/**
+ * Admission (Phase 4): only name/phone/dob/rollNumber/courseId/guardianMobile
+ * are required (enforced by createStudentSchema) — everything else, the
+ * student completes later via the Portal. Course Fee and Admission Fee are
+ * never taken from the client: totalCourseFee always comes from the
+ * selected Course's own `fee` (a one-time snapshot — later Course.fee edits
+ * in Settings never rewrite this student's history) and admissionFee is
+ * always the fixed ADMISSION_FEE_BDT. If an amount was paid at admission
+ * time, it's recorded as a real Payment (source: "admission") through the
+ * existing Fee Management pipeline rather than just baked into this Student
+ * document — so it shows up immediately in Payment History/Fee Management,
+ * and a receipt number is generated exactly the way every other payment
+ * gets one.
+ */
 export async function create(req: Request, body: Record<string, unknown> & GuardianInline): Promise<Record<string, unknown>> {
-  const registrationId = await generateRegistrationId();
+  const course = await resolveCourseOrThrow(String(body.courseId));
+  const admissionFee = ADMISSION_FEE_BDT;
+  const totalCourseFee = course.fee;
+  const discount = Number(body.discount) || 0;
+  const feeType = (body.feeType as StudentDoc["feeType"]) || "এককালীন";
   const fees = computeFees({
-    feeType: (body.feeType as StudentDoc["feeType"]) || "এককালীন",
-    totalCourseFee: Number(body.totalCourseFee) || 0,
-    admissionFee: Number(body.admissionFee) || 0,
+    feeType,
+    totalCourseFee,
+    admissionFee,
     monthlyFee: Number(body.monthlyFee) || 0,
     courseDuration: Number(body.courseDuration) || 0,
-    discount: Number(body.discount) || 0,
-    paid: Number(body.paid) || 0,
+    discount,
+    paid: 0, // the admission-time payment (if any) is applied below through payment.service, never baked in directly
   });
 
+  const registrationId = await generateRegistrationId();
+  const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
   const doc = await Student.create({
-    ...body,
+    ...rest,
     registrationId,
+    courseId: course._id,
+    course: course.name,
     currentRollNumber: body.rollNumber || undefined,
     admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
+    feeType,
+    discount,
+    totalCourseFee,
+    admissionFee,
     ...fees,
-    paid: Number(body.paid) || 0,
+    paid: 0,
   });
 
   await guardianService.upsertPrimaryFromInlineFields(req, String(doc._id), body);
   await refreshProfileCompletion(doc);
 
   await recordAudit({ req, action: "student.create", module: "students", targetCollection: "students", targetId: String(doc._id), after: doc.toObject() });
-  return withGuardian(doc);
+
+  const amountPaid = Number(body.paid) || 0;
+  if (amountPaid > 0) {
+    const paymentService = await import("../payments/payment.service");
+    await paymentService.create(req, {
+      studentId: String(doc._id),
+      date: doc.admissionDate,
+      amount: amountPaid,
+      discount: 0,
+      fine: 0,
+      method: (paymentMethod as string) || "নগদ",
+      feeType: "এককালীন",
+      note: "ভর্তির সময় প্রদান",
+      source: "admission",
+      admissionFeeComponent: admissionFee,
+      courseFeeComponent: totalCourseFee,
+    });
+  }
+
+  const fresh = await getDocOrThrow(String(doc._id));
+  return withGuardian(fresh);
 }
 
 /**
@@ -229,13 +301,33 @@ async function applyRollNumberIfPresent(doc: StudentDoc, patch: Record<string, u
   doc.currentRollNumber = rollNumber;
 }
 
+/**
+ * totalCourseFee is never client-settable (createStudentSchema/updateStudentSchema
+ * have no such field at all — see student.validation.ts) — it only ever comes
+ * from the referenced Course's own `fee`. So when an admin changes a
+ * student's Course after admission, this re-snapshots totalCourseFee from
+ * the *new* Course here; a Course.fee edit in Settings never reaches back
+ * into this or any other already-admitted student (Phase 4 historical
+ * integrity requirement) since nothing re-reads Course.fee except this path
+ * and student.service.ts's create().
+ */
+async function applyCourseIdIfPresent(doc: StudentDoc, patch: Record<string, unknown>): Promise<boolean> {
+  if (typeof patch.courseId !== "string" || patch.courseId === String(doc.courseId ?? "")) return false;
+  const course = await resolveCourseOrThrow(patch.courseId);
+  doc.courseId = course._id as never;
+  doc.course = course.name;
+  doc.totalCourseFee = course.fee;
+  return true;
+}
+
 async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, unknown> & GuardianInline) {
   const before = doc.toObject();
 
   await applyRollNumberIfPresent(doc, patch);
-  const { rollNumber: _rollNumber, ...rest } = patch;
+  const courseChanged = await applyCourseIdIfPresent(doc, patch);
+  const { rollNumber: _rollNumber, courseId: _courseId, ...rest } = patch;
 
-  const feeFieldsTouched = ["feeType", "totalCourseFee", "admissionFee", "monthlyFee", "courseDuration", "discount", "paid"].some((k) => k in patch);
+  const feeFieldsTouched = courseChanged || ["feeType", "monthlyFee", "courseDuration", "discount", "paid"].some((k) => k in patch);
   Object.assign(doc, rest);
   if (feeFieldsTouched) {
     const fees = computeFees({
@@ -252,7 +344,7 @@ async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, u
   }
   await doc.save();
 
-  if (patch.guardianName || patch.guardianMobile || patch.guardianRelation) {
+  if (patch.guardianName || patch.guardianMobile || patch.guardianRelation || patch.guardianOccupation || patch.guardianAddress) {
     await guardianService.upsertPrimaryFromInlineFields(req, String(doc._id), patch);
   }
   await refreshProfileCompletion(doc);
