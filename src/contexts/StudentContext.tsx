@@ -29,7 +29,21 @@ interface ApiStudent {
   gender?: Student["gender"];
   institution?: string;
   class?: string;
+  bloodGroup?: string;
   address?: string;
+  presentAddress?: string;
+  permanentAddress?: string;
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
+  hscGpa?: string;
+  sscInstitution?: string;
+  sscBoard?: string;
+  sscPassingYear?: string;
+  sscGroup?: string;
+  sscGpa?: string;
+  courseId?: string;
   course?: string;
   section?: string;
   group?: string;
@@ -50,6 +64,8 @@ interface ApiStudent {
   guardianName?: string;
   guardianRelation?: string;
   guardianMobile?: string;
+  guardianOccupation?: string;
+  guardianAddress?: string;
 }
 
 function fromApi(doc: ApiStudent): Student {
@@ -67,7 +83,21 @@ function fromApi(doc: ApiStudent): Student {
     gender: doc.gender,
     institution: doc.institution,
     class: doc.class,
+    bloodGroup: doc.bloodGroup,
     address: doc.address,
+    presentAddress: doc.presentAddress,
+    permanentAddress: doc.permanentAddress,
+    hscInstitution: doc.hscInstitution,
+    hscBoard: doc.hscBoard,
+    hscPassingYear: doc.hscPassingYear,
+    hscGroup: doc.hscGroup,
+    hscGpa: doc.hscGpa,
+    sscInstitution: doc.sscInstitution,
+    sscBoard: doc.sscBoard,
+    sscPassingYear: doc.sscPassingYear,
+    sscGroup: doc.sscGroup,
+    sscGpa: doc.sscGpa,
+    courseId: doc.courseId,
     course: doc.course,
     section: doc.section,
     group: doc.group,
@@ -88,6 +118,8 @@ function fromApi(doc: ApiStudent): Student {
     guardianName: doc.guardianName,
     guardianRelation: doc.guardianRelation,
     guardianMobile: doc.guardianMobile,
+    guardianOccupation: doc.guardianOccupation,
+    guardianAddress: doc.guardianAddress,
   };
 }
 

@@ -13,6 +13,8 @@ export interface StaffDoc extends Document {
   salary: number;
   joinDate: string;
   status: (typeof STAFF_STATUS)[number];
+  /** The Staff Portal credential (see auth.service.ts's staffLogin) — phone + staffId matching this same record IS the login, no separate password/account. */
+  staffId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,11 +30,16 @@ const staffSchema = new Schema<StaffDoc>(
     salary: { type: Number, default: 0 },
     joinDate: { type: String, required: true },
     status: { type: String, enum: STAFF_STATUS, default: "সক্রিয়" },
+    staffId: { type: String, trim: true },
   },
   { timestamps: true },
 );
 
 staffSchema.index({ staffType: 1, status: 1 });
 staffSchema.index({ name: "text", phone: "text" });
+// Partial: only documents that actually have a staffId are indexed, so older
+// staff rows created before this field existed don't collide with each other
+// on a shared "missing value" the way a plain unique index would.
+staffSchema.index({ staffId: 1 }, { unique: true, partialFilterExpression: { staffId: { $exists: true, $type: "string" } } });
 
 export const Staff = model<StaffDoc>("Staff", staffSchema);

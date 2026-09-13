@@ -40,7 +40,21 @@ interface ApiMyProfile {
   gender?: Student["gender"];
   institution?: string;
   class?: string;
+  bloodGroup?: string;
   address?: string;
+  presentAddress?: string;
+  permanentAddress?: string;
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
+  hscGpa?: string;
+  sscInstitution?: string;
+  sscBoard?: string;
+  sscPassingYear?: string;
+  sscGroup?: string;
+  sscGpa?: string;
+  courseId?: string;
   course?: string;
   section?: string;
   group?: string;
@@ -61,6 +75,8 @@ interface ApiMyProfile {
   guardianName?: string;
   guardianRelation?: string;
   guardianMobile?: string;
+  guardianOccupation?: string;
+  guardianAddress?: string;
   batch: SelfBatch | null;
   director: SelfDirector | null;
 }
@@ -80,7 +96,21 @@ function studentFromApi(doc: ApiMyProfile): Student {
     gender: doc.gender,
     institution: doc.institution,
     class: doc.class,
+    bloodGroup: doc.bloodGroup,
     address: doc.address,
+    presentAddress: doc.presentAddress,
+    permanentAddress: doc.permanentAddress,
+    hscInstitution: doc.hscInstitution,
+    hscBoard: doc.hscBoard,
+    hscPassingYear: doc.hscPassingYear,
+    hscGroup: doc.hscGroup,
+    hscGpa: doc.hscGpa,
+    sscInstitution: doc.sscInstitution,
+    sscBoard: doc.sscBoard,
+    sscPassingYear: doc.sscPassingYear,
+    sscGroup: doc.sscGroup,
+    sscGpa: doc.sscGpa,
+    courseId: doc.courseId,
     course: doc.course,
     section: doc.section,
     group: doc.group,
@@ -101,7 +131,30 @@ function studentFromApi(doc: ApiMyProfile): Student {
     guardianName: doc.guardianName,
     guardianRelation: doc.guardianRelation,
     guardianMobile: doc.guardianMobile,
+    guardianOccupation: doc.guardianOccupation,
+    guardianAddress: doc.guardianAddress,
   };
+}
+
+/** Exactly the student-editable allow-list the backend's updateSelfSchema accepts — see student.validation.ts (Phase 4). */
+export interface SelfEditableFields {
+  photoUrl?: string;
+  presentAddress?: string;
+  permanentAddress?: string;
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
+  hscGpa?: string;
+  sscInstitution?: string;
+  sscBoard?: string;
+  sscPassingYear?: string;
+  sscGroup?: string;
+  sscGpa?: string;
+  guardianName?: string;
+  guardianRelation?: string;
+  guardianOccupation?: string;
+  guardianAddress?: string;
 }
 
 interface StudentSelfContextType {
@@ -110,6 +163,7 @@ interface StudentSelfContextType {
   director: SelfDirector | undefined;
   loading: boolean;
   refresh: () => Promise<void>;
+  updateProfile: (patch: SelfEditableFields) => Promise<void>;
 }
 
 const StudentSelfContext = createContext<StudentSelfContextType | null>(null);
@@ -128,6 +182,19 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
     setDirector(doc.director ?? undefined);
   }, []);
 
+  /**
+   * PATCH /students/:id/self — the backend allow-list (updateSelfSchema) is
+   * what actually enforces field-level ownership; this just calls it and
+   * updates local state. The response has no batch/director (that
+   * denormalization only happens on GET /students/me), so batch/director
+   * stay untouched here.
+   */
+  const updateProfile = useCallback(async (patch: SelfEditableFields) => {
+    if (!student) throw new Error("No student profile loaded yet");
+    const doc = await api.patch<Omit<ApiMyProfile, "batch" | "director">>(`/students/${student.id}/self`, patch);
+    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+  }, [student]);
+
   useEffect(() => {
     if (!user?.studentId) {
       setLoading(false);
@@ -136,7 +203,10 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
     refresh().catch(() => { /* not a student session, or offline */ }).finally(() => setLoading(false));
   }, [user?.studentId, refresh]);
 
-  const value = useMemo(() => ({ student, batch, director, loading, refresh }), [student, batch, director, loading, refresh]);
+  const value = useMemo(
+    () => ({ student, batch, director, loading, refresh, updateProfile }),
+    [student, batch, director, loading, refresh, updateProfile],
+  );
 
   return <StudentSelfContext.Provider value={value}>{children}</StudentSelfContext.Provider>;
 }

@@ -25,6 +25,20 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, { accessToken, user });
 });
 
+/** Pure read-only lookup — no refresh cookie: there is no server-side session record to rotate. */
+export const studentLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { phone, rollNumber } = req.body;
+  const { accessToken, student } = await authService.studentLogin(phone, rollNumber);
+  sendSuccess(res, { accessToken, student });
+});
+
+/** Pure read-only lookup — no refresh cookie: there is no server-side session record to rotate. */
+export const staffLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { phone, staffId } = req.body;
+  const { accessToken, staff } = await authService.staffLogin(phone, staffId);
+  sendSuccess(res, { accessToken, staff });
+});
+
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
   const token = req.cookies?.[REFRESH_COOKIE];
   if (!token) throw ApiError.unauthorized("No refresh token supplied");

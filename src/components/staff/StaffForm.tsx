@@ -17,8 +17,17 @@ import { toast } from "sonner";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
 
-const LOGIN_ELIGIBLE: StaffType[] = ["Admin", "Batch Director"];
-const ROLE_NAME_BY_STAFF_TYPE: Partial<Record<StaffType, string>> = { Admin: "admin", "Batch Director": "batch_director" };
+/**
+ * Only "Admin" still goes through the password-based User/Role login here —
+ * that's real Admin auth and stays untouched. A "Batch Director" (or any
+ * other staff type) no longer gets a login account created for them at
+ * all: phone + Staff ID matching their own Staff record *is* the Staff
+ * Portal login (auth.service.ts's staffLogin, a pure read-only lookup —
+ * same design as the Student Portal). Keeping both doors open for the same
+ * person was exactly what kept producing "already exists" conflicts.
+ */
+const LOGIN_ELIGIBLE: StaffType[] = ["Admin"];
+const ROLE_NAME_BY_STAFF_TYPE: Partial<Record<StaffType, string>> = { Admin: "admin" };
 
 interface Props {
   open: boolean;
@@ -57,6 +66,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
         staffType: s.staffType as StaffType,
         salary: s.salary,
         status: s.status,
+        staffId: s.staffId || "",
       };
     }
     return {
@@ -68,14 +78,15 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       staffType: "Teacher" as StaffType,
       salary: 0,
       status: "সক্রিয়" as Staff["status"],
+      staffId: "",
     };
   }
 
   const update = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleSubmit = async () => {
-    if (!form.name || !form.mobile) {
-      toast.error("নাম এবং মোবাইল প্রয়োজন");
+    if (!form.name || !form.mobile || (!isEdit && !form.staffId.trim())) {
+      toast.error("নাম, মোবাইল এবং স্টাফ আইডি প্রয়োজন");
       return;
     }
     const data: Omit<Staff, "id"> = {
@@ -88,6 +99,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       salary: Number(form.salary) || 0,
       joinDate: joinDate ? format(joinDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       status: form.status,
+      staffId: form.staffId.trim() || undefined,
     };
 
     setSubmitting(true);
@@ -140,6 +152,11 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
           <div className="space-y-1.5">
             <Label>মোবাইল *</Label>
             <Input value={form.mobile} onChange={(e) => update("mobile", e.target.value)} placeholder="01XXXXXXXXX" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>স্টাফ আইডি *</Label>
+            <Input value={form.staffId} onChange={(e) => update("staffId", e.target.value)} placeholder="যেমন: T-01" />
+            <p className="text-xs text-muted-foreground">মোবাইল নম্বর ও এই আইডি দিয়েই স্টাফ পোর্টালে লগইন করা যাবে (পাসওয়ার্ড লাগবে না)</p>
           </div>
           <div className="space-y-1.5">
             <Label>ইমেইল</Label>
@@ -196,7 +213,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
             <div className="space-y-1.5 md:col-span-2 flex items-center gap-2 border rounded-lg p-3">
               <Checkbox checked={createLogin} onCheckedChange={(v) => setCreateLogin(!!v)} id="create-login" />
               <label htmlFor="create-login" className="text-sm cursor-pointer">
-                একই সাথে লগইন অ্যাকাউন্ট তৈরি করুন (মোবাইল নম্বর দিয়ে, সাময়িক পাসওয়ার্ড দেখানো হবে)
+                একই সাথে এডমিন প্যানেল লগইন (পাসওয়ার্ড সহ) তৈরি করুন — শুধু এডমিনদের জন্য, সাময়িক পাসওয়ার্ড দেখানো হবে
               </label>
             </div>
           )}

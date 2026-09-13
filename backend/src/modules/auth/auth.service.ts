@@ -2,6 +2,8 @@ import { Request } from "express";
 import crypto from "crypto";
 import { User, UserDoc } from "../users/user.model";
 import { Role } from "../rbac/role.model";
+import { Student } from "../students/student.model";
+import { Staff, StaffDoc } from "../staff/staff.model";
 import { RefreshToken } from "./refreshToken.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { comparePassword, hashPassword } from "../../common/utils/password";
@@ -10,6 +12,8 @@ import { parseDurationToMs } from "../../common/utils/duration";
 import { env } from "../../config/env";
 import { MAX_FAILED_LOGIN_ATTEMPTS } from "../../config/constants";
 import { recordAudit } from "../../audit/auditLog.service";
+import { DEFAULT_ROLE_PERMISSIONS } from "../rbac/permissions";
+import { toAsciiDigits } from "../../common/utils/digits";
 
 const REFRESH_BYTES = 48;
 
@@ -84,6 +88,119 @@ export async function login(req: Request, identifier: string, password: string) 
   const result = await issueTokens(req, user);
   await recordAudit({ req, action: "auth.login", module: "auth", targetCollection: "users", targetId: String(user._id) });
   return result;
+}
+
+/**
+ * A Bangladeshi mobile number can be typed as "01XXXXXXXXX" (local, 11
+ * digits — how every Student record in this app stores it) or with a
+ * country code ("+8801XXXXXXXXX" / "8801XXXXXXXXX", 13 digits once
+ * non-digits are stripped). This normalizes an input to the local form so
+ * either typing style matches the stored value, without ever touching the
+ * stored value itself.
+ */
+function normalizePhoneForLookup(input: string): string {
+  const digits = toAsciiDigits(input).replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("880")) return "0" + digits.slice(3);
+  return digits;
+}
+
+/**
+ * Student Portal login — a pure, read-only lookup. Phone + Roll Number
+ * matching the *same* Student record is the entire credential; there is no
+ * separate password, no login/User account, and this function performs no
+ * database write of any kind. A previous design lazily provisioned a
+ * linked User account behind the scenes so the existing Admin/Staff
+ * session machinery (issueTokens, backed by a User + Role document) could
+ * be reused — but that write path kept surfacing "already exists" whenever
+ * it raced or hit a stale record, which is exactly the class of bug a
+ * read-only design can't have. The access token is signed directly here,
+ * with the fixed default Student permission set (rbac/permissions.ts) —
+ * no Role document lookup either.
+ */
+export async function studentLogin(phone: string, rollNumber: string) {
+  const genericError = () => ApiError.unauthorized("Phone number or roll number is incorrect");
+
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  const normalizedRoll = toAsciiDigits(rollNumber).trim();
+  if (!normalizedPhone || !normalizedRoll) throw genericError();
+
+  const student = await Student.findOne({ phone: normalizedPhone, currentRollNumber: normalizedRoll });
+  if (!student) throw genericError();
+
+  const accessToken = signAccessToken({
+    sub: String(student._id),
+    roleId: "",
+    role: "student",
+    permissions: DEFAULT_ROLE_PERMISSIONS.student,
+    studentId: String(student._id),
+  });
+
+  return {
+    accessToken,
+    student: {
+      id: String(student._id),
+      name: student.name,
+      phone: student.phone,
+      currentRollNumber: student.currentRollNumber,
+    },
+  };
+}
+
+/**
+ * Only staff types with a real portal home page today map to a role here —
+ * currently just Batch Director (see routes.tsx's "/director" section on
+ * the frontend). Admin keeps its existing identifier+password login
+ * (User/Role model, via login() above) — this map deliberately excludes
+ * "Admin" so a Staff row of that type can't also get in through the
+ * phone+staffId door.
+ */
+const STAFF_TYPE_TO_ROLE: Partial<Record<StaffDoc["staffType"], "batch_director">> = {
+  "Batch Director": "batch_director",
+};
+
+/**
+ * Staff Portal login — the same pure read-only design as studentLogin
+ * above, and for the same reason: an earlier "create a User account for
+ * this staff member" flow (still used for Admin logins) kept hitting
+ * duplicate-key conflicts when identifiers collided or a create/re-create
+ * raced. Phone + Staff ID matching the *same* Staff record is the entire
+ * credential — no password, no login/User account, no database write here
+ * at all.
+ */
+export async function staffLogin(phone: string, staffId: string) {
+  const genericError = () => ApiError.unauthorized("Phone number or staff ID is incorrect");
+
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  const normalizedStaffId = toAsciiDigits(staffId).trim();
+  if (!normalizedPhone || !normalizedStaffId) throw genericError();
+
+  const staff = await Staff.findOne({ phone: normalizedPhone, staffId: normalizedStaffId });
+  if (!staff) throw genericError();
+
+  const roleName = STAFF_TYPE_TO_ROLE[staff.staffType];
+  if (!roleName) {
+    throw ApiError.forbidden("এই স্টাফ টাইপের জন্য এখনো কোনো পোর্টাল চালু নেই — Batch Director ছাড়া অন্য কেউ এই লগইন ব্যবহার করতে পারবে না");
+  }
+
+  const accessToken = signAccessToken({
+    sub: String(staff._id),
+    roleId: "",
+    role: roleName,
+    permissions: DEFAULT_ROLE_PERMISSIONS[roleName],
+    staffId: String(staff._id),
+  });
+
+  return {
+    accessToken,
+    staff: {
+      id: String(staff._id),
+      name: staff.name,
+      phone: staff.phone,
+      staffId: staff.staffId,
+      staffType: staff.staffType,
+      role: roleName,
+    },
+  };
 }
 
 export async function refresh(req: Request, rawRefreshToken: string) {

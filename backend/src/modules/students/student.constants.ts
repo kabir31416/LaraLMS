@@ -13,3 +13,11 @@ export const GENDERS = ["পুরুষ", "মহিলা", "অন্যা�
 export const RELATIONS = ["পিতা", "মাতা", "ভাই", "বোন", "অন্যান্য"] as const;
 export const ADMISSION_TYPES = ["নতুন", "পুরাতন"] as const;
 export const STUDENT_STATUS = ["সক্রিয়", "নিষ্ক্রিয়"] as const;
+
+/**
+ * A separate, fixed one-time Admission Fee — never part of Course Fee, and
+ * not editable from the admission form (Phase 4 requirement). Kept as a
+ * constant rather than a Settings field since the business rule is "always
+ * 200", not admin-configurable.
+ */
+export const ADMISSION_FEE_BDT = 200;

@@ -4,6 +4,11 @@
  * (does this identifier exist, what's its status, does this exact password
  * match its stored hash) instead of another layer of guessing.
  *
+ * Only meaningful for Admin/Staff logins (/auth/login, identifier+password).
+ * The Student Portal no longer uses a stored password at all — it checks
+ * phone + Roll Number directly against the Student record; use
+ * `npm run list-logins` for that instead.
+ *
  * Usage: npm run check-login -- "<identifier>" "<password>"
  */
 import { connectDB, disconnectDB } from "../config/db";

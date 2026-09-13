@@ -42,16 +42,16 @@ function isDuplicateKeyError(err: unknown): boolean {
 }
 
 /**
- * "Create a login for this student/staff" needs to be safe to call more
- * than once for the same owner — it's invoked automatically at admission
- * (student.service.ts's syncStudentLogin) *and* manually from the Students
- * page, and those two can race, or a caller's own "does one exist"
- * pre-check can simply miss (a bug that shipped here once already: the
- * pre-check below normalized case but not whitespace, so a value Mongoose's
- * own schema-level `trim` would have matched slipped past it and hit a raw
- * duplicate-key error instead of this function's own conflict handling).
+ * "Create a login for this staff member" (Admin/Staff only — the Student
+ * Portal no longer has a login account at all; see auth.service.ts's
+ * studentLogin) needs to be safe to call more than once for the same
+ * owner, since a caller's own "does one exist" pre-check can simply miss
+ * (a bug that shipped here once already: the pre-check below normalized
+ * case but not whitespace, so a value Mongoose's own schema-level `trim`
+ * would have matched slipped past it and hit a raw duplicate-key error
+ * instead of this function's own conflict handling).
  * So: if the identifier collides with an existing login already linked to
- * the *same* student/staff, treat it as a reset rather than a failure —
+ * the *same* staff member, treat it as a reset rather than a failure —
  * and if a collision still reaches the database uncaught (a genuine race),
  * translate that into the same clean error rather than leaking Mongo's.
  */

@@ -5,6 +5,7 @@ export const createCourseSchema = z.object({
     name: z.string().trim().min(2).max(80),
     sessionId: z.string().length(24),
     duration: z.number().int().positive(),
+    fee: z.number().min(0).default(0),
   }),
 });
 
@@ -14,6 +15,7 @@ export const updateCourseSchema = z.object({
     name: z.string().trim().min(2).max(80).optional(),
     sessionId: z.string().length(24).optional(),
     duration: z.number().int().positive().optional(),
+    fee: z.number().min(0).optional(),
   }),
 });
 

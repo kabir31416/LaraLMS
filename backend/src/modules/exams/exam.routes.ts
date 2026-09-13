@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth.middleware";
 import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
-import { createExamSchema, idParamSchema, listExamsQuerySchema, saveResultsSchema } from "./exam.validation";
+import { createExamSchema, idParamSchema, listExamsQuerySchema, resendSmsSchema, saveResultsSchema, submitResultSchema } from "./exam.validation";
 import * as controller from "./exam.controller";
 import { PERMISSIONS } from "../rbac/permissions";
 
@@ -15,6 +15,14 @@ router.post(
   requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
   validate(createExamSchema),
   controller.create,
+);
+// Result Entry's single "Send Result" action — must be registered before
+// "/:id" so Express doesn't try to resolve "submit-result" as an exam id.
+router.post(
+  "/submit-result",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(submitResultSchema),
+  controller.submitResult,
 );
 router.get(
   "/",
@@ -33,6 +41,12 @@ router.post(
   requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
   validate(saveResultsSchema),
   controller.saveResults,
+);
+router.post(
+  "/:id/resend-sms",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(resendSmsSchema),
+  controller.resendSms,
 );
 
 export default router;

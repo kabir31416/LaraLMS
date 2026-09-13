@@ -26,21 +26,15 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { bn } from "date-fns/locale";
 import { useStudents } from "@/contexts/StudentContext";
-import {
-  COURSES,
-  SECTIONS,
-  GROUPS,
-  CLASSES,
-  SUBJECTS,
-  GENDERS,
-  RELATIONS,
-  FEE_TYPES,
-} from "@/types/student";
-import type { Student, FeeType } from "@/types/student";
+import { useAcademic } from "@/contexts/AcademicContext";
+import { AcademicSelect } from "@/components/common/AcademicSelect";
+import { GENDERS, RELATIONS, PAYMENT_METHODS } from "@/types/student";
+import type { Student } from "@/types/student";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
 import { ApiClientError } from "@/contexts/AuthContext";
+
+const ADMISSION_FEE_BDT = 200;
 
 interface AdmissionFormProps {
   open: boolean;
@@ -48,8 +42,18 @@ interface AdmissionFormProps {
   editStudent?: Student | null;
 }
 
+/**
+ * Minimum-fields Admission Form (Phase 4). Only these six are required to
+ * save an admission: name, mobile, DOB, Registration Number (Roll), Guardian
+ * Mobile, Course — everything else the student completes later via the
+ * Portal. Course Fee is never typed here: it's read straight from the
+ * selected Course's own settings (Settings → Courses), and the fixed
+ * Admission Fee (৳200) is never editable from this form either — both are
+ * enforced again server-side regardless of what this form sends.
+ */
 export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionFormProps) {
   const { addStudent, updateStudent } = useStudents();
+  const { getCourse } = useAcademic();
   const isEdit = !!editStudent;
 
   const [form, setForm] = useState(() => getInitialForm(editStudent));
@@ -57,7 +61,11 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
   const [admissionDate, setAdmissionDate] = useState<Date | undefined>(
     editStudent?.admissionDate ? new Date(editStudent.admissionDate) : new Date()
   );
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(editStudent?.subjects || []);
+  // The displayed/stored Course Fee — follows the live Course setting only
+  // when the admin actively picks a course here, so re-opening this form to
+  // edit an already-admitted student shows their *original* fee, never a
+  // Course Fee that was changed in Settings afterward (Phase 4 §19).
+  const [courseFee, setCourseFee] = useState<number>(editStudent?.totalCourseFee ?? 0);
 
   function getInitialForm(student?: Student | null) {
     if (student) {
@@ -68,23 +76,15 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         altMobile: student.altMobile || "",
         email: student.email || "",
         gender: student.gender,
-        institution: student.institution,
-        class: student.class,
+        bloodGroup: student.bloodGroup || "",
         guardianName: student.guardianName,
         guardianRelation: student.guardianRelation,
         guardianMobile: student.guardianMobile,
         address: student.address,
-        course: student.course,
-        section: student.section,
-        group: student.group,
-        admissionType: student.admissionType,
-        feeType: student.feeType as string,
-        courseDuration: student.courseDuration,
-        totalCourseFee: student.totalCourseFee,
-        admissionFee: student.admissionFee,
-        monthlyFee: student.monthlyFee,
+        courseId: student.courseId || "",
         discount: student.discount,
-        paid: student.paid,
+        paid: 0,
+        paymentMethod: "নগদ" as string,
       };
     }
     return {
@@ -94,55 +94,45 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       altMobile: "",
       email: "",
       gender: "" as string,
-      institution: "",
-      class: "" as string,
+      bloodGroup: "",
       guardianName: "",
       guardianRelation: "",
       guardianMobile: "",
       address: "",
-      course: "" as string,
-      section: "" as string,
-      group: "" as string,
-      admissionType: "নতুন" as string,
-      feeType: "এককালীন" as string,
-      courseDuration: 12,
-      totalCourseFee: 0,
-      admissionFee: 0,
-      monthlyFee: 0,
+      courseId: "" as string,
       discount: 0,
       paid: 0,
+      paymentMethod: "নগদ" as string,
     };
   }
 
-  const isOneTime = form.feeType === "এককালীন";
-  const totalFee = isOneTime
-    ? Number(form.totalCourseFee) + Number(form.admissionFee) - Number(form.discount)
-    : Number(form.admissionFee) + Number(form.monthlyFee) * Number(form.courseDuration) - Number(form.discount);
-  const due = totalFee - Number(form.paid);
+  const totalPayable = courseFee + ADMISSION_FEE_BDT - Number(form.discount);
+  const due = totalPayable - Number(form.paid);
 
   const updateField = (field: string, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const toggleSubject = (subject: string) => {
-    setSelectedSubjects((prev) =>
-      prev.includes(subject) ? prev.filter((s) => s !== subject) : [...prev, subject]
-    );
+  const onCourseChange = (courseId: string) => {
+    updateField("courseId", courseId);
+    setCourseFee(getCourse(courseId)?.fee ?? 0);
   };
 
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    // Quick Admission (Phase 1 §2): Roll, Name, and Phone are the only
-    // required fields — everything else can be completed later, by an admin
-    // editing this same form or by the student themself once self-service
-    // profile completion (Module 27) ships.
-    if (!form.name || !form.mobile || !form.rollNumber) {
-      toast.error("রোল নম্বর, নাম ও মোবাইল নম্বর আবশ্যক");
+    // Only these six fields are required for a brand-new admission —
+    // everything else (guardian details, HSC/SSC, address, photo, ...) the
+    // student completes themself later via the Student Portal (Phase 4
+    // §1/§3). Editing an existing student never re-demands Course: a
+    // record admitted before this field existed must stay editable without
+    // being forced to pick one now (Phase 4 §11 backward compatibility).
+    if (!form.name || !form.mobile || !form.rollNumber || !dob || !form.guardianMobile || (!isEdit && !form.courseId)) {
+      toast.error("নাম, মোবাইল নম্বর, রেজিস্ট্রেশন নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
       return;
     }
 
-    const studentData = {
+    const studentData: Record<string, unknown> = {
       rollNumber: form.rollNumber || undefined,
       name: form.name,
       mobile: form.mobile,
@@ -150,28 +140,28 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       email: form.email || undefined,
       dob: dob ? format(dob, "yyyy-MM-dd") : "",
       gender: form.gender as Student["gender"],
-      institution: form.institution,
-      class: form.class,
+      bloodGroup: form.bloodGroup || undefined,
       guardianName: form.guardianName,
       guardianRelation: form.guardianRelation,
       guardianMobile: form.guardianMobile,
       address: form.address,
-      course: form.course,
-      section: form.section,
-      group: form.group,
-      subjects: selectedSubjects,
       admissionDate: admissionDate ? format(admissionDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
-      admissionType: form.admissionType as Student["admissionType"],
-      feeType: form.feeType as FeeType,
-      courseDuration: Number(form.courseDuration),
-      totalCourseFee: Number(form.totalCourseFee),
-      admissionFee: Number(form.admissionFee),
-      monthlyFee: isOneTime ? 0 : Number(form.monthlyFee),
       discount: Number(form.discount),
-      totalFee,
-      paid: Number(form.paid),
-      due,
     };
+    // Only send courseId when it actually has a value — for a legacy
+    // student with none yet, omitting it (rather than sending "") means
+    // the backend leaves their course/fee snapshot untouched entirely.
+    if (form.courseId) studentData.courseId = form.courseId;
+
+    if (!isEdit) {
+      // A brand-new admission is always the one-time Course Fee + Admission
+      // Fee flow (Phase 4 §17) — but an *existing* student may predate this
+      // and be on a monthly plan (feeType "মাসিক"), so feeType is only ever
+      // forced here on create, never silently rewritten on edit.
+      studentData.feeType = "এককালীন";
+      studentData.paid = Number(form.paid) || 0;
+      if (Number(form.paid) > 0) studentData.paymentMethod = form.paymentMethod;
+    }
 
     setSubmitting(true);
     try {
@@ -179,7 +169,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         await updateStudent(editStudent.id, studentData);
         toast.success("শিক্ষার্থীর তথ্য হালনাগাদ করা হয়েছে");
       } else {
-        await addStudent(studentData);
+        await addStudent(studentData as never);
         toast.success("নতুন শিক্ষার্থী ভর্তি সম্পন্ন হয়েছে");
       }
       onOpenChange(false);
@@ -212,19 +202,15 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.name} onChange={(e) => updateField("name", e.target.value)} placeholder="পূর্ণ নাম লিখুন" />
                 </div>
                 <div className="space-y-1.5">
+                  <Label>রেজিস্ট্রেশন নম্বর (পূর্বের রোল) *</Label>
+                  <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
+                </div>
+                <div className="space-y-1.5">
                   <Label>মোবাইল নম্বর *</Label>
                   <Input value={form.mobile} onChange={(e) => updateField("mobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>বিকল্প মোবাইল</Label>
-                  <Input value={form.altMobile} onChange={(e) => updateField("altMobile", e.target.value)} placeholder="01XXXXXXXXX" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>ইমেইল</Label>
-                  <Input value={form.email} onChange={(e) => updateField("email", e.target.value)} placeholder="example@email.com" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>জন্ম তারিখ</Label>
+                  <Label>জন্ম তারিখ *</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dob && "text-muted-foreground")}>
@@ -238,6 +224,18 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Popover>
                 </div>
                 <div className="space-y-1.5">
+                  <Label>কোর্স *</Label>
+                  <AcademicSelect kind="course" value={form.courseId} onValueChange={onCourseChange} placeholder="কোর্স নির্বাচন করুন" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>বিকল্প মোবাইল</Label>
+                  <Input value={form.altMobile} onChange={(e) => updateField("altMobile", e.target.value)} placeholder="01XXXXXXXXX" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>ইমেইল</Label>
+                  <Input value={form.email} onChange={(e) => updateField("email", e.target.value)} placeholder="example@email.com" />
+                </div>
+                <div className="space-y-1.5">
                   <Label>লিঙ্গ</Label>
                   <Select value={form.gender} onValueChange={(v) => updateField("gender", v)}>
                     <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
@@ -247,94 +245,8 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>প্রতিষ্ঠান/স্কুল নাম</Label>
-                  <Input value={form.institution} onChange={(e) => updateField("institution", e.target.value)} placeholder="প্রতিষ্ঠানের নাম" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>শ্রেণি</Label>
-                  <Select value={form.class} onValueChange={(v) => updateField("class", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {CLASSES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </section>
-
-            {/* Guardian Info */}
-            <section>
-              <h3 className="text-sm font-semibold text-primary mb-3 border-b border-border pb-2">
-                অভিভাবকের তথ্য
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>অভিভাবকের নাম *</Label>
-                  <Input value={form.guardianName} onChange={(e) => updateField("guardianName", e.target.value)} placeholder="অভিভাবকের নাম" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>সম্পর্ক</Label>
-                  <Select value={form.guardianRelation} onValueChange={(v) => updateField("guardianRelation", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {RELATIONS.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>অভিভাবকের মোবাইল</Label>
-                  <Input value={form.guardianMobile} onChange={(e) => updateField("guardianMobile", e.target.value)} placeholder="01XXXXXXXXX" />
-                </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label>ঠিকানা</Label>
-                  <Input value={form.address} onChange={(e) => updateField("address", e.target.value)} placeholder="সম্পূর্ণ ঠিকানা" />
-                </div>
-              </div>
-            </section>
-
-            {/* Academic Info */}
-            <section>
-              <h3 className="text-sm font-semibold text-primary mb-3 border-b border-border pb-2">
-                একাডেমিক তথ্য
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>কোর্স *</Label>
-                  <Select value={form.course} onValueChange={(v) => updateField("course", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {COURSES.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>রোল নম্বর *</Label>
-                  <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
-                  <p className="text-xs text-muted-foreground">অ্যাডমিন কর্তৃক নির্ধারিত — ব্যাচ পরিবর্তনের সময় প্রয়োজনে পরিবর্তনযোগ্য</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>ব্যাচ</Label>
-                  <div className="h-10 px-3 flex items-center text-sm text-muted-foreground border rounded-md bg-muted/30">
-                    ব্যাচ মডিউল থেকে assign করুন
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>সেকশন</Label>
-                  <Select value={form.section} onValueChange={(v) => updateField("section", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {SECTIONS.map((s) => (<SelectItem key={s} value={s}>{s}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>গ্রুপ</Label>
-                  <Select value={form.group} onValueChange={(v) => updateField("group", v)}>
-                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                    <SelectContent>
-                      {GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
+                  <Label>রক্তের গ্রুপ</Label>
+                  <Input value={form.bloodGroup} onChange={(e) => updateField("bloodGroup", e.target.value)} placeholder="যেমন: B+" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>ভর্তি তারিখ</Label>
@@ -350,83 +262,95 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                     </PopoverContent>
                   </Popover>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>ভর্তি ধরন</Label>
-                  <Select value={form.admissionType} onValueChange={(v) => updateField("admissionType", v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="নতুন">নতুন</SelectItem>
-                      <SelectItem value="পুরাতন">পুরাতন</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label>বিষয়সমূহ</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 border rounded-lg p-3 bg-muted/30">
-                    {SUBJECTS.map((subject) => (
-                      <label key={subject} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <Checkbox checked={selectedSubjects.includes(subject)} onCheckedChange={() => toggleSubject(subject)} />
-                        {subject}
-                      </label>
-                    ))}
-                  </div>
-                </div>
               </div>
             </section>
 
-            {/* Fees Info */}
+            {/* Guardian Info */}
+            <section>
+              <h3 className="text-sm font-semibold text-primary mb-3 border-b border-border pb-2">
+                অভিভাবকের তথ্য
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>অভিভাবকের নাম</Label>
+                  <Input value={form.guardianName} onChange={(e) => updateField("guardianName", e.target.value)} placeholder="অভিভাবকের নাম" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>সম্পর্ক</Label>
+                  <Select value={form.guardianRelation} onValueChange={(v) => updateField("guardianRelation", v)}>
+                    <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+                    <SelectContent>
+                      {RELATIONS.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>অভিভাবকের মোবাইল *</Label>
+                  <Input value={form.guardianMobile} onChange={(e) => updateField("guardianMobile", e.target.value)} placeholder="01XXXXXXXXX" />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>ঠিকানা</Label>
+                  <Input value={form.address} onChange={(e) => updateField("address", e.target.value)} placeholder="সম্পূর্ণ ঠিকানা" />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                অভিভাবকের পেশা, ঠিকানার বিস্তারিত, HSC/SSC তথ্য ও ছবি — ভর্তির পর শিক্ষার্থী নিজে স্টুডেন্ট পোর্টাল থেকে যোগ করতে পারবে।
+              </p>
+            </section>
+
+            {/* Fee Info */}
             <section>
               <h3 className="text-sm font-semibold text-primary mb-3 border-b border-border pb-2">
                 ফি তথ্য
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label>ফি ধরন</Label>
-                  <Select value={form.feeType} onValueChange={(v) => updateField("feeType", v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {FEE_TYPES.map((ft) => (<SelectItem key={ft} value={ft}>{ft}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>কোর্স সময়কাল (মাস)</Label>
-                  <Input type="number" value={form.courseDuration} onChange={(e) => updateField("courseDuration", Number(e.target.value))} />
+                  <Label>কোর্স ফি (৳)</Label>
+                  <Input value={courseFee} readOnly className="bg-muted/50" />
+                  <p className="text-xs text-muted-foreground">কোর্স সেটিংস থেকে স্বয়ংক্রিয়ভাবে আসে</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>ভর্তি ফি (৳)</Label>
-                  <Input type="number" value={form.admissionFee} onChange={(e) => updateField("admissionFee", Number(e.target.value))} />
+                  <Input value={`${ADMISSION_FEE_BDT} টাকা`} readOnly className="bg-muted/50" />
+                  <p className="text-xs text-muted-foreground">নির্দিষ্ট, পরিবর্তনযোগ্য নয়</p>
                 </div>
-
-                {isOneTime ? (
-                  <div className="space-y-1.5">
-                    <Label>মোট কোর্স ফি (৳)</Label>
-                    <Input type="number" value={form.totalCourseFee} onChange={(e) => updateField("totalCourseFee", Number(e.target.value))} />
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label>মাসিক ফি (৳)</Label>
-                    <Input type="number" value={form.monthlyFee} onChange={(e) => updateField("monthlyFee", Number(e.target.value))} />
-                  </div>
-                )}
-
                 <div className="space-y-1.5">
-                  <Label>ডিসকাউন্ট (৳)</Label>
+                  <Label>ছাড় (৳)</Label>
                   <Input type="number" value={form.discount} onChange={(e) => updateField("discount", Number(e.target.value))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>পরিশোধিত (৳)</Label>
-                  <Input type="number" value={form.paid} onChange={(e) => updateField("paid", Number(e.target.value))} />
+                  <Label>মোট প্রদেয় (৳)</Label>
+                  <Input value={totalPayable} readOnly className="bg-muted/50" />
                 </div>
+                {!isEdit && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>ভর্তির সময় প্রদান (৳)</Label>
+                      <Input type="number" value={form.paid} onChange={(e) => updateField("paid", Number(e.target.value))} />
+                    </div>
+                    {Number(form.paid) > 0 && (
+                      <div className="space-y-1.5">
+                        <Label>পেমেন্ট মাধ্যম</Label>
+                        <Select value={form.paymentMethod} onValueChange={(v) => updateField("paymentMethod", v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {PAYMENT_METHODS.map((m) => (<SelectItem key={m} value={m}>{m}</SelectItem>))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="space-y-1.5">
-                  <Label>মোট ফি (৳)</Label>
-                  <Input value={totalFee} readOnly className="bg-muted/50" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>বাকি (৳)</Label>
-                  <Input value={due} readOnly className={cn("bg-muted/50", due > 0 && "text-destructive font-semibold")} />
+                  <Label>অবশিষ্ট বকেয়া (৳)</Label>
+                  <Input value={isEdit ? editStudent?.due ?? 0 : due} readOnly className={cn("bg-muted/50", (isEdit ? editStudent?.due ?? 0 : due) > 0 && "text-destructive font-semibold")} />
                 </div>
               </div>
+              {isEdit && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  ভর্তির পরের পেমেন্ট ফি ম্যানেজমেন্ট পেজ থেকে যোগ করুন — এখান থেকে শুধু কোর্স ও ছাড় পরিবর্তন করা যাবে।
+                </p>
+              )}
             </section>
 
             <div className="flex justify-end gap-3 pt-4 border-t">

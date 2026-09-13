@@ -14,6 +14,7 @@ interface ApiStaff {
   salary: number;
   joinDate: string;
   status: Staff["status"];
+  staffId?: string;
 }
 
 function fromApi(doc: ApiStaff): Staff {
@@ -28,6 +29,7 @@ function fromApi(doc: ApiStaff): Staff {
     salary: doc.salary,
     joinDate: doc.joinDate,
     status: doc.status,
+    staffId: doc.staffId,
   };
 }
 

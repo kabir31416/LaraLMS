@@ -4,10 +4,12 @@ import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 
-export async function list(req: Request) {
+/** See course.service.ts's getDirectorCourseIds — a Batch Director only sees subjects under their own course(s) (Phase 4 §7/§8). */
+export async function list(req: Request, scopeCourseIds?: string[]) {
   const { page, limit, skip, sort } = parsePagination(req, { name: 1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["name"]) };
   if (req.query.courseId) filter.courseId = req.query.courseId;
+  if (scopeCourseIds) filter.courseId = filter.courseId ? { $eq: filter.courseId, $in: scopeCourseIds } : { $in: scopeCourseIds };
 
   const [items, total] = await Promise.all([
     Subject.find(filter).sort(sort).skip(skip).limit(limit),
@@ -16,9 +18,10 @@ export async function list(req: Request) {
   return { items, meta: buildMeta(page, limit, total) };
 }
 
-export async function getById(id: string): Promise<SubjectDoc> {
+export async function getById(id: string, scopeCourseIds?: string[]): Promise<SubjectDoc> {
   const doc = await Subject.findById(id);
   if (!doc) throw ApiError.notFound("Subject not found");
+  if (scopeCourseIds && !scopeCourseIds.includes(String(doc.courseId))) throw ApiError.notFound("Subject not found");
   return doc;
 }
 

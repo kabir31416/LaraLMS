@@ -8,6 +8,7 @@ export const createGuardianSchema = z.object({
     relation: z.enum(RELATIONS),
     phone: z.string().trim().min(6),
     occupation: z.string().trim().optional(),
+    address: z.string().trim().optional(),
     isPrimary: z.boolean().default(false),
   }),
 });
@@ -19,6 +20,7 @@ export const updateGuardianSchema = z.object({
     relation: z.enum(RELATIONS).optional(),
     phone: z.string().trim().min(6).optional(),
     occupation: z.string().trim().optional(),
+    address: z.string().trim().optional(),
     isPrimary: z.boolean().optional(),
   }),
 });

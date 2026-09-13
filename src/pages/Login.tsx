@@ -8,38 +8,45 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { GraduationCap } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { toAsciiDigits } from "@/lib/format";
 
 /**
- * Two tabs sharing the same /auth/login call underneath — the backend
- * doesn't distinguish "staff login" from "student login" at all (it's
- * always just identifier+password). This split exists purely to remove a
- * real source of confusion: the generic "মোবাইল নম্বর / আইডি" label reads
- * ambiguously to a student, who might reasonably type their Registration
- * ID there instead of their phone number. The Student tab spells out
- * exactly which two values are the credential.
+ * Three tabs, three different auth calls underneath.
+ * - Admin: identifier+password (/auth/login, the real User/Role model) —
+ *   lands on "/", the only route an Admin role is allowed into.
+ * - Staff: phone + Staff ID checked directly against the live Staff record
+ *   (/auth/staff-login) — no password, no login account at all
+ *   (auth.service.ts's staffLogin is a pure read-only lookup, same design
+ *   as the Student Portal below). Lands on "/director" — currently the
+ *   only staff type with a real portal home page is Batch Director;
+ *   staffLogin itself rejects any other staff type with a clear error.
+ * - Student: phone + Roll Number checked directly against the live Student
+ *   record (/auth/student-login) — lands on "/student".
  */
 const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
-  const [tab, setTab] = useState<"staff" | "student">("staff");
+  const { login, studentLogin, staffLogin } = useAuth();
+  const [tab, setTab] = useState<"admin" | "staff" | "student">("admin");
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+
+  const [staffPhone, setStaffPhone] = useState("");
+  const [staffId, setStaffId] = useState("");
 
   const [studentPhone, setStudentPhone] = useState("");
   const [studentRoll, setStudentRoll] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
 
-  const doLogin = async (id: string, pass: string) => {
-    if (!id.trim() || !pass) {
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifier.trim() || !password) {
       toast.error("সব তথ্য দিন");
       return;
     }
     setSubmitting(true);
     try {
-      await login(id.trim(), pass);
+      await login(identifier.trim(), password);
       toast.success("লগইন সফল");
       navigate("/");
     } catch (err) {
@@ -49,19 +56,40 @@ const Login = () => {
     }
   };
 
-  const handleStaffSubmit = (e: React.FormEvent) => {
+  const handleStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    doLogin(identifier, password);
+    if (!staffPhone.trim() || !staffId.trim()) {
+      toast.error("ফোন নম্বর ও স্টাফ আইডি দিন");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await staffLogin(staffPhone.trim(), staffId.trim());
+      toast.success("লগইন সফল");
+      navigate("/director");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleStudentSubmit = (e: React.FormEvent) => {
+  const handleStudentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // A Roll Number is often typed/stored with Bengali numerals, but the
-    // backend always stores the login password as ASCII digits
-    // (student.service.ts's syncStudentLogin normalizes it) — normalizing
-    // here too means it doesn't matter which numeral system the student
-    // actually types.
-    doLogin(studentPhone, toAsciiDigits(studentRoll));
+    if (!studentPhone.trim() || !studentRoll.trim()) {
+      toast.error("ফোন নম্বর ও রোল নম্বর দিন");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await studentLogin(studentPhone.trim(), studentRoll.trim());
+      toast.success("লগইন সফল");
+      navigate("/student");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "লগইন ব্যর্থ হয়েছে");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -75,14 +103,15 @@ const Login = () => {
           <p className="text-sm text-muted-foreground">আপনার অ্যাকাউন্টে লগইন করুন</p>
         </CardHeader>
         <CardContent>
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "staff" | "student")}>
-            <TabsList className="grid grid-cols-2 w-full mb-4">
-              <TabsTrigger value="staff">স্টাফ / এডমিন</TabsTrigger>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as "admin" | "staff" | "student")}>
+            <TabsList className="grid grid-cols-3 w-full mb-4">
+              <TabsTrigger value="admin">এডমিন</TabsTrigger>
+              <TabsTrigger value="staff">স্টাফ</TabsTrigger>
               <TabsTrigger value="student">শিক্ষার্থী</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="staff">
-              <form className="space-y-4" onSubmit={handleStaffSubmit}>
+            <TabsContent value="admin">
+              <form className="space-y-4" onSubmit={handleAdminSubmit}>
                 <div className="space-y-1.5">
                   <Label htmlFor="login-identifier">মোবাইল নম্বর / আইডি</Label>
                   <Input
@@ -110,6 +139,35 @@ const Login = () => {
               </form>
             </TabsContent>
 
+            <TabsContent value="staff">
+              <form className="space-y-4" onSubmit={handleStaffSubmit}>
+                <div className="space-y-1.5">
+                  <Label htmlFor="staff-phone">ফোন নম্বর</Label>
+                  <Input
+                    id="staff-phone"
+                    value={staffPhone}
+                    onChange={(e) => setStaffPhone(e.target.value)}
+                    placeholder="01XXXXXXXXX"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="staff-id">স্টাফ আইডি</Label>
+                  <Input
+                    id="staff-id"
+                    value={staffId}
+                    onChange={(e) => setStaffId(e.target.value)}
+                    placeholder="যেমন: T-01"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">নিয়োগের সময় দেওয়া ফোন নম্বর ও স্টাফ আইডি মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
+                </div>
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "লগইন হচ্ছে..." : "লগইন"}
+                </Button>
+              </form>
+            </TabsContent>
+
             <TabsContent value="student">
               <form className="space-y-4" onSubmit={handleStudentSubmit}>
                 <div className="space-y-1.5">
@@ -129,9 +187,9 @@ const Login = () => {
                     value={studentRoll}
                     onChange={(e) => setStudentRoll(e.target.value)}
                     placeholder="যেমন: 07"
-                    autoComplete="current-password"
+                    autoComplete="off"
                   />
-                  <p className="text-xs text-muted-foreground">আপনার ব্যাচের রোল নম্বরই এখানে পাসওয়ার্ড হিসেবে ব্যবহার হয়</p>
+                  <p className="text-xs text-muted-foreground">ভর্তির সময় দেওয়া ফোন নম্বর ও রোল নম্বর মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "লগইন হচ্ছে..." : "লগইন"}

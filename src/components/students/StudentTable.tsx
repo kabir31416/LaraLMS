@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
 import { Student } from "@/types/student";
 import {
   Table,
@@ -17,11 +16,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Eye, Pencil, Trash2, MoreVertical, KeyRound } from "lucide-react";
+import { Eye, Pencil, Trash2, MoreVertical } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
-import { StudentLoginDialog } from "./StudentLoginDialog";
 
 interface StudentTableProps {
   students: Student[];
@@ -34,7 +32,6 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
-  const [loginStudent, setLoginStudent] = useState<Student | null>(null);
 
   if (students.length === 0) {
     return (
@@ -125,9 +122,6 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(student); }}>
                         <Pencil className="mr-2 h-4 w-4" /> সম্পাদনা
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLoginStudent(student); }}>
-                        <KeyRound className="mr-2 h-4 w-4" /> লগইন তথ্য
-                      </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
                         onClick={(e) => { e.stopPropagation(); onDelete(student.id); }}
@@ -142,7 +136,6 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
           })}
         </TableBody>
       </Table>
-      <StudentLoginDialog student={loginStudent} onOpenChange={(open) => !open && setLoginStudent(null)} />
     </div>
   );
 }

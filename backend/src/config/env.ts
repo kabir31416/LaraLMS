@@ -33,6 +33,8 @@ const envSchema = z.object({
   SMS_API_KEY: z.string().optional().default(""),
   SMS_SENDER_ID: z.string().optional().default(""),
   SMS_API_URL: z.string().optional().default("http://bulksmsbd.net/api/smsapi"),
+  /** Closing signature line on the Result Entry guardian SMS (exams/exam.service.ts's buildResultSms) — the coaching centre's own name, not a gateway credential. */
+  SMS_SIGNATURE: z.string().optional().default("LaraLMS"),
 });
 
 const parsed = envSchema.safeParse(process.env);
