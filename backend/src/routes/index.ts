@@ -25,6 +25,7 @@ import noticeRoutes from "../modules/notices/notice.routes";
 import publicInfoRoutes from "../modules/publicInfo/publicInfo.routes";
 import publicResultsRoutes from "../modules/publicResults/publicResults.routes";
 import auditLogRoutes from "../audit/auditLog.routes";
+import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -59,5 +60,6 @@ router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
 router.use("/public/results", publicResultsRoutes);
 router.use("/audit-logs", auditLogRoutes);
+router.use("/admission-results", admissionResultRoutes);
 
 export default router;

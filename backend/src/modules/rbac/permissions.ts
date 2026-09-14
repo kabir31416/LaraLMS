@@ -80,6 +80,10 @@ export const PERMISSIONS = {
   // Settings-adjacent master data & platform controls
   PAYMENT_METHODS_MANAGE: "payment-methods:manage",
   AUDIT_READ: "audit:read",
+
+  // Admission Result matching (PDF import, Chance Students, institute/batch analysis)
+  ADMISSION_RESULTS_MANAGE: "admission-results:manage",
+  ADMISSION_RESULTS_READ_OWN_BATCH: "admission-results:read:own-batch",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -92,6 +96,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "stud
   batch_director: [
     PERMISSIONS.STUDENTS_READ_OWN_BATCH,
     PERMISSIONS.STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH,
+    PERMISSIONS.ADMISSION_RESULTS_READ_OWN_BATCH,
     PERMISSIONS.BATCHES_READ_OWN,
     PERMISSIONS.ENROLLMENTS_READ_OWN,
     PERMISSIONS.ATTENDANCE_MARK_OWN_BATCH,
