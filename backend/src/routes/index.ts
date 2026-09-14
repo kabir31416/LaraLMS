@@ -22,6 +22,7 @@ import accountsRoutes from "../modules/accounts/accounts.routes";
 import branchLedgerRoutes from "../modules/accounts/branchLedger.routes";
 import noticeRoutes from "../modules/notices/notice.routes";
 import publicInfoRoutes from "../modules/publicInfo/publicInfo.routes";
+import publicResultsRoutes from "../modules/publicResults/publicResults.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -53,5 +54,6 @@ router.use("/accounts", accountsRoutes);
 router.use("/branch-ledger", branchLedgerRoutes);
 router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
+router.use("/public/results", publicResultsRoutes);
 
 export default router;

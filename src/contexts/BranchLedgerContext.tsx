@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { BranchLedgerEntry } from "@/types/branchLedger";
 import { useBranches } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/apiClient";
 
 /** Branch Ledger entries are now backed by the real API (Phase 3, Module 24). */
@@ -30,6 +31,7 @@ const BranchLedgerContext = createContext<BranchLedgerContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function BranchLedgerProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const { branches } = useBranches();
   const [entries, setEntries] = useState<BranchLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,10 +49,15 @@ export function BranchLedgerProvider({ children }: { children: React.ReactNode }
     setEntries(docs.map(fromApi));
   }, [fromApi]);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
     refresh().catch(() => {}).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branches.length]);
+  }, [initializing, user, branches.length]);
 
   const addEntry = useCallback(async (data: Omit<BranchLedgerEntry, "id" | "branchName">): Promise<BranchLedgerEntry> => {
     const created = fromApi(await api.post<ApiBranchLedgerEntry>("/branch-ledger", data));

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Notice } from "@/types/notice";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
 
 /** Notices are now backed by the real API (Phase 3, Module 25). Field names match exactly — no adapter needed. */
@@ -38,6 +39,7 @@ const NoticeContext = createContext<Ctx | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function NoticeProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -46,9 +48,14 @@ export function NoticeProvider({ children }: { children: React.ReactNode }) {
     setNotices(docs.map(fromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
-    refreshNotices().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
-  }, [refreshNotices]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshNotices().catch(() => { /* offline */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshNotices]);
 
   const addNotice = useCallback(async (n: Omit<Notice, "id" | "createdAt">): Promise<Notice> => {
     const created = fromApi(await api.post<ApiNotice>("/notices", n));

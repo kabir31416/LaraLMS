@@ -6,6 +6,7 @@ import {
   StockHistoryEntry,
 } from "@/types/book";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Books/BranchStock/Issues/History are now backed by the real API (Phase 3,
@@ -112,6 +113,7 @@ const BookContext = createContext<BookContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function BookProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [branchStock, setBranchStock] = useState<BranchStock[]>([]);
   const [issues, setIssues] = useState<StudentBookIssue[]>([]);
@@ -138,11 +140,16 @@ export function BookProvider({ children }: { children: React.ReactNode }) {
     setHistory(docs.map(historyFromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
     Promise.all([refreshBooks(), refreshBranchStock(), refreshIssues(), refreshHistory()])
-      .catch(() => { /* not logged in yet, or offline */ })
+      .catch(() => { /* offline */ })
       .finally(() => setLoading(false));
-  }, [refreshBooks, refreshBranchStock, refreshIssues, refreshHistory]);
+  }, [initializing, user, refreshBooks, refreshBranchStock, refreshIssues, refreshHistory]);
 
   const addBook = useCallback(async (data: Omit<Book, "id" | "bookCode">): Promise<Book> => {
     const created = bookFromApi(await api.post<ApiBook>("/books", data));

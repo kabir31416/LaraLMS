@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, ApiClientError, getAccessToken, onSessionExpired, setAccessToken } from "@/lib/apiClient";
+import { api, ApiClientError, getAccessToken, onSessionExpired, setAccessToken, setHasRefreshCapability } from "@/lib/apiClient";
 
 export type Role = "Admin" | "Batch Director" | "Student";
 
@@ -147,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (storedLocal) {
         try {
           const { accessToken, user: storedUser } = JSON.parse(storedLocal) as { accessToken: string; user: AuthUser };
+          setHasRefreshCapability(false); // no cookie exists for this session — a 401 must fail fast, not wait on a doomed /auth/refresh
           setAccessToken(accessToken);
           setUser(storedUser);
         } catch {
@@ -160,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await api.post<LoginResponse>("/auth/refresh");
         if (cancelled) return;
+        setHasRefreshCapability(true);
         setAccessToken(res.accessToken);
         setUser(toAuthUser(res.user));
       } catch {
@@ -176,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (identifier: string, password: string) => {
     const res = await api.post<LoginResponse>("/auth/login", { identifier, password });
+    setHasRefreshCapability(true);
     setAccessToken(res.accessToken);
     setUser(toAuthUser(res.user));
   }, []);
@@ -187,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const studentLogin = useCallback(async (phone: string, rollNumber: string) => {
     const res = await api.post<StudentLoginResponse>("/auth/student-login", { phone, rollNumber });
+    setHasRefreshCapability(false);
     setAccessToken(res.accessToken);
     const authUser = studentToAuthUser(res.student);
     setUser(authUser);
@@ -201,6 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const staffLogin = useCallback(async (phone: string, staffId: string) => {
     const res = await api.post<StaffLoginResponse>("/auth/staff-login", { phone, staffId });
+    setHasRefreshCapability(false);
     setAccessToken(res.accessToken);
     const authUser = staffToAuthUser(res.staff);
     setUser(authUser);

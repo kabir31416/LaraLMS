@@ -148,5 +148,11 @@ studentSchema.index(
   { currentBatchId: 1, currentRollNumber: 1 },
   { unique: true, partialFilterExpression: { currentBatchId: { $exists: true }, currentRollNumber: { $exists: true } } },
 );
+// The compound index above only helps queries that also filter by
+// currentBatchId — it can't serve a roll-number-only lookup (Mongo can only
+// use a compound index's leading field(s)). The public marksheet's
+// individual-result search (publicResults module) looks up by Roll Number
+// alone, with no batch to narrow by, so it needs its own index.
+studentSchema.index({ currentRollNumber: 1 });
 
 export const Student = model<StudentDoc>("Student", studentSchema);

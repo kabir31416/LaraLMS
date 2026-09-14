@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Batch } from "@/types/batch";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Batches are now backed by the real API (Phase 3, Module 12). There is no
@@ -30,6 +31,7 @@ const BatchContext = createContext<BatchContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function BatchProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,9 +40,14 @@ export function BatchProvider({ children }: { children: React.ReactNode }) {
     setBatches(docs.map(withId) as Batch[]);
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
-    refreshBatches().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
-  }, [refreshBatches]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshBatches().catch(() => { /* offline */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshBatches]);
 
   const addBatch = useCallback(async (data: Omit<Batch, "id">): Promise<Batch> => {
     const created = withId(await api.post<{ _id: string }>("/batches", data)) as Batch;

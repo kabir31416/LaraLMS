@@ -30,3 +30,18 @@ export const publicNameSearchLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many requests — slow down" } },
 });
+
+/**
+ * The public marksheet (publicResults module, Phase 6) — an individual
+ * result lookup is heavier than a plain student-info exact match (it joins
+ * exam/subject/batch across a date range), and a Roll Number is also a
+ * short, guessable value, so this sits between the two limiters above:
+ * tighter than the exact-match student search, looser than name search.
+ */
+export const publicResultLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many requests — slow down" } },
+});

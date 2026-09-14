@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { IncomeEntry, ExpenseEntry, PaymentMethod, TransactionSource } from "@/types/accounts";
 import { useBranches } from "@/contexts/BranchContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/apiClient";
 
 /**
@@ -59,6 +60,7 @@ const AccountsContext = createContext<AccountsContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function AccountsProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const { branches } = useBranches();
   const [incomes, setIncomes] = useState<IncomeEntry[]>([]);
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
@@ -97,13 +99,18 @@ export function AccountsProvider({ children }: { children: React.ReactNode }) {
     setExpenseCategories(doc.expenseCategories);
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
     Promise.all([refreshIncomes(), refreshExpenses(), refreshCategories()])
-      .catch(() => { /* not logged in yet, offline, or not an admin */ })
+      .catch(() => { /* offline, or not an admin */ })
       .finally(() => setLoading(false));
     // Re-fetch once branches load so branchName can be resolved on entries fetched before they arrived.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branches.length]);
+  }, [initializing, user, branches.length]);
 
   const addIncome = useCallback(async (data: Omit<IncomeEntry, "id" | "branchName">): Promise<IncomeEntry> => {
     const created = incomeFromApi(await api.post<ApiIncomeEntry>("/accounts/income", data));

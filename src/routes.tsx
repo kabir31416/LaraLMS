@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
+import Marksheet from "./pages/Marksheet";
 import NotFound from "./pages/NotFound";
 
 // Admin pages
@@ -44,6 +45,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/info" element={<PublicInfo />} />
+      <Route path="/marksheet" element={<Marksheet />} />
 
       {/* Admin */}
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>

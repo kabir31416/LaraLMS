@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Staff } from "@/types/staff";
 import { api } from "@/lib/apiClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 /** Staff is now backed by the real API (Phase 3, Module 13). Field names are translated at this boundary (phone <-> mobile, photoUrl <-> photo) so existing pages keep reading the same property names. */
 interface ApiStaff {
@@ -57,6 +58,7 @@ const StaffContext = createContext<StaffContextType | null>(null);
 const LIST_LIMIT = "?limit=100";
 
 export function StaffProvider({ children }: { children: React.ReactNode }) {
+  const { initializing, user } = useAuth();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -65,9 +67,14 @@ export function StaffProvider({ children }: { children: React.ReactNode }) {
     setStaff(docs.map(fromApi));
   }, []);
 
+  // Waits for AuthContext to settle first — see AcademicContext.tsx's
+  // comment for why an un-gated fetch here races the session restore and
+  // can even log a just-restored Student/Staff Portal session back out.
   useEffect(() => {
-    refreshStaff().catch(() => { /* not logged in yet, or offline */ }).finally(() => setLoading(false));
-  }, [refreshStaff]);
+    if (initializing) return;
+    if (!user) { setLoading(false); return; }
+    refreshStaff().catch(() => { /* offline */ }).finally(() => setLoading(false));
+  }, [initializing, user, refreshStaff]);
 
   const addStaff = useCallback(async (data: Omit<Staff, "id">): Promise<Staff> => {
     const created = fromApi(await api.post<ApiStaff>("/staff", toApiBody(data)));
