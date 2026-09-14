@@ -103,4 +103,3 @@ export const SUBJECTS = [
 ];
 export const GENDERS = ["পুরুষ", "মহিলা", "অন্যান্য"] as const;
 export const RELATIONS = ["পিতা", "মাতা", "ভাই", "বোন", "অন্যান্য"];
-export const PAYMENT_METHODS = ["নগদ", "বিকাশ", "নগদ (মোবাইল)", "রকেট", "ব্যাংক", "অন্যান্য"];

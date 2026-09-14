@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,11 +25,19 @@ export function LecturesTab() {
   const openNew = () => { setEdit(null); setForm({ title: "", subjectId: subjects[0]?.id || "", lectureNumber: lectures.length + 1, description: "" }); setOpen(true); };
   const openEdit = (l: Lecture) => { setEdit(l); setForm({ title: l.title, subjectId: l.subjectId, lectureNumber: l.lectureNumber, description: l.description || "" }); setOpen(true); };
 
+  const toggleStatus = async (l: Lecture) => {
+    try {
+      await updateLecture(l.id, { status: l.status === "সক্রিয়" ? "নিষ্ক্রিয়" : "সক্রিয়" });
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "পরিবর্তন ব্যর্থ হয়েছে");
+    }
+  };
+
   const submit = async () => {
     if (!form.title || !form.subjectId) { toast.error("সব ফিল্ড পূরণ করুন"); return; }
     try {
       if (edit) { await updateLecture(edit.id, form); toast.success("লেকচার আপডেট"); }
-      else { await addLecture(form); toast.success("লেকচার যোগ"); }
+      else { await addLecture({ ...form, status: "সক্রিয়" }); toast.success("লেকচার যোগ"); }
       setOpen(false);
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
@@ -65,15 +75,21 @@ export function LecturesTab() {
       </div>
       <Card className="border-none shadow-sm">
         <Table>
-          <TableHeader><TableRow><TableHead className="w-[60px]">নং</TableHead><TableHead>শিরোনাম</TableHead><TableHead>সাবজেক্ট</TableHead><TableHead className="w-[120px] text-right">অ্যাকশন</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead className="w-[60px]">নং</TableHead><TableHead>শিরোনাম</TableHead><TableHead>সাবজেক্ট</TableHead><TableHead>অবস্থা</TableHead><TableHead className="w-[120px] text-right">অ্যাকশন</TableHead></TableRow></TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-10">কোনো লেকচার নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-10">কোনো লেকচার নেই</TableCell></TableRow>
             ) : filtered.map((l) => (
               <TableRow key={l.id}>
                 <TableCell className="font-mono text-xs">{l.lectureNumber}</TableCell>
                 <TableCell className="font-medium">{l.title}</TableCell>
                 <TableCell className="text-sm">{subjectName(l.subjectId)}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={l.status === "সক্রিয়"} onCheckedChange={() => toggleStatus(l)} />
+                    <Badge variant="outline" className={l.status === "সক্রিয়" ? "bg-success/10 text-success border-success/20" : "bg-muted text-muted-foreground"}>{l.status}</Badge>
+                  </div>
+                </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(l)}><Pencil className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(l.id)}><Trash2 className="h-4 w-4" /></Button>

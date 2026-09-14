@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { bn } from "date-fns/locale";
 import { toast } from "sonner";
-import { PAYMENT_METHODS, FEE_TYPES } from "@/types/student";
+import { FEE_TYPES } from "@/types/student";
 import type { Student, Payment } from "@/types/student";
 import { StatCard } from "@/components/StatCard";
 import {
@@ -261,6 +262,7 @@ function PaymentDialog({
   onSuccess?: (p: Payment) => void;
 }) {
   const { batches } = useBatches();
+  const { activePaymentMethods } = useAcademic();
   const [studentId, setStudentId] = useState("");
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
   const [feeType, setFeeType] = useState<string>("এককালীন");
@@ -468,8 +470,8 @@ function PaymentDialog({
               <Select value={method} onValueChange={setMethod}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_METHODS.map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  {activePaymentMethods.map((m) => (
+                    <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

@@ -2,10 +2,20 @@ import { Types } from "mongoose";
 import { Student } from "../students/student.model";
 import { OfflineResult } from "../exams/result.model";
 import { Batch } from "../batches/batch.model";
-import { getSettings } from "../settings/settings.service";
+import { getSettings, getPublicResultsSettings } from "../settings/settings.service";
+import type { PublicResultsSettingsDoc } from "../settings/settings.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { toAsciiDigits } from "../../common/utils/digits";
 import { logger } from "../../logger/logger";
+
+/** Bengali "feature turned off" messages — never a raw 403/500 (Settings §16). */
+async function assertMarksheetEnabled(kind: "individual" | "batch"): Promise<PublicResultsSettingsDoc> {
+  const settings = await getPublicResultsSettings();
+  if (!settings.enabled) throw ApiError.forbidden("এই মুহূর্তে পাবলিক ফলাফল সুবিধা বন্ধ আছে।");
+  if (kind === "individual" && !settings.individualEnabled) throw ApiError.forbidden("ব্যক্তিগত ফলাফল এই মুহূর্তে বন্ধ আছে।");
+  if (kind === "batch" && !settings.batchEnabled) throw ApiError.forbidden("ব্যাচ ভিত্তিক ফলাফল এই মুহূর্তে বন্ধ আছে।");
+  return settings;
+}
 
 /**
  * Public Marksheet (Phase 6). Every function here is read-only and returns
@@ -43,7 +53,7 @@ interface DetailRow {
 }
 
 interface IndividualResultView {
-  student: { name: string; rollNumber: string; course: string | null; batch: string | null };
+  student: { name: string; rollNumber: string; course: string | null; batch: string | null; registrationId?: string; photo?: string | null };
   dateRange: { start: string; end: string };
   subjects: SubjectSummary[];
   overall: { fullMarks: number; obtained: number; percentage: number; grade: string; status: "উত্তীর্ণ" | "অনুত্তীর্ণ" };
@@ -72,7 +82,7 @@ async function findOneStudentByRoll(rawRoll: string) {
   const roll = toAsciiDigits(rawRoll).trim();
   if (!roll) throw ApiError.badRequest("সঠিক রোল নম্বর প্রদান করুন।");
 
-  const matches = await Student.find({ currentRollNumber: roll }).select("_id name currentRollNumber course currentBatchId");
+  const matches = await Student.find({ currentRollNumber: roll }).select("_id name currentRollNumber course currentBatchId registrationId photoUrl");
   if (matches.length === 0) throw ApiError.notFound("প্রদত্ত রোল নম্বরের কোনো ফলাফল পাওয়া যায়নি।");
   if (matches.length > 1) {
     logger.warn({ roll, count: matches.length }, "Ambiguous public roll-number lookup — multiple students share this roll");
@@ -82,6 +92,7 @@ async function findOneStudentByRoll(rawRoll: string) {
 }
 
 export async function getIndividualResult(rawRoll: string, startDate: string, endDate: string): Promise<IndividualResultView> {
+  const resultsSettings = await assertMarksheetEnabled("individual");
   if (startDate > endDate) throw ApiError.badRequest("শুরু তারিখ শেষ তারিখের পরে হতে পারবে না।");
 
   const student = await findOneStudentByRoll(rawRoll);
@@ -92,14 +103,18 @@ export async function getIndividualResult(rawRoll: string, startDate: string, en
     currentBatchName = batch?.name ?? null;
   }
 
+  const examMatch: Record<string, unknown> = { "exam.date": { $gte: startDate, $lte: endDate } };
+  if (resultsSettings.requirePublished) examMatch["exam.isPublished"] = true;
+
   // One aggregation, not "one query per exam" — joins each result straight
   // to its own exam/subject/batch and filters to the requested window and
-  // to published exams only, all in the database (Phase 6 §18).
+  // (when required by Settings) to published exams only, all in the
+  // database (Phase 6 §18).
   const rows = await OfflineResult.aggregate<ResultRow>([
     { $match: { studentId: new Types.ObjectId(String(student._id)) } },
     { $lookup: { from: "offlineexams", localField: "examId", foreignField: "_id", as: "exam" } },
     { $unwind: "$exam" },
-    { $match: { "exam.isPublished": true, "exam.date": { $gte: startDate, $lte: endDate } } },
+    { $match: examMatch },
     { $lookup: { from: "subjects", localField: "exam.subjectId", foreignField: "_id", as: "subject" } },
     { $unwind: "$subject" },
     { $lookup: { from: "batches", localField: "exam.batchId", foreignField: "_id", as: "batch" } },
@@ -165,12 +180,15 @@ export async function getIndividualResult(rawRoll: string, startDate: string, en
   const overallPercentage = overallFullMarks > 0 ? round2((overallObtained / overallFullMarks) * 100) : 0;
   const overallStatus: "উত্তীর্ণ" | "অনুত্তীর্ণ" = overallPercentage >= passingPercentage ? "উত্তীর্ণ" : "অনুত্তীর্ণ";
 
+  const visible = resultsSettings.visibleFields;
   return {
     student: {
       name: student.name,
       rollNumber: student.currentRollNumber ?? toAsciiDigits(rawRoll).trim(),
-      course: student.course ?? null,
-      batch: currentBatchName,
+      course: visible.includes("course") ? (student.course ?? null) : null,
+      batch: visible.includes("batch") ? currentBatchName : null,
+      ...(visible.includes("registrationId") ? { registrationId: student.registrationId } : {}),
+      ...(visible.includes("photo") ? { photo: student.photoUrl ?? null } : {}),
     },
     dateRange: { start: startDate, end: endDate },
     subjects,
@@ -244,6 +262,7 @@ export async function getBatchMasterSheet(
   startDate?: string,
   endDate?: string,
 ): Promise<BatchMasterSheetView> {
+  const resultsSettings = await assertMarksheetEnabled("batch");
   if (startDate && endDate && startDate > endDate) {
     throw ApiError.badRequest("শুরু তারিখ শেষ তারিখের পরে হতে পারবে না।");
   }
@@ -253,7 +272,8 @@ export async function getBatchMasterSheet(
   if (!batch) throw ApiError.notFound("প্রদত্ত নামের কোনো ব্যাচ পাওয়া যায়নি।");
 
   const { OfflineExam } = await import("../exams/exam.model");
-  const examFilter: Record<string, unknown> = { batchId: batch._id, isPublished: true };
+  const examFilter: Record<string, unknown> = { batchId: batch._id };
+  if (resultsSettings.requirePublished) examFilter.isPublished = true;
   if (startDate || endDate) {
     const dateFilter: Record<string, string> = {};
     if (startDate) dateFilter.$gte = startDate;
@@ -339,23 +359,29 @@ export async function getBatchMasterSheet(
 
   // Top 3 — ranked by overall percentage (ties broken by total obtained,
   // then name). A student who was absent for everything (totalFullMarks=0)
-  // can't be ranked.
-  const ranked = [...rows]
-    .filter((r) => r.totalFullMarks > 0)
-    .sort((a, b) => b.percentage - a.percentage || b.totalObtained - a.totalObtained || a.name.localeCompare(b.name, "bn"));
-  ranked.slice(0, 3).forEach((r, i) => {
-    r.rank = i + 1;
-  });
+  // can't be ranked. Skipped entirely when Settings has hidden rank.
+  if (resultsSettings.visibleFields.includes("rank")) {
+    const ranked = [...rows]
+      .filter((r) => r.totalFullMarks > 0)
+      .sort((a, b) => b.percentage - a.percentage || b.totalObtained - a.totalObtained || a.name.localeCompare(b.name, "bn"));
+    ranked.slice(0, 3).forEach((r, i) => {
+      r.rank = i + 1;
+    });
+  }
 
   // Display order is roll-number order (how a master sheet is actually
   // read), independent of the rank badges computed above.
   rows.sort((a, b) => compareRoll(a.rollNumber, b.rollNumber));
 
-  const { Course } = await import("../courses/course.model");
-  const course = batch.courseId ? await Course.findById(batch.courseId).select("name") : null;
+  let courseName: string | null = null;
+  if (resultsSettings.visibleFields.includes("course") && batch.courseId) {
+    const { Course } = await import("../courses/course.model");
+    const course = await Course.findById(batch.courseId).select("name");
+    courseName = course?.name ?? null;
+  }
 
   return {
-    batch: { name: batch.name, courseName: course?.name ?? null },
+    batch: { name: batch.name, courseName },
     dateRange: { start: startDate ?? null, end: endDate ?? null },
     columns,
     rows,
@@ -371,8 +397,12 @@ export async function getBatchMasterSheet(
  * recognize, unlike a Mongo ObjectId.
  */
 export async function listPublicBatches(courseId?: string): Promise<{ name: string; courseName: string }[]> {
+  const resultsSettings = await getPublicResultsSettings();
+  if (!resultsSettings.enabled || !resultsSettings.batchEnabled) return [];
+
   const { OfflineExam } = await import("../exams/exam.model");
-  const batchIds = await OfflineExam.find({ isPublished: true }).distinct("batchId");
+  const examFilter = resultsSettings.requirePublished ? { isPublished: true } : {};
+  const batchIds = await OfflineExam.find(examFilter).distinct("batchId");
   if (batchIds.length === 0) return [];
 
   const filter: Record<string, unknown> = { _id: { $in: batchIds } };

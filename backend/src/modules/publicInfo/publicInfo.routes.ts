@@ -21,4 +21,8 @@ function publicSearchRateLimit(req: Request, res: Response, next: NextFunction) 
 
 router.get("/students", publicSearchRateLimit, validate(publicSearchQuerySchema), controller.search);
 
+// Non-sensitive singleton branding data — no per-visitor lookup/enumeration
+// risk, so it isn't behind either search rate limiter (Settings §2).
+router.get("/institution", controller.getInstitution);
+
 export default router;

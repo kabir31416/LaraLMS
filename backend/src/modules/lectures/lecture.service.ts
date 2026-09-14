@@ -37,13 +37,13 @@ export async function getById(id: string, scopeCourseIds?: string[]): Promise<Le
   return doc;
 }
 
-export async function create(req: Request, data: Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description">) {
+export async function create(req: Request, data: Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description"> & Partial<Pick<LectureDoc, "status">>) {
   const doc = await Lecture.create(data);
   await recordAudit({ req, action: "lecture.create", module: "academic", targetCollection: "lectures", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description">>) {
+export async function update(req: Request, id: string, patch: Partial<Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description" | "status">>) {
   const doc = await Lecture.findById(id);
   if (!doc) throw ApiError.notFound("Lecture not found");
   const before = doc.toObject();

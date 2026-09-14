@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, GraduationCap } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
+import type { PublicInstitutionInfo } from "@/types/academic";
 import { toast } from "sonner";
 
 /**
@@ -61,6 +62,11 @@ export default function PublicInfo() {
   const [results, setResults] = useState<PublicStudentResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [institution, setInstitution] = useState<PublicInstitutionInfo | null>(null);
+
+  useEffect(() => {
+    api.get<PublicInstitutionInfo>("/public/institution").then(setInstitution).catch(() => {});
+  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,9 +92,14 @@ export default function PublicInfo() {
     <main className="min-h-screen bg-muted/30 p-4">
       <div className="max-w-2xl mx-auto space-y-4 py-10">
         <div className="text-center space-y-2">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-            <GraduationCap className="w-7 h-7 text-primary-foreground" />
-          </div>
+          {institution?.logoUrl ? (
+            <img src={institution.logoUrl} alt={institution.name} className="mx-auto w-12 h-12 rounded-xl object-cover" />
+          ) : (
+            <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+              <GraduationCap className="w-7 h-7 text-primary-foreground" />
+            </div>
+          )}
+          {institution?.name && <p className="text-sm font-semibold text-primary">{institution.name}</p>}
           <h1 className="text-2xl font-bold">শিক্ষার্থী তথ্য অনুসন্ধান</h1>
           <p className="text-sm text-muted-foreground">রেজিস্ট্রেশন আইডি, মোবাইল নম্বর বা নাম দিয়ে খুঁজুন — লগইন প্রয়োজন নেই</p>
         </div>

@@ -74,6 +74,11 @@ export const PERMISSIONS = {
   // Reports & public info settings
   REPORTS_READ: "reports:read",
   PUBLIC_INFO_MANAGE: "public-info:manage",
+  PUBLIC_RESULTS_MANAGE: "public-results:manage",
+
+  // Settings-adjacent master data & platform controls
+  PAYMENT_METHODS_MANAGE: "payment-methods:manage",
+  AUDIT_READ: "audit:read",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

@@ -17,6 +17,7 @@ import { useStaff } from "@/contexts/StaffContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
+import { gradeFor } from "@/lib/grading";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 
 const StudentProfile = () => {
@@ -27,7 +28,7 @@ const StudentProfile = () => {
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const { getByStudent, getResultsByStudent, listExams } = useAttendance();
-  const { getSubject, getLecture } = useAcademic();
+  const { getSubject, getLecture, settings } = useAcademic();
   const [editOpen, setEditOpen] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [exams, setExams] = useState<OfflineExam[]>([]);
@@ -280,11 +281,12 @@ const StudentProfile = () => {
                     <TableHead>লেকচার</TableHead>
                     <TableHead>তারিখ</TableHead>
                     <TableHead className="text-center">নম্বর</TableHead>
+                    <TableHead className="text-center">গ্রেড</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {resultRows.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">কোনো ফলাফল নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">কোনো ফলাফল নেই</TableCell></TableRow>
                   ) : (
                     resultRows.map((r) => (
                       <TableRow key={r.result.id}>
@@ -294,6 +296,9 @@ const StudentProfile = () => {
                         <TableCell>{r.exam.date}</TableCell>
                         <TableCell className="text-center font-semibold">
                           {r.result.marks ?? "অনুপস্থিত"} / {r.exam.fullMarks}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {r.result.marks != null ? gradeFor((r.result.marks / r.exam.fullMarks) * 100, settings.gradeScale) : "—"}
                         </TableCell>
                       </TableRow>
                     ))

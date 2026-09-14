@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { ADMISSION_TYPES, FEE_TYPES, GENDERS, STUDENT_STATUS } from "./student.constants";
 import { RELATIONS } from "./student.constants";
-import { PAYMENT_METHODS } from "../payments/payment.constants";
 
 export const idParamSchema = z.object({ params: z.object({ id: z.string().length(24) }) });
 
@@ -22,9 +21,9 @@ export const quickCreateStudentSchema = z.object({
  *
  * totalCourseFee and admissionFee are deliberately ABSENT: the server always
  * resolves totalCourseFee from the selected Course's own `fee` field (never
- * trusts a client-typed value) and always applies the fixed
- * ADMISSION_FEE_BDT, so neither can be typed or accidentally changed from
- * this form (student.service.ts's create).
+ * trusts a client-typed value) and always applies Settings.admissionFeeBdt,
+ * so neither can be typed or accidentally changed from this form
+ * (student.service.ts's create).
  */
 export const createStudentSchema = z.object({
   body: z.object({
@@ -64,8 +63,8 @@ export const createStudentSchema = z.object({
     monthlyFee: z.number().default(0),
     discount: z.number().min(0).default(0),
     paid: z.number().min(0).default(0),
-    /** Only meaningful when paid > 0 — the admission-time Payment record's method (Phase 4). */
-    paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+    /** Only meaningful when paid > 0 — the admission-time Payment record's method (Phase 4). Validated against real PaymentMethod master data server-side, not a hard-coded enum. */
+    paymentMethod: z.string().trim().min(1).max(40).optional(),
 
     guardianName: z.string().trim().optional(),
     guardianRelation: z.enum(RELATIONS).optional(),

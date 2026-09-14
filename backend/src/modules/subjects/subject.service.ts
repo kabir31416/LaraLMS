@@ -6,7 +6,7 @@ import { buildMeta, buildSearchFilter, parsePagination } from "../../common/util
 
 /** See course.service.ts's getDirectorCourseIds — a Batch Director only sees subjects under their own course(s) (Phase 4 §7/§8). */
 export async function list(req: Request, scopeCourseIds?: string[]) {
-  const { page, limit, skip, sort } = parsePagination(req, { name: 1 });
+  const { page, limit, skip, sort } = parsePagination(req, { displayOrder: 1, name: 1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["name"]) };
   if (req.query.courseId) filter.courseId = req.query.courseId;
   if (scopeCourseIds) filter.courseId = filter.courseId ? { $eq: filter.courseId, $in: scopeCourseIds } : { $in: scopeCourseIds };
@@ -25,13 +25,13 @@ export async function getById(id: string, scopeCourseIds?: string[]): Promise<Su
   return doc;
 }
 
-export async function create(req: Request, data: Pick<SubjectDoc, "name" | "courseId">) {
+export async function create(req: Request, data: Pick<SubjectDoc, "name" | "courseId"> & Partial<Pick<SubjectDoc, "status" | "displayOrder">>) {
   const doc = await Subject.create(data);
   await recordAudit({ req, action: "subject.create", module: "academic", targetCollection: "subjects", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<Pick<SubjectDoc, "name" | "courseId">>) {
+export async function update(req: Request, id: string, patch: Partial<Pick<SubjectDoc, "name" | "courseId" | "status" | "displayOrder">>) {
   const doc = await Subject.findById(id);
   if (!doc) throw ApiError.notFound("Subject not found");
   const before = doc.toObject();

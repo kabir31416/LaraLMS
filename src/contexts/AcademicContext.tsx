@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type {
-  Session, Course, Subject, Lecture, ClassExam, VideoClass, Question, AcademicSettings,
+  Session, Course, Subject, Lecture, ClassExam, VideoClass, Question, AcademicSettings, PaymentMethod,
 } from "@/types/academic";
 import { api } from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,6 +35,9 @@ const DEFAULT_SETTINGS: AcademicSettings = {
   passingPercentage: 33,
   shuffleQuestions: false,
   publishResults: true,
+  gradeScale: [],
+  rollNumberScope: "batch",
+  admissionFeeBdt: 200,
 };
 
 /** Backend documents come back as { _id, ... }; every existing page reads `.id`. */
@@ -48,6 +51,12 @@ interface Ctx extends MockState {
   courses: Course[];
   subjects: Subject[];
   lectures: Lecture[];
+  paymentMethods: PaymentMethod[];
+  /** Same lists, filtered to status "সক্রিয়" (plus whatever is currently selected, so an edit form never blanks out an inactive value) — use these for every "pick one to admit/assign/create" dropdown (Settings §25). */
+  activeSessions: Session[];
+  activeCourses: Course[];
+  activeSubjects: Subject[];
+  activePaymentMethods: PaymentMethod[];
   settings: AcademicSettings;
   loading: boolean;
   // Sessions
@@ -66,6 +75,10 @@ interface Ctx extends MockState {
   addLecture: (l: Omit<Lecture, "id">) => Promise<Lecture>;
   updateLecture: (id: string, l: Partial<Lecture>) => Promise<Lecture>;
   deleteLecture: (id: string) => Promise<void>;
+  // Payment Methods
+  addPaymentMethod: (p: Omit<PaymentMethod, "id">) => Promise<PaymentMethod>;
+  updatePaymentMethod: (id: string, p: Partial<PaymentMethod>) => Promise<PaymentMethod>;
+  deletePaymentMethod: (id: string) => Promise<void>;
   // Class/Exam (still local — Modules 18-21)
   addClassExam: (c: Omit<ClassExam, "id">) => ClassExam;
   updateClassExam: (id: string, c: Partial<ClassExam>) => void;
@@ -102,6 +115,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [courses, setCourses] = useState<Course[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [settings, setSettings] = useState<AcademicSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
@@ -111,17 +125,19 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   }, [mock]);
 
   const refreshAll = useCallback(async () => {
-    const [s, c, sub, lec, set] = await Promise.all([
+    const [s, c, sub, lec, pm, set] = await Promise.all([
       api.get<{ _id: string }[]>(`/sessions${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/courses${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/subjects${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/lectures${LIST_LIMIT}`),
+      api.get<{ _id: string }[]>(`/payment-methods${LIST_LIMIT}`),
       api.get<AcademicSettings>("/settings"),
     ]);
     setSessions(s.map(withId) as Session[]);
     setCourses(c.map(withId) as Course[]);
     setSubjects(sub.map(withId) as Subject[]);
     setLectures(lec.map(withId) as Lecture[]);
+    setPaymentMethods(pm.map(withId) as PaymentMethod[]);
     setSettings(set);
   }, []);
 
@@ -206,6 +222,22 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setLectures((p) => p.filter((x) => x.id !== id));
   }, []);
 
+  // -------------------- Payment Methods --------------------
+  const addPaymentMethod = useCallback(async (p: Omit<PaymentMethod, "id">) => {
+    const created = withId(await api.post<{ _id: string }>("/payment-methods", p)) as PaymentMethod;
+    setPaymentMethods((prev) => [...prev, created]);
+    return created;
+  }, []);
+  const updatePaymentMethod = useCallback(async (id: string, p: Partial<PaymentMethod>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/payment-methods/${id}`, p)) as PaymentMethod;
+    setPaymentMethods((prev) => prev.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const deletePaymentMethod = useCallback(async (id: string) => {
+    await api.del(`/payment-methods/${id}`);
+    setPaymentMethods((prev) => prev.filter((x) => x.id !== id));
+  }, []);
+
   // -------------------- Settings --------------------
   const updateSettings = useCallback(async (s: Partial<AcademicSettings>) => {
     const updated = await api.patch<AcademicSettings>("/settings", s);
@@ -258,6 +290,12 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const deleteVideo = useCallback((id: string) =>
     setMock((p) => ({ ...p, videos: p.videos.filter((x) => x.id !== id) })), []);
 
+  // -------------------- Active-only derived lists (Settings §25) --------------------
+  const activeSessions = useMemo(() => sessions.filter((s) => s.status !== "নিষ্ক্রিয়"), [sessions]);
+  const activeCourses = useMemo(() => courses.filter((c) => c.status !== "নিষ্ক্রিয়"), [courses]);
+  const activeSubjects = useMemo(() => subjects.filter((s) => s.status !== "নিষ্ক্রিয়"), [subjects]);
+  const activePaymentMethods = useMemo(() => paymentMethods.filter((p) => p.status !== "নিষ্ক্রিয়"), [paymentMethods]);
+
   // -------------------- Helpers --------------------
   const getCoursesBySession = useCallback((sid: string) => courses.filter((c) => c.sessionId === sid), [courses]);
   const getSubjectsByCourse = useCallback((cid: string) => subjects.filter((s) => s.courseId === cid), [subjects]);
@@ -269,21 +307,25 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const getLecture = useCallback((id: string) => lectures.find((l) => l.id === id), [lectures]);
 
   const value = useMemo<Ctx>(() => ({
-    sessions, courses, subjects, lectures, settings, loading,
+    sessions, courses, subjects, lectures, paymentMethods, settings, loading,
+    activeSessions, activeCourses, activeSubjects, activePaymentMethods,
     classExams: mock.classExams, videos: mock.videos,
     addSession, updateSession, deleteSession,
     addCourse, updateCourse, deleteCourse,
     addSubject, updateSubject, deleteSubject,
     addLecture, updateLecture, deleteLecture,
+    addPaymentMethod, updatePaymentMethod, deletePaymentMethod,
     addClassExam, updateClassExam, deleteClassExam,
     addQuestions, updateQuestion, deleteQuestion,
     addVideo, updateVideo, deleteVideo,
     updateSettings,
     getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
     getCourse, getSubject, getLecture,
-  }), [sessions, courses, subjects, lectures, settings, loading, mock,
+  }), [sessions, courses, subjects, lectures, paymentMethods, settings, loading, mock,
+    activeSessions, activeCourses, activeSubjects, activePaymentMethods,
     addSession, updateSession, deleteSession, addCourse, updateCourse, deleteCourse,
     addSubject, updateSubject, deleteSubject, addLecture, updateLecture, deleteLecture,
+    addPaymentMethod, updatePaymentMethod, deletePaymentMethod,
     addClassExam, updateClassExam, deleteClassExam, addQuestions, updateQuestion, deleteQuestion,
     addVideo, updateVideo, deleteVideo, updateSettings,
     getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,

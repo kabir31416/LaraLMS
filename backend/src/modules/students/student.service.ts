@@ -1,7 +1,7 @@
 import { Request } from "express";
 import { Student, StudentDoc, ProfileCompletion } from "./student.model";
 import { Course } from "../courses/course.model";
-import { ADMISSION_FEE_BDT } from "./student.constants";
+import { getSettings } from "../settings/settings.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
@@ -209,17 +209,19 @@ export async function quickCreate(req: Request, data: { rollNumber: string; name
  * student completes later via the Portal. Course Fee and Admission Fee are
  * never taken from the client: totalCourseFee always comes from the
  * selected Course's own `fee` (a one-time snapshot — later Course.fee edits
- * in Settings never rewrite this student's history) and admissionFee is
- * always the fixed ADMISSION_FEE_BDT. If an amount was paid at admission
- * time, it's recorded as a real Payment (source: "admission") through the
- * existing Fee Management pipeline rather than just baked into this Student
- * document — so it shows up immediately in Payment History/Fee Management,
- * and a receipt number is generated exactly the way every other payment
- * gets one.
+ * in Settings never rewrite this student's history) and admissionFee always
+ * comes from Settings.admissionFeeBdt at the moment of admission (a
+ * snapshot too — see student.model's `admissionFee`, Settings §6/§24). If an
+ * amount was paid at admission time, it's recorded as a real Payment
+ * (source: "admission") through the existing Fee Management pipeline rather
+ * than just baked into this Student document — so it shows up immediately
+ * in Payment History/Fee Management, and a receipt number is generated
+ * exactly the way every other payment gets one.
  */
 export async function create(req: Request, body: Record<string, unknown> & GuardianInline): Promise<Record<string, unknown>> {
   const course = await resolveCourseOrThrow(String(body.courseId));
-  const admissionFee = ADMISSION_FEE_BDT;
+  const settings = await getSettings();
+  const admissionFee = settings.admissionFeeBdt;
   const totalCourseFee = course.fee;
   const discount = Number(body.discount) || 0;
   const feeType = (body.feeType as StudentDoc["feeType"]) || "এককালীন";

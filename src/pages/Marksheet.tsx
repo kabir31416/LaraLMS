@@ -17,6 +17,7 @@ import {
   downloadBatchMasterSheetPdf,
 } from "@/lib/marksheetExport";
 import type { BatchMasterSheetView, IndividualResultView, MasterSheetCell, PublicBatchOption } from "@/types/marksheet";
+import type { PublicInstitutionInfo } from "@/types/academic";
 import { toast } from "sonner";
 
 /**
@@ -34,21 +35,31 @@ function friendlyError(err: unknown): string {
 
 export default function Marksheet() {
   const [screen, setScreen] = useState<ScreenType>("select");
+  const [institution, setInstitution] = useState<PublicInstitutionInfo | null>(null);
+
+  useEffect(() => {
+    api.get<PublicInstitutionInfo>("/public/institution").then(setInstitution).catch(() => {});
+  }, []);
 
   return (
     <main className="min-h-screen bg-muted/30 p-4">
       <div className="max-w-3xl mx-auto space-y-4 py-8 sm:py-10">
         <div className="text-center space-y-2">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-            <GraduationCap className="w-7 h-7 text-primary-foreground" />
-          </div>
+          {institution?.logoUrl ? (
+            <img src={institution.logoUrl} alt={institution.name} className="mx-auto w-12 h-12 rounded-xl object-cover" />
+          ) : (
+            <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+              <GraduationCap className="w-7 h-7 text-primary-foreground" />
+            </div>
+          )}
+          {institution?.name && <p className="text-sm font-semibold text-primary">{institution.name}</p>}
           <h1 className="text-2xl font-bold">ফলাফল</h1>
           {screen === "select" && <p className="text-sm text-muted-foreground">লগইন প্রয়োজন নেই — নিচে থেকে ধরন নির্বাচন করুন</p>}
         </div>
 
         {screen === "select" && <SelectScreen onSelect={setScreen} />}
-        {screen === "individual" && <IndividualScreen onBack={() => setScreen("select")} />}
-        {screen === "batch" && <BatchScreen onBack={() => setScreen("select")} />}
+        {screen === "individual" && <IndividualScreen onBack={() => setScreen("select")} institution={institution} />}
+        {screen === "batch" && <BatchScreen onBack={() => setScreen("select")} institution={institution} />}
 
         <div className="text-center">
           <Link to="/login" className="text-sm text-primary hover:underline">লগইন পেইজে ফিরে যান</Link>
@@ -88,7 +99,7 @@ function SelectScreen({ onSelect }: { onSelect: (s: ScreenType) => void }) {
   );
 }
 
-function BatchScreen({ onBack }: { onBack: () => void }) {
+function BatchScreen({ onBack, institution }: { onBack: () => void; institution: PublicInstitutionInfo | null }) {
   const [batches, setBatches] = useState<PublicBatchOption[] | null>(null);
   const [loadingBatches, setLoadingBatches] = useState(true);
   const [batchName, setBatchName] = useState<string>("");
@@ -175,7 +186,7 @@ function BatchScreen({ onBack }: { onBack: () => void }) {
         <Card><CardContent className="py-10 text-center text-muted-foreground">{error}</CardContent></Card>
       )}
 
-      {result && <BatchMasterSheetDisplay data={result} />}
+      {result && <BatchMasterSheetDisplay data={result} institution={institution} />}
     </div>
   );
 }
@@ -194,7 +205,7 @@ function MasterSheetCellValue({ cell }: { cell: MasterSheetCell }) {
   return <>{cell.value}</>;
 }
 
-function BatchMasterSheetDisplay({ data }: { data: BatchMasterSheetView }) {
+function BatchMasterSheetDisplay({ data, institution }: { data: BatchMasterSheetView; institution: PublicInstitutionInfo | null }) {
   const { batch, dateRange, columns, rows } = data;
 
   return (
@@ -208,10 +219,10 @@ function BatchMasterSheetDisplay({ data }: { data: BatchMasterSheetView }) {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => printBatchMasterSheet(data)}>
+            <Button size="sm" variant="outline" onClick={() => printBatchMasterSheet(data, institution ?? undefined)}>
               <Printer className="h-4 w-4 mr-1" /> প্রিন্ট
             </Button>
-            <Button size="sm" variant="outline" onClick={() => downloadBatchMasterSheetPdf(data)}>
+            <Button size="sm" variant="outline" onClick={() => downloadBatchMasterSheetPdf(data, institution ?? undefined)}>
               <FileDown className="h-4 w-4 mr-1" /> PDF
             </Button>
           </div>
@@ -264,7 +275,7 @@ function BatchMasterSheetDisplay({ data }: { data: BatchMasterSheetView }) {
   );
 }
 
-function IndividualScreen({ onBack }: { onBack: () => void }) {
+function IndividualScreen({ onBack, institution }: { onBack: () => void; institution: PublicInstitutionInfo | null }) {
   const [roll, setRoll] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -327,7 +338,7 @@ function IndividualScreen({ onBack }: { onBack: () => void }) {
         <Card><CardContent className="py-10 text-center text-muted-foreground">{error}</CardContent></Card>
       )}
 
-      {result && <IndividualResultDisplay data={result} />}
+      {result && <IndividualResultDisplay data={result} institution={institution} />}
     </div>
   );
 }
@@ -340,7 +351,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={cls}>{status}</Badge>;
 }
 
-function IndividualResultDisplay({ data }: { data: IndividualResultView }) {
+function IndividualResultDisplay({ data, institution }: { data: IndividualResultView; institution: PublicInstitutionInfo | null }) {
   const { student, dateRange, subjects, overall, details } = data;
 
   return (
@@ -349,10 +360,10 @@ function IndividualResultDisplay({ data }: { data: IndividualResultView }) {
         <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-base">শিক্ষার্থীর তথ্য</CardTitle>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => printIndividualMarksheet(data)}>
+            <Button size="sm" variant="outline" onClick={() => printIndividualMarksheet(data, institution ?? undefined)}>
               <Printer className="h-4 w-4 mr-1" /> প্রিন্ট
             </Button>
-            <Button size="sm" variant="outline" onClick={() => downloadIndividualMarksheetPdf(data)}>
+            <Button size="sm" variant="outline" onClick={() => downloadIndividualMarksheetPdf(data, institution ?? undefined)}>
               <FileDown className="h-4 w-4 mr-1" /> PDF
             </Button>
           </div>

@@ -13,6 +13,15 @@ export interface SettingsDoc extends Document {
   publishResults: boolean;
   gradeScale: GradeBand[];
   rollNumberScope: "batch" | "course" | "global";
+  /**
+   * The fixed one-time Admission Fee (Settings §6) — replaces the old
+   * `ADMISSION_FEE_BDT` hard-coded constant in student.constants.ts.
+   * Changing this only affects *future* admissions: student.service.ts's
+   * create() snapshots it onto each Student document at admission time, so
+   * an already-admitted student's own `admissionFee` never moves when this
+   * changes later (Settings §6/§24 historical-snapshot requirement).
+   */
+  admissionFeeBdt: number;
 }
 
 const gradeBandSchema = new Schema<GradeBand>(
@@ -40,6 +49,7 @@ const settingsSchema = new Schema<SettingsDoc>(
       ],
     },
     rollNumberScope: { type: String, enum: ["batch", "course", "global"], default: "batch" },
+    admissionFeeBdt: { type: Number, default: 200, min: 0 },
   },
   { timestamps: true },
 );
@@ -92,3 +102,34 @@ const publicInfoSettingsSchema = new Schema<PublicInfoSettingsDoc>(
 );
 
 export const PublicInfoSettings = model<PublicInfoSettingsDoc>("PublicInfoSettings", publicInfoSettingsSchema);
+
+// -------------------- Public Marksheet Settings (Settings §19) --------------------
+
+export interface PublicResultsSettingsDoc extends Document {
+  enabled: boolean; // master switch for the whole /marksheet feature
+  individualEnabled: boolean;
+  batchEnabled: boolean;
+  /** true (today's only behavior) keeps filtering to OfflineExam.isPublished; false lets every exam show up publicly regardless. */
+  requirePublished: boolean;
+  visibleFields: string[];
+}
+
+/** Hard, non-configurable allow-list — same discipline as PUBLIC_INFO_ALLOWED_FIELDS (Settings §18). Marks/percentage/grade are the feature's own purpose and are never gated by this list; phone/guardian/address/payment were never in the DTO to begin with and can't be added via this list either. */
+export const PUBLIC_RESULTS_ALLOWED_FIELDS = ["photo", "registrationId", "course", "batch", "rank"] as const;
+
+const publicResultsSettingsSchema = new Schema<PublicResultsSettingsDoc>(
+  {
+    enabled: { type: Boolean, default: true },
+    individualEnabled: { type: Boolean, default: true },
+    batchEnabled: { type: Boolean, default: true },
+    requirePublished: { type: Boolean, default: true },
+    visibleFields: {
+      type: [String],
+      enum: PUBLIC_RESULTS_ALLOWED_FIELDS,
+      default: ["course", "batch", "rank"],
+    },
+  },
+  { timestamps: true },
+);
+
+export const PublicResultsSettings = model<PublicResultsSettingsDoc>("PublicResultsSettings", publicResultsSettingsSchema);
