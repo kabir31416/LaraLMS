@@ -19,6 +19,9 @@ import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { gradeFor } from "@/lib/grading";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
+import { api } from "@/lib/apiClient";
+import type { ChanceResult } from "@/types/chanceResult";
+import { Trophy } from "lucide-react";
 
 const StudentProfile = () => {
   const { id } = useParams();
@@ -33,6 +36,7 @@ const StudentProfile = () => {
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
+  const [admissionHistory, setAdmissionHistory] = useState<ChanceResult[]>([]);
 
   const student = getStudent(id || "");
 
@@ -55,6 +59,19 @@ const StudentProfile = () => {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [student, getByStudent, getResultsByStudent, listExams]);
+
+  // Chance Result (Admission Result Management) history — a small,
+  // single-student endpoint with no other list-wide consumer, so a direct
+  // call here is proportionate rather than growing a global Context for it
+  // (same reasoning as the attendance/results fetch above, just simpler).
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    api.get<{ history: ChanceResult[] }>(`/admission-results/student/${student.id}`)
+      .then((res) => { if (!cancelled) setAdmissionHistory(res.history); })
+      .catch(() => { if (!cancelled) setAdmissionHistory([]); });
+    return () => { cancelled = true; };
+  }, [student]);
 
   if (!student) {
     return (
@@ -152,6 +169,7 @@ const StudentProfile = () => {
             <TabsTrigger value="fees">ফি তথ্য</TabsTrigger>
             <TabsTrigger value="attendance">উপস্থিতি</TabsTrigger>
             <TabsTrigger value="results">ফলাফল</TabsTrigger>
+            <TabsTrigger value="admission">চান্স রেজাল্ট</TabsTrigger>
             <TabsTrigger value="payments">পেমেন্ট</TabsTrigger>
           </TabsList>
 
@@ -306,6 +324,76 @@ const StudentProfile = () => {
                 </TableBody>
               </Table>
             </Card>
+          </TabsContent>
+
+          {/* Chance Result (Admission Result Management) */}
+          <TabsContent value="admission">
+            <div className="space-y-4">
+              {admissionHistory.length > 0 && (
+                <Card className="border-none shadow-sm bg-success/5">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-xl bg-success/10 text-success"><Trophy className="h-5 w-5" /></div>
+                      <div>
+                        <p className="font-bold text-success">🎉 চান্সপ্রাপ্ত</p>
+                        <p className="text-xs text-muted-foreground">সর্বশেষ রাউন্ড অনুযায়ী</p>
+                      </div>
+                    </div>
+                    {(() => {
+                      const latest = admissionHistory.find((r) => r.resultRound === "Final") || admissionHistory[0];
+                      return (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <InfoRow label="ইনস্টিটিউট" value={latest.instituteName} />
+                          <InfoRow label="ভর্তি রোল" value={latest.admissionRoll} />
+                          <InfoRow label="নির্বাচন" value={latest.selectionType === "Merit" ? "মেধা (Merit)" : "উপজাতি (Tribal)"} />
+                          <InfoRow label="রাউন্ড" value={latest.resultRound} />
+                          <InfoRow label="প্রোগ্রাম" value={latest.programName} />
+                          <InfoRow label="সেশন" value={latest.session} />
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card className="border-none shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">সম্পূর্ণ ইতিহাস</CardTitle>
+                </CardHeader>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ইনস্টিটিউট</TableHead>
+                      <TableHead>ভর্তি রোল</TableHead>
+                      <TableHead>প্রোগ্রাম</TableHead>
+                      <TableHead>সেশন</TableHead>
+                      <TableHead>নির্বাচন</TableHead>
+                      <TableHead>রাউন্ড</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {admissionHistory.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">কোনো চান্স রেজাল্ট পাওয়া যায়নি</TableCell></TableRow>
+                    ) : (
+                      admissionHistory.map((r) => (
+                        <TableRow key={r._id}>
+                          <TableCell className="font-medium">{r.instituteName}</TableCell>
+                          <TableCell className="font-mono text-sm">{r.admissionRoll}</TableCell>
+                          <TableCell>{r.programName}</TableCell>
+                          <TableCell>{r.session}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={r.selectionType === "Merit" ? "bg-primary/10 text-primary border-primary/20" : "bg-info/10 text-info border-info/20"}>
+                              {r.selectionType === "Merit" ? "মেধা" : "উপজাতি"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell><Badge variant="outline">{r.resultRound}</Badge></TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Payment History */}

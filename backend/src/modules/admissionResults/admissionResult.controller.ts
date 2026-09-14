@@ -32,6 +32,8 @@ export const getBatchesSummary = asyncHandler(async (req: Request, res: Response
 
 export const getInstituteOptions = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getInstituteOptions(req)));
 
+export const getFilterOptions = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getFilterOptions(req)));
+
 export const getStudentHistory = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getStudentHistory(req, req.params.studentId)));
 
 export const listImportHistory = asyncHandler(async (req: Request, res: Response) => {

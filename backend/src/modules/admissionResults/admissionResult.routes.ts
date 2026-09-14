@@ -76,6 +76,11 @@ router.get(
   controller.getInstituteOptions,
 );
 router.get(
+  "/filter-options",
+  requirePermission(PERMISSIONS.ADMISSION_RESULTS_MANAGE, PERMISSIONS.ADMISSION_RESULTS_READ_OWN_BATCH),
+  controller.getFilterOptions,
+);
+router.get(
   "/batches",
   requirePermission(PERMISSIONS.ADMISSION_RESULTS_MANAGE, PERMISSIONS.ADMISSION_RESULTS_READ_OWN_BATCH),
   validate(summaryQuerySchema),

@@ -446,6 +446,23 @@ export async function getInstituteOptions(req: Request): Promise<string[]> {
   return AdmissionResult.distinct("instituteName", filter);
 }
 
+/**
+ * Filter-dropdown options sourced from the actual imported data rather than
+ * ERP master data (Course/AcademicSession) — a PDF's own detected program
+ * title ("BSc. in Nursing") does not have to match how a Course happens to
+ * be named in this ERP, so the Program/Session filters must offer exactly
+ * the values that exist on AdmissionResult rows, not a guess at them.
+ */
+export async function getFilterOptions(req: Request): Promise<{ programs: string[]; sessions: string[]; institutes: string[] }> {
+  const filter = await buildResultFilter(req, {});
+  const [programs, sessions, institutes] = await Promise.all([
+    AdmissionResult.distinct("programName", filter),
+    AdmissionResult.distinct("session", filter),
+    AdmissionResult.distinct("instituteName", filter),
+  ]);
+  return { programs: programs.sort(), sessions: sessions.sort(), institutes: institutes.sort() };
+}
+
 export async function getStudentHistory(req: Request, studentId: string) {
   const scope = await resolveBatchScope(req);
   if (scope) {
