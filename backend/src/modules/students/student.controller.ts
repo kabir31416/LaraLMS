@@ -23,14 +23,29 @@ function hasBroadReadAccess(req: Request): boolean {
   return perms.includes("*") || perms.includes(PERMISSIONS.STUDENTS_READ);
 }
 
-export const list = asyncHandler(async (req: Request, res: Response) => {
+/** Batch Director scoping shared by list() and admissionRollStats() — forces the same directorId query filter regardless of what the client sends. */
+function scopeToOwnBatchIfNeeded(req: Request): void {
   if (!hasBroadReadAccess(req)) {
     if (!req.user!.staffId) throw ApiError.forbidden("No linked staff record");
     req.query.directorId = req.user!.staffId;
   }
+}
+
+export const list = asyncHandler(async (req: Request, res: Response) => {
+  scopeToOwnBatchIfNeeded(req);
   const { items, meta } = await service.list(req);
   sendSuccess(res, items, 200, meta);
 });
+
+/** Admission Result feature's summary cards (Total/Added/Missing) — same server-enforced batch scope as list(). */
+export const admissionRollStats = asyncHandler(async (req: Request, res: Response) => {
+  scopeToOwnBatchIfNeeded(req);
+  sendSuccess(res, await service.admissionRollStats(req));
+});
+
+export const updateAdmissionRoll = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.updateAdmissionRoll(req, req.params.id, req.body.admissionRoll)),
+);
 
 export const getById = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.getById(req.params.id)));
 

@@ -120,6 +120,18 @@ export const updateStatusSchema = z.object({
   body: z.object({ status: z.enum(STUDENT_STATUS) }),
 });
 
+/**
+ * Admission Result feature. Loose shape validation only (trim, length) —
+ * the numeric-digits business rule and the scoped-uniqueness check both
+ * live in student.service.ts's updateAdmissionRoll (Bengali-digit input is
+ * normalized there via toAsciiDigits before either check runs, same as
+ * Roll Number elsewhere in this module).
+ */
+export const updateAdmissionRollSchema = z.object({
+  params: z.object({ id: z.string().length(24) }),
+  body: z.object({ admissionRoll: z.string().trim().min(1).max(20) }),
+});
+
 export const listStudentsQuerySchema = z.object({
   query: z.object({
     page: z.string().optional(),
@@ -131,7 +143,16 @@ export const listStudentsQuerySchema = z.object({
     directorId: z.string().optional(),
     dueOnly: z.enum(["true", "false"]).optional(),
     profileStatus: z.enum(["incomplete", "complete"]).optional(),
+    admissionRollStatus: z.enum(["added", "missing"]).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
+  }),
+});
+
+export const admissionRollStatsQuerySchema = z.object({
+  query: z.object({
+    course: z.string().optional(),
+    batchId: z.string().optional(),
+    directorId: z.string().optional(),
   }),
 });

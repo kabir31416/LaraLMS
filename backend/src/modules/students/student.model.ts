@@ -68,6 +68,15 @@ export interface StudentDoc extends Document {
   status: (typeof STUDENT_STATUS)[number];
   profileCompletion: ProfileCompletion;
 
+  /**
+   * The official admission-test roll number (Admission Result feature) —
+   * distinct from `currentRollNumber` (this ERP's own internal roll).
+   * Admin/Batch-Director-entered, foundation for the future PDF admission
+   * result matching system (a student is "selected" when their
+   * admissionRoll appears in a parsed official result).
+   */
+  admissionRoll?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -136,6 +145,8 @@ const studentSchema = new Schema<StudentDoc>(
 
     status: { type: String, enum: STUDENT_STATUS, default: "সক্রিয়" },
     profileCompletion: { type: profileCompletionSchema, default: () => ({ status: "incomplete", percent: 0, missingFields: [] }) },
+
+    admissionRoll: { type: String, trim: true },
   },
   { timestamps: true },
 );
@@ -154,5 +165,14 @@ studentSchema.index(
 // individual-result search (publicResults module) looks up by Roll Number
 // alone, with no batch to narrow by, so it needs its own index.
 studentSchema.index({ currentRollNumber: 1 });
+
+// Not a unique index: an official admission-test roll is only guaranteed
+// unique within one admission cycle (Course.sessionId), not globally — every
+// year's exam restarts its own numbering, so the same digits can legitimately
+// belong to two different real students in two different years. Uniqueness
+// within the correct scope is enforced in student.service.ts's
+// updateAdmissionRoll() instead, same pattern as currentRollNumber's
+// scope-dependent checks (Admission Result feature §8).
+studentSchema.index({ admissionRoll: 1 });
 
 export const Student = model<StudentDoc>("Student", studentSchema);

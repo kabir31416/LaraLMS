@@ -24,6 +24,7 @@ export const PERMISSIONS = {
   STUDENTS_UPDATE_SELF: "students:update:self",
   STUDENTS_DELETE: "students:delete",
   STUDENTS_MANAGE_ROLL: "students:manage-roll",
+  STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH: "students:manage-admission-roll:own-batch",
 
   // Batches & enrollment
   BATCHES_MANAGE: "batches:manage",
@@ -90,6 +91,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "stud
   admin: ["*"],
   batch_director: [
     PERMISSIONS.STUDENTS_READ_OWN_BATCH,
+    PERMISSIONS.STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH,
     PERMISSIONS.BATCHES_READ_OWN,
     PERMISSIONS.ENROLLMENTS_READ_OWN,
     PERMISSIONS.ATTENDANCE_MARK_OWN_BATCH,
