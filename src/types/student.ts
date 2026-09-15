@@ -88,6 +88,8 @@ export interface Payment {
   feeType: FeeType;
   month?: string; // for monthly payments
   note?: string;
+  /** The student's due immediately before this payment (payment.model.ts) — the receipt's "পূর্ববর্তী বকেয়া"/"বর্তমান বকেয়া" are derived from this + paidAmount, not from the student's live (possibly since-changed) due. */
+  previousDue?: number;
 }
 
 export const FEE_TYPES: FeeType[] = ["এককালীন", "মাসিক"];

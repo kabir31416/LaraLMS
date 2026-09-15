@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
@@ -41,7 +41,9 @@ import { bn } from "date-fns/locale";
 import { toast } from "sonner";
 import { FEE_TYPES } from "@/types/student";
 import type { Student, Payment } from "@/types/student";
+import type { InstitutionSettings } from "@/types/academic";
 import { StatCard } from "@/components/StatCard";
+import { api } from "@/lib/apiClient";
 import {
   Command,
   CommandEmpty,
@@ -58,6 +60,15 @@ const FeeManagement = () => {
   const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
   const [search, setSearch] = useState("");
   const [filterFeeType, setFilterFeeType] = useState("all");
+
+  // Fetched once here (not duplicated per-dialog-open) and handed to
+  // ReceiptDialog — the same central Institution Settings the Settings
+  // page itself edits (GET /settings/institution), so a receipt always
+  // reflects whatever is currently configured there.
+  const [institution, setInstitution] = useState<InstitutionSettings | null>(null);
+  useEffect(() => {
+    api.get<InstitutionSettings>("/settings/institution").then(setInstitution).catch(() => {});
+  }, []);
 
   // Stats
   const totalDue = students.reduce((sum, s) => sum + s.due, 0);
@@ -241,6 +252,7 @@ const FeeManagement = () => {
         <ReceiptDialog
           payment={receiptPayment}
           students={students}
+          institution={institution}
           onOpenChange={(open) => !open && setReceiptPayment(null)}
         />
       </div>
@@ -258,7 +270,7 @@ function PaymentDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   students: Student[];
-  addPayment: (p: Omit<Payment, "id" | "receiptNo">) => Promise<Payment>;
+  addPayment: (p: Omit<Payment, "id" | "receiptNo"> & { idempotencyKey?: string }) => Promise<Payment>;
   onSuccess?: (p: Payment) => void;
 }) {
   const { batches } = useBatches();
@@ -275,14 +287,32 @@ function PaymentDialog({
   const [payDate, setPayDate] = useState<Date>(new Date());
   const [submitting, setSubmitting] = useState(false);
 
+  // One key per submission *attempt* — reused across a retry of that same
+  // attempt (double-click, network retry) so the backend can recognize it as
+  // the same logical payment instead of creating a second one; regenerated
+  // whenever the dialog (re)opens or a payment succeeds, so the next
+  // genuinely new payment gets its own key. A plain ref, not state — a
+  // double-click must see the *same* value synchronously, before React has
+  // any chance to re-render.
+  const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+  const submittingRef = useRef(false);
+  useEffect(() => {
+    if (open) idempotencyKeyRef.current = crypto.randomUUID();
+  }, [open]);
+
   const paidAmount = amount - discount + fine;
   const selectedStudent = students.find((s) => s.id === studentId);
 
   const handleSubmit = async () => {
+    // Synchronous guard: React's `submitting` state won't disable the
+    // button until the next render, which two clicks inside the same tick
+    // (or a browser that fires both before repainting) can both slip past.
+    if (submittingRef.current) return;
     if (!studentId || amount <= 0) {
       toast.error("শিক্ষার্থী ও পরিমাণ নির্বাচন করুন");
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const created = await addPayment({
@@ -296,6 +326,7 @@ function PaymentDialog({
         feeType: feeType as import("@/types/student").FeeType,
         month: month || undefined,
         note: note || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
       });
       toast.success(`পেমেন্ট সফল। রসিদ নং: ${created.receiptNo}`);
       onOpenChange(false);
@@ -307,20 +338,28 @@ function PaymentDialog({
       setFine(0);
       setNote("");
       setMonth("");
+      idempotencyKeyRef.current = crypto.randomUUID();
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "পেমেন্ট ব্যর্থ হয়েছে");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
+      {/* p-0 + flex flex-col so the header/footer can stay put (shrink-0)
+          while only the middle form section scrolls — the shared
+          DialogContent's own max-h-[90dvh]/overflow-y-auto still bounds the
+          whole thing on very short viewports, this just keeps the action
+          buttons reachable without hunting through a scrolled body first. */}
+      <DialogContent className="max-w-lg p-0 flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4">
           <DialogTitle>পেমেন্ট গ্রহণ</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 space-y-4 min-h-0">
           <div className="space-y-1.5">
             <Label>শিক্ষার্থী *</Label>
             <Popover open={studentPickerOpen} onOpenChange={setStudentPickerOpen}>
@@ -330,13 +369,15 @@ function PaymentDialog({
                   role="combobox"
                   className="w-full justify-between font-normal"
                 >
-                  {selectedStudent
-                    ? `${selectedStudent.name} (${selectedStudent.studentId})`
-                    : "শিক্ষার্থী খুঁজুন বা নির্বাচন করুন"}
+                  <span className="truncate">
+                    {selectedStudent
+                      ? `${selectedStudent.name} (${selectedStudent.studentId})`
+                      : "শিক্ষার্থী খুঁজুন বা নির্বাচন করুন"}
+                  </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-popover" align="start">
+              <PopoverContent className="w-[--radix-popover-trigger-width] max-w-[calc(100vw-2rem)] p-0 bg-popover" align="start">
                 <Command
                   filter={(value, search) => {
                     const s = students.find((st) => st.id === value);
@@ -347,7 +388,7 @@ function PaymentDialog({
                   }}
                 >
                   <CommandInput placeholder="আইডি, নাম বা মোবাইল দিয়ে খুঁজুন..." />
-                  <CommandList>
+                  <CommandList className="max-h-[40vh]">
                     <CommandEmpty>কোনো শিক্ষার্থী পাওয়া যায়নি</CommandEmpty>
                     <CommandGroup>
                       {students.map((s) => (
@@ -361,10 +402,10 @@ function PaymentDialog({
                             setStudentPickerOpen(false);
                           }}
                         >
-                          <Check className={cn("mr-2 h-4 w-4", studentId === s.id ? "opacity-100" : "opacity-0")} />
-                          <div className="flex flex-col">
-                            <span className="font-medium">{s.name} <span className="text-xs text-muted-foreground font-mono">({s.studentId})</span></span>
-                            <span className="text-xs text-muted-foreground">{s.mobile} • বকেয়া: ৳{s.due.toLocaleString()}</span>
+                          <Check className={cn("mr-2 h-4 w-4 shrink-0", studentId === s.id ? "opacity-100" : "opacity-0")} />
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({s.studentId})</span></span>
+                            <span className="text-xs text-muted-foreground truncate">{s.mobile} • বকেয়া: ৳{s.due.toLocaleString()}</span>
                           </div>
                         </CommandItem>
                       ))}
@@ -377,34 +418,34 @@ function PaymentDialog({
 
           {selectedStudent && (
             <div className="bg-muted/40 rounded-lg p-3 text-sm space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">নাম:</span>
-                <span className="font-medium">{selectedStudent.name}</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">নাম:</span>
+                <span className="font-medium text-right truncate">{selectedStudent.name}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">কোর্স:</span>
-                <span>{selectedStudent.course} • {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">কোর্স:</span>
+                <span className="text-right truncate">{selectedStudent.course} • {batches.find((b) => b.id === selectedStudent.batchId)?.name || "—"}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">ফি ধরন:</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">ফি ধরন:</span>
                 <Badge variant="outline">{selectedStudent.feeType}</Badge>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">মোট ফি:</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">মোট ফি:</span>
                 <span>৳ {selectedStudent.totalFee.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">পরিশোধিত:</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">পরিশোধিত:</span>
                 <span className="text-success">৳ {selectedStudent.paid.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">বকেয়া:</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">বকেয়া:</span>
                 <span className="text-destructive font-semibold">৳ {selectedStudent.due.toLocaleString()}</span>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>ফি ধরন</Label>
               <Select value={feeType} onValueChange={setFeeType}>
@@ -424,7 +465,7 @@ function PaymentDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>পরিমাণ (৳) *</Label>
               <Input type="number" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
@@ -444,14 +485,14 @@ function PaymentDialog({
             <p className="text-2xl font-bold text-primary">৳ {paidAmount.toLocaleString()}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>পেমেন্ট তারিখ</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start text-left font-normal">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {format(payDate, "dd MMMM yyyy", { locale: bn })}
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="truncate">{format(payDate, "dd MMMM yyyy", { locale: bn })}</span>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -482,118 +523,196 @@ function PaymentDialog({
             <Label>নোট</Label>
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="অতিরিক্ত তথ্য..." />
           </div>
+        </div>
 
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
-            <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "পেমেন্ট সম্পন্ন"}</Button>
-          </div>
+        <div className="shrink-0 border-t px-4 py-3 sm:px-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
+          <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "পেমেন্ট সম্পন্ন"}</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
+/** Creates (once) or reuses a single <style> tag carrying the @page rule for the receipt's print job — kept in sync with Institution Settings' own print.paperSize rather than a hard-coded page size. */
+function applyReceiptPageSize(paperSize: "A4" | "Letter") {
+  const styleId = "receipt-print-page-size";
+  let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = styleId;
+    document.head.appendChild(styleEl);
+  }
+  const margin = paperSize === "A4" ? "12mm" : "0.5in";
+  styleEl.textContent = `@page { size: ${paperSize}; margin: ${margin}; }`;
+}
+
 function ReceiptDialog({
   payment,
   students,
+  institution,
   onOpenChange,
 }: {
   payment: Payment | null;
   students: Student[];
+  institution: InstitutionSettings | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { batches } = useBatches();
   if (!payment) return null;
   const student = students.find((s) => s.id === payment.studentId);
+  const batch = student ? batches.find((b) => b.id === student.batchId) : undefined;
 
-  const handlePrint = () => window.print();
+  const showLogo = institution?.print.showLogoOnDocuments !== false && !!institution?.logoUrl;
+  const currentDue = payment.previousDue !== undefined ? payment.previousDue - payment.paidAmount : undefined;
+
+  const handlePrint = () => {
+    applyReceiptPageSize(institution?.print.paperSize || "A4");
+    window.print();
+  };
 
   return (
     <Dialog open={!!payment} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md print:shadow-none print:max-w-full">
-        <DialogHeader>
+      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden print:shadow-none print:max-w-full">
+        <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4 print:hidden">
           <DialogTitle className="flex items-center gap-2">
             <ReceiptIcon className="h-5 w-5 text-primary" />
             পেমেন্ট রসিদ
           </DialogTitle>
         </DialogHeader>
 
-        <div id="receipt-print" className="space-y-4 pt-2">
-          <div className="text-center border-b border-dashed pb-3">
-            <h2 className="font-bold text-lg">লারা এলএমএস</h2>
-            <p className="text-xs text-muted-foreground">কোচিং ম্যানেজমেন্ট সিস্টেম</p>
-          </div>
-
-          <div className="bg-primary/5 rounded-lg p-3 text-center">
-            <p className="text-xs text-muted-foreground">রসিদ নম্বর</p>
-            <p className="text-lg font-bold font-mono text-primary">{payment.receiptNo}</p>
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">শিক্ষার্থীর নাম:</span>
-              <span className="font-medium">{student?.name || "—"}</span>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          {/* Everything the printed receipt should contain lives inside this
+              one element — index.css's @media print rule hides every other
+              element on the page (dialog chrome included) and shows only
+              this subtree, so what's on screen here is exactly what prints. */}
+          <div id="receipt-print" className="space-y-4">
+            <div className="text-center border-b border-dashed pb-3 space-y-1">
+              {showLogo && (
+                <img src={institution!.logoUrl} alt="" className="h-12 mx-auto object-contain" />
+              )}
+              <h2 className="font-bold text-lg">{institution?.name || "কোচিং সেন্টার"}</h2>
+              {institution?.address && <p className="text-xs text-muted-foreground">{institution.address}</p>}
+              <p className="text-xs text-muted-foreground">
+                {[institution?.phone, institution?.email].filter(Boolean).join(" • ")}
+              </p>
+              {institution?.website && <p className="text-xs text-muted-foreground">{institution.website}</p>}
             </div>
-            {student && (
+
+            <div className="bg-primary/5 rounded-lg p-3 text-center">
+              <p className="text-xs text-muted-foreground">রসিদ নম্বর</p>
+              <p className="text-lg font-bold font-mono text-primary">{payment.receiptNo}</p>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">শিক্ষার্থীর নাম:</span>
+                <span className="font-medium text-right">{student?.name || "—"}</span>
+              </div>
+              {student && (
+                <>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground shrink-0">রেজিস্ট্রেশন আইডি:</span>
+                    <span className="font-mono text-xs">{student.studentId}</span>
+                  </div>
+                  {student.rollNumber && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground shrink-0">রোল:</span>
+                      <span className="font-mono text-xs">{student.rollNumber}</span>
+                    </div>
+                  )}
+                  {student.course && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground shrink-0">কোর্স:</span>
+                      <span className="text-right">{student.course}</span>
+                    </div>
+                  )}
+                  {batch && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground shrink-0">ব্যাচ:</span>
+                      <span className="text-right">{batch.name}</span>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">তারিখ:</span>
+                <span>{payment.date}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">ফি ধরন:</span>
+                <Badge variant="outline">{payment.feeType}</Badge>
+              </div>
+              {payment.month && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground shrink-0">মাস:</span>
+                  <span>{payment.month}</span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">পেমেন্ট পদ্ধতি:</span>
+                <span>{payment.method}</span>
+              </div>
+            </div>
+
+            <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">শিক্ষার্থী আইডি:</span>
-                <span className="font-mono text-xs">{student.studentId}</span>
+                <span className="text-muted-foreground">পরিমাণ:</span>
+                <span>৳ {payment.amount.toLocaleString()}</span>
+              </div>
+              {payment.discount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">ডিসকাউন্ট:</span>
+                  <span className="text-success">- ৳ {payment.discount.toLocaleString()}</span>
+                </div>
+              )}
+              {payment.fine > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">জরিমানা:</span>
+                  <span className="text-warning">+ ৳ {payment.fine.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t pt-2 mt-2">
+                <span className="font-semibold">মোট পরিশোধিত:</span>
+                <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
+              </div>
+              {payment.previousDue !== undefined && (
+                <div className="flex justify-between text-xs text-muted-foreground pt-1">
+                  <span>পূর্ববর্তী বকেয়া:</span>
+                  <span>৳ {payment.previousDue.toLocaleString()}</span>
+                </div>
+              )}
+              {currentDue !== undefined && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">বর্তমান বকেয়া:</span>
+                  <span className={currentDue > 0 ? "text-destructive font-medium" : "text-success font-medium"}>
+                    ৳ {currentDue.toLocaleString()}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {payment.note && (
+              <div className="text-xs text-muted-foreground border-t border-dashed pt-2">
+                <span className="font-medium">নোট: </span>{payment.note}
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">তারিখ:</span>
-              <span>{payment.date}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">ফি ধরন:</span>
-              <Badge variant="outline">{payment.feeType}</Badge>
-            </div>
-            {payment.month && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">মাস:</span>
-                <span>{payment.month}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">পেমেন্ট পদ্ধতি:</span>
-              <span>{payment.method}</span>
-            </div>
-          </div>
 
-          <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">পরিমাণ:</span>
-              <span>৳ {payment.amount.toLocaleString()}</span>
-            </div>
-            {payment.discount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">ডিসকাউন্ট:</span>
-                <span className="text-success">- ৳ {payment.discount.toLocaleString()}</span>
+            <div className="pt-6 flex justify-end">
+              <div className="text-center text-xs">
+                <div className="border-t border-foreground/40 pt-1 w-32">
+                  {institution?.print.signatureLabel || "অনুমোদিতকারী"}
+                </div>
               </div>
-            )}
-            {payment.fine > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">জরিমানা:</span>
-                <span className="text-warning">+ ৳ {payment.fine.toLocaleString()}</span>
-              </div>
-            )}
-            <div className="flex justify-between border-t pt-2 mt-2">
-              <span className="font-semibold">মোট পরিশোধিত:</span>
-              <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
             </div>
-          </div>
 
-          {payment.note && (
-            <div className="text-xs text-muted-foreground border-t border-dashed pt-2">
-              <span className="font-medium">নোট: </span>{payment.note}
+            <div className="text-center text-xs text-muted-foreground pt-2 border-t border-dashed">
+              ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
             </div>
-          )}
-
-          <div className="text-center text-xs text-muted-foreground pt-2 border-t border-dashed">
-            ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 print:hidden">
+        <div className="shrink-0 border-t px-4 py-3 sm:px-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 print:hidden">
           <Button variant="outline" onClick={() => onOpenChange(false)}>বন্ধ</Button>
           <Button onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" /> প্রিন্ট

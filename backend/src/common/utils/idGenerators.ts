@@ -18,13 +18,35 @@ const counterSchema = new Schema<CounterDoc>({
 
 const Counter = mongoose.model<CounterDoc>("Counter", counterSchema);
 
+/**
+ * `findByIdAndUpdate` with `upsert: true` is NOT safe against two concurrent
+ * callers incrementing the *same brand-new* key for the first time (e.g. two
+ * payments racing to create the very first "receipt_RCPT" counter document,
+ * or the first payment right after a yearly counter key rolls over) — Mongo
+ * can throw a duplicate-key error (E11000) on the upsert's own insert when
+ * both requests reach it before either commits. That error carries the same
+ * error code the app's other genuine "this value already exists" checks
+ * use, so it was surfacing to the client as a generic "record already
+ * exists" — for what is, from the caller's point of view, a perfectly valid
+ * brand-new payment. Once either racer has created the document, a plain
+ * (non-upsert) `$inc` is an ordinary atomic update with no race at all, so
+ * retrying once without `upsert` after a 11000 always resolves cleanly.
+ */
 async function nextSeq(key: string): Promise<number> {
-  const doc = await Counter.findByIdAndUpdate(
-    key,
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true },
-  ).lean();
-  return doc!.seq;
+  try {
+    const doc = await Counter.findByIdAndUpdate(
+      key,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true },
+    ).lean();
+    return doc!.seq;
+  } catch (err) {
+    if ((err as { code?: number } | null)?.code === 11000) {
+      const doc = await Counter.findByIdAndUpdate(key, { $inc: { seq: 1 } }, { new: true }).lean();
+      if (doc) return doc.seq;
+    }
+    throw err;
+  }
 }
 
 /** LMS-01247 style, continuing the existing frontend format/counter start. */

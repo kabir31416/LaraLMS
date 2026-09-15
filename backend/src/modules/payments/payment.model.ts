@@ -37,6 +37,16 @@ export interface PaymentDoc extends Document {
   courseFeeComponent?: number; // snapshot of the Course Fee at the time of this admission payment
   previousDue?: number; // the student's due immediately before this payment — auditability, never recomputed later
   createdBy?: Types.ObjectId; // -> User, whoever recorded this payment
+  /**
+   * Client-generated, one per submission attempt (not per student/per
+   * amount — a student legitimately has many payments) — protects against
+   * double-click/browser-retry/network-retry creating two Payments for the
+   * same logical submission. Optional: internal call sites that create a
+   * Payment as a side effect of something else (admission, bulk import,
+   * paid material distribution) don't go through a click-driven form and
+   * don't need one. See payment.service.ts's create().
+   */
+  idempotencyKey?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,11 +71,17 @@ const paymentSchema = new Schema<PaymentDoc>(
     courseFeeComponent: { type: Number, min: 0 },
     previousDue: { type: Number },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    idempotencyKey: { type: String },
   },
   { timestamps: true },
 );
 
 paymentSchema.index({ studentId: 1, date: -1 });
 paymentSchema.index({ date: -1 });
+// Deliberately NOT `studentId: unique` (a student has many payments) — this
+// only rejects two Payments sharing the exact same submission-attempt key.
+// Partial (only documents that actually have the field), same convention as
+// accounts/income.model.ts's own (source, refId) auto-post guard.
+paymentSchema.index({ idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $exists: true } } });
 
 export const Payment = model<PaymentDoc>("Payment", paymentSchema);

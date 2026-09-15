@@ -9,6 +9,10 @@ import { buildMeta, buildSearchFilter, parsePagination } from "../../common/util
 import { generateReceiptNumber } from "../../common/utils/idGenerators";
 import { logger } from "../../logger/logger";
 
+function isDuplicateKeyError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as { code?: number }).code === 11000;
+}
+
 export async function list(req: Request) {
   const { page, limit, skip, sort } = parsePagination(req, { date: -1, createdAt: -1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["receiptNo"]) };
@@ -56,8 +60,19 @@ export async function create(
     source?: "admission" | "regular" | "material";
     admissionFeeComponent?: number;
     courseFeeComponent?: number;
+    idempotencyKey?: string;
   },
 ): Promise<PaymentDoc> {
+  // A retry of a submission already processed (double-click, browser/network
+  // retry) — return the payment that was actually created instead of trying
+  // to create a second one or erroring. Never keyed on studentId (a student
+  // legitimately has many payments): only two requests sharing the exact
+  // same client-generated key are ever treated as "the same attempt".
+  if (data.idempotencyKey) {
+    const existing = await Payment.findOne({ idempotencyKey: data.idempotencyKey });
+    if (existing) return existing;
+  }
+
   const student = await Student.findById(data.studentId);
   if (!student) throw ApiError.notFound("Student not found");
 
@@ -69,16 +84,31 @@ export async function create(
 
   const previousDue = student.due;
   const receiptNo = await generateReceiptNumber();
-  const doc = await Payment.create({
-    ...data,
-    receiptNo,
-    date: data.date || new Date().toISOString().slice(0, 10),
-    paidAmount,
-    batchId: student.currentBatchId,
-    courseId: student.courseId,
-    previousDue,
-    createdBy: req.user?.id,
-  });
+  let doc: PaymentDoc;
+  try {
+    doc = await Payment.create({
+      ...data,
+      receiptNo,
+      date: data.date || new Date().toISOString().slice(0, 10),
+      paidAmount,
+      batchId: student.currentBatchId,
+      courseId: student.courseId,
+      previousDue,
+      createdBy: req.user?.id,
+    });
+  } catch (err) {
+    // Two near-simultaneous requests with the same idempotencyKey can both
+    // pass the check above before either commits — the unique index is the
+    // real guard; losing that race here means the other request already won
+    // and fully applied its student due update, so return its result rather
+    // than surfacing the raw duplicate-key error for what the user only
+    // ever intended as one payment.
+    if (data.idempotencyKey && isDuplicateKeyError(err)) {
+      const existing = await Payment.findOne({ idempotencyKey: data.idempotencyKey });
+      if (existing) return existing;
+    }
+    throw err;
+  }
 
   // A material payment is a real fee-collection event but is NOT part of
   // tuition — the Coaching Material Inventory module (§6) reuses this
