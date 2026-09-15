@@ -19,7 +19,6 @@ import {
   BarChart3 as ReportIcon,
   User,
   ListChecks,
-  Trophy,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -40,8 +39,7 @@ const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
   { title: "শিক্ষার্থী", url: "/students", icon: Users },
   { title: "ভর্তি", url: "/admission", icon: UserPlus },
-  { title: "ভর্তি ফলাফল", url: "/admission-result", icon: ListChecks },
-  { title: "চান্স রেজাল্ট", url: "/chance-results", icon: Trophy },
+  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks },
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "রুটিন", url: "/routine", icon: CalendarDays },
@@ -62,8 +60,7 @@ const directorMenu = [
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
   // Marks and attendance are both entered together here now — there's no separate attendance page for directors anymore.
   { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList },
-  { title: "ভর্তি ফলাফল", url: "/director/admission-result", icon: ListChecks },
-  { title: "চান্স রেজাল্ট", url: "/director/chance-results", icon: Trophy },
+  { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatCard } from "@/components/StatCard";
-import { Users, Award, TrendingUp, Building2, GraduationCap, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Users, Award, TrendingUp, Building2, GraduationCap, AlertTriangle, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { api } from "@/lib/apiClient";
@@ -33,6 +34,7 @@ const DEFAULT_OPTIONS: ChanceFilterOptions = { programs: [], sessions: [], insti
 
 export default function ChanceResults() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === "Admin";
 
   const [filters, setFilters] = useState<ChanceFilters>(DEFAULT_CHANCE_FILTERS);
@@ -81,9 +83,19 @@ export default function ChanceResults() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">চান্স রেজাল্ট</h1>
-          <p className="text-sm text-muted-foreground">অফিসিয়াল ভর্তি ফলাফল পিডিএফ আপলোড, ম্যাচিং ও চান্সপ্রাপ্ত শিক্ষার্থীদের ব্যবস্থাপনা</p>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(isAdmin ? "/admission-result" : "/director/admission-result")}
+            title="অ্যাডমিশন রেজাল্টে ফিরে যান"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">চান্স রেজাল্ট</h1>
+            <p className="text-sm text-muted-foreground">অফিসিয়াল ভর্তি ফলাফল পিডিএফ আপলোড, ম্যাচিং ও চান্সপ্রাপ্ত শিক্ষার্থীদের ব্যবস্থাপনা</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

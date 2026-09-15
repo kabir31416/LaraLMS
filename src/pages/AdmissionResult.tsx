@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Search, Users, CheckCircle2, AlertTriangle, Pencil, Plus, RefreshCw } from "lucide-react";
+import { Search, Users, CheckCircle2, AlertTriangle, Pencil, Plus, RefreshCw, Trophy } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -67,6 +67,7 @@ function friendlyError(err: unknown, fallback: string): string {
 
 export default function AdmissionResult() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.role === "Admin";
   const { batches } = useBatches();
   const { courses } = useAcademic();
@@ -166,9 +167,14 @@ export default function AdmissionResult() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">ভর্তি ফলাফল (Admission Result)</h1>
-          <p className="text-sm text-muted-foreground">প্রতিটি শিক্ষার্থীর অফিসিয়াল ভর্তি পরীক্ষার রোল নম্বর সংরক্ষণ করুন</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">অ্যাডমিশন রেজাল্ট</h1>
+            <p className="text-sm text-muted-foreground">প্রতিটি শিক্ষার্থীর অফিসিয়াল ভর্তি পরীক্ষার রোল নম্বর সংরক্ষণ করুন</p>
+          </div>
+          <Button onClick={() => navigate(isAdmin ? "/chance-results" : "/director/chance-results")}>
+            <Trophy className="h-4 w-4 mr-2" /> চান্স রেজাল্ট দেখুন
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
