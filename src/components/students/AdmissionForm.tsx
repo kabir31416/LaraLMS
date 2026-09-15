@@ -28,13 +28,11 @@ import { bn } from "date-fns/locale";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { AcademicSelect } from "@/components/common/AcademicSelect";
-import { GENDERS, RELATIONS, PAYMENT_METHODS } from "@/types/student";
+import { GENDERS, RELATIONS } from "@/types/student";
 import type { Student } from "@/types/student";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ApiClientError } from "@/contexts/AuthContext";
-
-const ADMISSION_FEE_BDT = 200;
 
 interface AdmissionFormProps {
   open: boolean;
@@ -53,8 +51,9 @@ interface AdmissionFormProps {
  */
 export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionFormProps) {
   const { addStudent, updateStudent } = useStudents();
-  const { getCourse } = useAcademic();
+  const { getCourse, settings, activePaymentMethods } = useAcademic();
   const isEdit = !!editStudent;
+  const admissionFeeBdt = settings.admissionFeeBdt;
 
   const [form, setForm] = useState(() => getInitialForm(editStudent));
   const [dob, setDob] = useState<Date | undefined>(editStudent?.dob ? new Date(editStudent.dob) : undefined);
@@ -106,7 +105,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
     };
   }
 
-  const totalPayable = courseFee + ADMISSION_FEE_BDT - Number(form.discount);
+  const totalPayable = courseFee + admissionFeeBdt - Number(form.discount);
   const due = totalPayable - Number(form.paid);
 
   const updateField = (field: string, value: string | number) => {
@@ -311,7 +310,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                 </div>
                 <div className="space-y-1.5">
                   <Label>ভর্তি ফি (৳)</Label>
-                  <Input value={`${ADMISSION_FEE_BDT} টাকা`} readOnly className="bg-muted/50" />
+                  <Input value={`${admissionFeeBdt} টাকা`} readOnly className="bg-muted/50" />
                   <p className="text-xs text-muted-foreground">নির্দিষ্ট, পরিবর্তনযোগ্য নয়</p>
                 </div>
                 <div className="space-y-1.5">
@@ -334,7 +333,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                         <Select value={form.paymentMethod} onValueChange={(v) => updateField("paymentMethod", v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {PAYMENT_METHODS.map((m) => (<SelectItem key={m} value={m}>{m}</SelectItem>))}
+                            {activePaymentMethods.map((m) => (<SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>))}
                           </SelectContent>
                         </Select>
                       </div>

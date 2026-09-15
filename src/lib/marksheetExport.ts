@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { BatchMasterSheetView, IndividualResultView } from "@/types/marksheet";
+import type { PublicInstitutionInfo } from "@/types/academic";
 
 /**
  * Print/PDF for the public Individual Marksheet (Phase 6 §23/§24) — a
@@ -9,8 +10,10 @@ import type { BatchMasterSheetView, IndividualResultView } from "@/types/markshe
  * built with the same underlying approach: jsPDF + jspdf-autotable for a
  * real vector PDF (never a screenshot), a styled print window for print.
  *
- * No institution name/logo is included — Settings has no such branding
- * field today (checked before writing this), so the header is generic.
+ * `institution` (Settings §2/§20 — Institution/branding settings, fetched
+ * publicly via /public/institution) is optional so callers on older cached
+ * pages or a deployment with no branding configured yet still get a
+ * generic-but-correct document.
  */
 
 function statusColor(status: string): [number, number, number] {
@@ -19,7 +22,13 @@ function statusColor(status: string): [number, number, number] {
   return [220, 38, 38];
 }
 
-export function printIndividualMarksheet(view: IndividualResultView) {
+function institutionHeaderHtml(institution?: PublicInstitutionInfo): string {
+  if (!institution?.name) return "";
+  const logo = institution.logoUrl ? `<img src="${institution.logoUrl}" alt="" style="height:36px;object-fit:contain" />` : "";
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">${logo}<div style="font-size:16px;font-weight:600">${institution.name}</div></div>`;
+}
+
+export function printIndividualMarksheet(view: IndividualResultView, institution?: PublicInstitutionInfo) {
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) return;
   const { student, dateRange, subjects, overall, details } = view;
@@ -51,6 +60,7 @@ export function printIndividualMarksheet(view: IndividualResultView) {
       .overall b{font-size:18px;display:block}
       @media print{ body{padding:8px} }
     </style></head><body>
+    ${institutionHeaderHtml(institution)}
     <h1>ফলাফল বিবরণী</h1>
     <p class="sub">${dateRange.start} থেকে ${dateRange.end}</p>
     <div class="grid">
@@ -82,18 +92,26 @@ export function printIndividualMarksheet(view: IndividualResultView) {
   w.document.close();
 }
 
-export function downloadIndividualMarksheetPdf(view: IndividualResultView) {
+export function downloadIndividualMarksheetPdf(view: IndividualResultView, institution?: PublicInstitutionInfo) {
   const { student, dateRange, subjects, overall, details } = view;
   const doc = new jsPDF();
 
+  let y = 16;
+  if (institution?.name) {
+    doc.setFontSize(13);
+    doc.text(institution.name, 14, y);
+    y += 8;
+  }
   doc.setFontSize(16);
-  doc.text("ফলাফল বিবরণী", 14, 16);
+  doc.text("ফলাফল বিবরণী", 14, y);
+  y += 6;
   doc.setFontSize(10);
-  doc.text(`${dateRange.start} - ${dateRange.end}`, 14, 22);
-  doc.text(`${student.name}  |  Roll: ${student.rollNumber}  |  ${student.course ?? "-"}  |  ${student.batch ?? "-"}`, 14, 28);
+  doc.text(`${dateRange.start} - ${dateRange.end}`, 14, y);
+  y += 6;
+  doc.text(`${student.name}  |  Roll: ${student.rollNumber}  |  ${student.course ?? "-"}  |  ${student.batch ?? "-"}`, 14, y);
 
   autoTable(doc, {
-    startY: 34,
+    startY: y + 6,
     head: [["Subject", "Full Marks", "Obtained", "Percentage", "Grade"]],
     body: subjects.map((s) => [s.subject, String(s.fullMarks), String(s.obtained), `${s.percentage}%`, s.grade]),
     styles: { fontSize: 9 },
@@ -141,7 +159,7 @@ function cellText(cell: { value: number | null; status: "present" | "absent" | "
   return String(cell.value);
 }
 
-export function printBatchMasterSheet(view: BatchMasterSheetView) {
+export function printBatchMasterSheet(view: BatchMasterSheetView, institution?: PublicInstitutionInfo) {
   const w = window.open("", "_blank", "width=1200,height=800");
   if (!w) return;
   const { batch, dateRange, columns, rows } = view;
@@ -179,6 +197,7 @@ export function printBatchMasterSheet(view: BatchMasterSheetView) {
       .rank-3{background:#fed7aa;color:#9a3412}
       @media print{ body{padding:4px} }
     </style></head><body>
+    ${institutionHeaderHtml(institution)}
     <h1>ব্যাচ ভিত্তিক ফলাফল শীট</h1>
     <p class="sub">${batch.name}${batch.courseName ? ` — ${batch.courseName}` : ""}</p>
     <p class="meta">সময়সীমা: ${dateRange.start ?? "শুরু থেকে"} থেকে ${dateRange.end ?? "বর্তমান পর্যন্ত"}</p>
@@ -192,17 +211,25 @@ export function printBatchMasterSheet(view: BatchMasterSheetView) {
   w.document.close();
 }
 
-export function downloadBatchMasterSheetPdf(view: BatchMasterSheetView) {
+export function downloadBatchMasterSheetPdf(view: BatchMasterSheetView, institution?: PublicInstitutionInfo) {
   const { batch, dateRange, columns, rows } = view;
   const doc = new jsPDF({ orientation: "landscape" });
+  const centerX = doc.internal.pageSize.getWidth() / 2;
 
+  let y = 12;
+  if (institution?.name) {
+    doc.setFontSize(11);
+    doc.text(institution.name, centerX, y, { align: "center" });
+    y += 6;
+  }
   doc.setFontSize(15);
-  doc.text("ব্যাচ ভিত্তিক ফলাফল শীট", doc.internal.pageSize.getWidth() / 2, 12, { align: "center" });
+  doc.text("ব্যাচ ভিত্তিক ফলাফল শীট", centerX, y, { align: "center" });
+  y += 6;
   doc.setFontSize(10);
   doc.text(
     `${batch.name}${batch.courseName ? ` - ${batch.courseName}` : ""}  |  ${dateRange.start ?? "Start"} - ${dateRange.end ?? "Present"}`,
-    doc.internal.pageSize.getWidth() / 2,
-    18,
+    centerX,
+    y,
     { align: "center" },
   );
 
@@ -221,7 +248,7 @@ export function downloadBatchMasterSheetPdf(view: BatchMasterSheetView) {
   ]);
 
   autoTable(doc, {
-    startY: 24,
+    startY: y + 6,
     head,
     body,
     styles: { fontSize: 7, halign: "center" },

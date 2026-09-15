@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MASTER_DATA_STATUS } from "../academicSessions/academicSession.model";
 
 export const createLectureSchema = z.object({
   body: z.object({
@@ -6,6 +7,7 @@ export const createLectureSchema = z.object({
     subjectId: z.string().length(24),
     lectureNumber: z.number().int().positive(),
     description: z.string().trim().max(500).optional(),
+    status: z.enum(MASTER_DATA_STATUS).optional(),
   }),
 });
 
@@ -16,6 +18,7 @@ export const updateLectureSchema = z.object({
     subjectId: z.string().length(24).optional(),
     lectureNumber: z.number().int().positive().optional(),
     description: z.string().trim().max(500).optional(),
+    status: z.enum(MASTER_DATA_STATUS).optional(),
   }),
 });
 

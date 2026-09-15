@@ -24,6 +24,7 @@ export const PERMISSIONS = {
   STUDENTS_UPDATE_SELF: "students:update:self",
   STUDENTS_DELETE: "students:delete",
   STUDENTS_MANAGE_ROLL: "students:manage-roll",
+  STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH: "students:manage-admission-roll:own-batch",
 
   // Batches & enrollment
   BATCHES_MANAGE: "batches:manage",
@@ -74,6 +75,15 @@ export const PERMISSIONS = {
   // Reports & public info settings
   REPORTS_READ: "reports:read",
   PUBLIC_INFO_MANAGE: "public-info:manage",
+  PUBLIC_RESULTS_MANAGE: "public-results:manage",
+
+  // Settings-adjacent master data & platform controls
+  PAYMENT_METHODS_MANAGE: "payment-methods:manage",
+  AUDIT_READ: "audit:read",
+
+  // Admission Result matching (PDF import, Chance Students, institute/batch analysis)
+  ADMISSION_RESULTS_MANAGE: "admission-results:manage",
+  ADMISSION_RESULTS_READ_OWN_BATCH: "admission-results:read:own-batch",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -85,6 +95,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "stud
   admin: ["*"],
   batch_director: [
     PERMISSIONS.STUDENTS_READ_OWN_BATCH,
+    PERMISSIONS.STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH,
+    PERMISSIONS.ADMISSION_RESULTS_READ_OWN_BATCH,
     PERMISSIONS.BATCHES_READ_OWN,
     PERMISSIONS.ENROLLMENTS_READ_OWN,
     PERMISSIONS.ATTENDANCE_MARK_OWN_BATCH,

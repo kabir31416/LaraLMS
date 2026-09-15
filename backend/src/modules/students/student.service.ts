@@ -1,11 +1,13 @@
 import { Request } from "express";
 import { Student, StudentDoc, ProfileCompletion } from "./student.model";
 import { Course } from "../courses/course.model";
-import { ADMISSION_FEE_BDT } from "./student.constants";
+import { getSettings } from "../settings/settings.service";
+import { PERMISSIONS } from "../rbac/permissions";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateRegistrationId } from "../../common/utils/idGenerators";
+import { toAsciiDigits } from "../../common/utils/digits";
 import * as guardianService from "../guardians/guardian.service";
 
 /**
@@ -109,11 +111,16 @@ async function withGuardians(docs: StudentDoc[]): Promise<Record<string, unknown
   });
 }
 
-export async function list(req: Request) {
-  const { page, limit, skip, sort } = parsePagination(req, { createdAt: -1 });
-  const filter: Record<string, unknown> = {
-    ...buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber"]),
-  };
+/**
+ * Shared scope/filter logic for both list() and admissionRollStats() — the
+ * "which rows is this caller even allowed to see" part (course/section/
+ * batch/director scope), kept separate from search and from the
+ * admission-roll status bucket so admissionRollStats can compute Total/
+ * Added/Missing against the same base filter a list() call is using
+ * (Admission Result feature §11).
+ */
+async function buildStudentFilter(req: Request): Promise<Record<string, unknown>> {
+  const filter: Record<string, unknown> = {};
   if (req.query.course) filter.course = req.query.course;
   if (req.query.section) filter.section = req.query.section;
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
@@ -126,6 +133,20 @@ export async function list(req: Request) {
     const batchIds = await Batch.find({ directorId: req.query.directorId }).distinct("_id");
     filter.currentBatchId = { $in: batchIds };
   }
+  return filter;
+}
+
+export async function list(req: Request) {
+  const { page, limit, skip, sort } = parsePagination(req, { createdAt: -1 });
+  const filter = await buildStudentFilter(req);
+
+  // "Missing" also matches a completely absent field, not just an empty
+  // string — Mongo's $in:[null] quirk covers both without needing a second
+  // $or that would collide with buildSearchFilter's own $or below.
+  if (req.query.admissionRollStatus === "added") filter.admissionRoll = { $exists: true, $ne: "" };
+  else if (req.query.admissionRollStatus === "missing") filter.admissionRoll = { $in: [null, ""] };
+
+  Object.assign(filter, buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]));
 
   const [docs, total] = await Promise.all([
     Student.find(filter).sort(sort).skip(skip).limit(limit),
@@ -133,6 +154,76 @@ export async function list(req: Request) {
   ]);
   const items = await withGuardians(docs);
   return { items, meta: buildMeta(page, limit, total) };
+}
+
+/** Total/Added/Missing counts for the Admission Result page's summary cards — always the full three-way breakdown of whatever batch/course/director scope is selected, independent of any admissionRollStatus filter applied to the list itself (Admission Result feature §11). */
+export async function admissionRollStats(req: Request): Promise<{ total: number; added: number; missing: number }> {
+  const filter = await buildStudentFilter(req);
+  const [total, added] = await Promise.all([
+    Student.countDocuments(filter),
+    Student.countDocuments({ ...filter, admissionRoll: { $exists: true, $ne: "" } }),
+  ]);
+  return { total, added, missing: total - added };
+}
+
+/**
+ * Admission Result feature — the official admission-test roll, editable by
+ * Admin (any student) or a Batch Director (only students in a batch they
+ * direct). Authorization is enforced here, at the service layer, exactly
+ * like exam.service.ts's assertCanActOnBatch — never left to the frontend
+ * hiding a batch selector.
+ */
+export async function updateAdmissionRoll(req: Request, id: string, rawAdmissionRoll: string): Promise<Record<string, unknown>> {
+  const doc = await getDocOrThrow(id);
+
+  const perms = req.user!.permissions;
+  const hasBroadAccess = perms.includes("*") || perms.includes(PERMISSIONS.STUDENTS_UPDATE);
+  if (!hasBroadAccess) {
+    if (!req.user!.staffId || !doc.currentBatchId) {
+      throw ApiError.forbidden("You do not have permission to access this student.");
+    }
+    const { Batch } = await import("../batches/batch.model");
+    const batch = await Batch.findById(doc.currentBatchId).select("directorId");
+    if (!batch || String(batch.directorId ?? "") !== req.user!.staffId) {
+      throw ApiError.forbidden("You do not have permission to access this student.");
+    }
+  }
+
+  const admissionRoll = toAsciiDigits(rawAdmissionRoll).trim();
+  if (!/^\d+$/.test(admissionRoll)) {
+    throw ApiError.badRequest("Admission roll must contain digits only.");
+  }
+
+  // Scoped uniqueness — see student.model.ts's index comment: an official
+  // admission-test roll only needs to be unique within one admission cycle
+  // (the student's Course's own AcademicSession), not globally, since every
+  // year's exam restarts its own numbering from scratch.
+  const clashFilter: Record<string, unknown> = { admissionRoll, _id: { $ne: doc._id } };
+  if (doc.courseId) {
+    const course = await Course.findById(doc.courseId).select("sessionId");
+    if (course?.sessionId) {
+      const sisterCourseIds = await Course.find({ sessionId: course.sessionId }).distinct("_id");
+      clashFilter.courseId = { $in: sisterCourseIds };
+    }
+  }
+  const clash = await Student.findOne(clashFilter);
+  if (clash) {
+    throw ApiError.conflict(`Admission roll "${admissionRoll}" is already assigned to another student.`);
+  }
+
+  const before = doc.toObject();
+  doc.admissionRoll = admissionRoll;
+  await doc.save();
+  await recordAudit({
+    req,
+    action: "student.update-admission-roll",
+    module: "students",
+    targetCollection: "students",
+    targetId: id,
+    before,
+    after: doc.toObject(),
+  });
+  return withGuardian(doc);
 }
 
 export async function getById(id: string): Promise<Record<string, unknown>> {
@@ -209,17 +300,19 @@ export async function quickCreate(req: Request, data: { rollNumber: string; name
  * student completes later via the Portal. Course Fee and Admission Fee are
  * never taken from the client: totalCourseFee always comes from the
  * selected Course's own `fee` (a one-time snapshot — later Course.fee edits
- * in Settings never rewrite this student's history) and admissionFee is
- * always the fixed ADMISSION_FEE_BDT. If an amount was paid at admission
- * time, it's recorded as a real Payment (source: "admission") through the
- * existing Fee Management pipeline rather than just baked into this Student
- * document — so it shows up immediately in Payment History/Fee Management,
- * and a receipt number is generated exactly the way every other payment
- * gets one.
+ * in Settings never rewrite this student's history) and admissionFee always
+ * comes from Settings.admissionFeeBdt at the moment of admission (a
+ * snapshot too — see student.model's `admissionFee`, Settings §6/§24). If an
+ * amount was paid at admission time, it's recorded as a real Payment
+ * (source: "admission") through the existing Fee Management pipeline rather
+ * than just baked into this Student document — so it shows up immediately
+ * in Payment History/Fee Management, and a receipt number is generated
+ * exactly the way every other payment gets one.
  */
 export async function create(req: Request, body: Record<string, unknown> & GuardianInline): Promise<Record<string, unknown>> {
   const course = await resolveCourseOrThrow(String(body.courseId));
-  const admissionFee = ADMISSION_FEE_BDT;
+  const settings = await getSettings();
+  const admissionFee = settings.admissionFeeBdt;
   const totalCourseFee = course.fee;
   const discount = Number(body.discount) || 0;
   const feeType = (body.feeType as StudentDoc["feeType"]) || "এককালীন";

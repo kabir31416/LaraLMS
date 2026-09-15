@@ -19,7 +19,7 @@ export async function getDirectorCourseIds(staffId: string): Promise<string[]> {
 }
 
 export async function list(req: Request, scopeCourseIds?: string[]) {
-  const { page, limit, skip, sort } = parsePagination(req, { name: 1 });
+  const { page, limit, skip, sort } = parsePagination(req, { displayOrder: 1, name: 1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["name"]) };
   if (req.query.sessionId) filter.sessionId = req.query.sessionId;
   if (scopeCourseIds) filter._id = { $in: scopeCourseIds };
@@ -38,13 +38,13 @@ export async function getById(id: string, scopeCourseIds?: string[]): Promise<Co
   return doc;
 }
 
-export async function create(req: Request, data: Pick<CourseDoc, "name" | "sessionId" | "duration" | "fee">) {
+export async function create(req: Request, data: Pick<CourseDoc, "name" | "sessionId" | "duration" | "fee"> & Partial<Pick<CourseDoc, "status" | "displayOrder">>) {
   const doc = await Course.create(data);
   await recordAudit({ req, action: "course.create", module: "academic", targetCollection: "courses", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<Pick<CourseDoc, "name" | "sessionId" | "duration" | "fee">>) {
+export async function update(req: Request, id: string, patch: Partial<Pick<CourseDoc, "name" | "sessionId" | "duration" | "fee" | "status" | "displayOrder">>) {
   const doc = await Course.findById(id);
   if (!doc) throw ApiError.notFound("Course not found");
   const before = doc.toObject();

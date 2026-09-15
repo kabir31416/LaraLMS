@@ -13,6 +13,7 @@ import batchRoutes from "../modules/batches/batch.routes";
 import staffRoutes from "../modules/staff/staff.routes";
 import dashboardRoutes from "../modules/dashboard/dashboard.routes";
 import paymentRoutes from "../modules/payments/payment.routes";
+import paymentMethodRoutes from "../modules/paymentMethods/paymentMethod.routes";
 import attendanceRoutes from "../modules/attendance/attendance.routes";
 import examRoutes from "../modules/exams/exam.routes";
 import resultRoutes from "../modules/exams/result.routes";
@@ -23,6 +24,8 @@ import branchLedgerRoutes from "../modules/accounts/branchLedger.routes";
 import noticeRoutes from "../modules/notices/notice.routes";
 import publicInfoRoutes from "../modules/publicInfo/publicInfo.routes";
 import publicResultsRoutes from "../modules/publicResults/publicResults.routes";
+import auditLogRoutes from "../audit/auditLog.routes";
+import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -45,6 +48,7 @@ router.use("/batches", batchRoutes);
 router.use("/staff", staffRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/payments", paymentRoutes);
+router.use("/payment-methods", paymentMethodRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/exams", examRoutes);
 router.use("/results", resultRoutes);
@@ -55,5 +59,7 @@ router.use("/branch-ledger", branchLedgerRoutes);
 router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
 router.use("/public/results", publicResultsRoutes);
+router.use("/audit-logs", auditLogRoutes);
+router.use("/admission-results", admissionResultRoutes);
 
 export default router;

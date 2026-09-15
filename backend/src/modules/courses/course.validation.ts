@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MASTER_DATA_STATUS } from "../academicSessions/academicSession.model";
 
 export const createCourseSchema = z.object({
   body: z.object({
@@ -6,6 +7,8 @@ export const createCourseSchema = z.object({
     sessionId: z.string().length(24),
     duration: z.number().int().positive(),
     fee: z.number().min(0).default(0),
+    status: z.enum(MASTER_DATA_STATUS).optional(),
+    displayOrder: z.number().int().optional(),
   }),
 });
 
@@ -16,6 +19,8 @@ export const updateCourseSchema = z.object({
     sessionId: z.string().length(24).optional(),
     duration: z.number().int().positive().optional(),
     fee: z.number().min(0).optional(),
+    status: z.enum(MASTER_DATA_STATUS).optional(),
+    displayOrder: z.number().int().optional(),
   }),
 });
 

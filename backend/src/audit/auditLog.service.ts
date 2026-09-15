@@ -1,6 +1,7 @@
 import { Request } from "express";
 import { AuditLog } from "./auditLog.model";
 import { logger } from "../logger/logger";
+import { buildMeta, parsePagination } from "../common/utils/pagination";
 
 interface RecordAuditParams {
   req?: Request;
@@ -36,4 +37,30 @@ export async function recordAudit(params: RecordAuditParams): Promise<void> {
   } catch (err) {
     logger.error({ err, action: params.action }, "Failed to write audit log");
   }
+}
+
+/**
+ * Read side for the Configuration History / Audit Log viewer (Settings §23).
+ * Admin-only (AUDIT_READ, gated in auditLog.routes.ts) — `before`/`after`
+ * can carry a full document snapshot, so this is never exposed to any role
+ * that couldn't already see that data through its own module's normal read.
+ */
+export async function listAuditLogs(req: Request) {
+  const { page, limit, skip, sort } = parsePagination(req, { timestamp: -1 });
+  const filter: Record<string, unknown> = {};
+  if (req.query.module) filter.module = req.query.module;
+  if (req.query.action) filter.action = req.query.action;
+  if (req.query.actorUserId) filter.actorUserId = req.query.actorUserId;
+  if (req.query.dateFrom || req.query.dateTo) {
+    filter.timestamp = {
+      ...(req.query.dateFrom ? { $gte: new Date(String(req.query.dateFrom)) } : {}),
+      ...(req.query.dateTo ? { $lte: new Date(String(req.query.dateTo)) } : {}),
+    };
+  }
+
+  const [items, total] = await Promise.all([
+    AuditLog.find(filter).sort(sort).skip(skip).limit(limit),
+    AuditLog.countDocuments(filter),
+  ]);
+  return { items, meta: buildMeta(page, limit, total) };
 }

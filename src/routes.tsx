@@ -20,6 +20,8 @@ import Settings from "./pages/Settings";
 import Attendance from "./pages/Attendance";
 import Notices from "./pages/Notices";
 import Reports from "./pages/Reports";
+import AdmissionResult from "./pages/AdmissionResult";
+import ChanceResults from "./pages/ChanceResults";
 
 // Shared (Admin + Director)
 import Exams from "./pages/Exams";
@@ -52,6 +54,8 @@ export function AppRoutes() {
         <Route path="/" element={<Index />} />
         <Route path="/students" element={<Students />} />
         <Route path="/admission" element={<Admission />} />
+        <Route path="/admission-result" element={<AdmissionResult />} />
+        <Route path="/chance-results" element={<ChanceResults />} />
         <Route path="/fees" element={<FeeManagement />} />
         <Route path="/routine" element={<Routine />} />
         <Route path="/books" element={<Books />} />
@@ -81,6 +85,8 @@ export function AppRoutes() {
         <Route path="/director" element={<DirectorDashboard />} />
         <Route path="/director/students" element={<DirectorStudents />} />
         <Route path="/director/results" element={<DirectorResults />} />
+        <Route path="/director/admission-result" element={<AdmissionResult />} />
+        <Route path="/director/chance-results" element={<ChanceResults />} />
         {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}
         <Route path="/director/attendance" element={<Navigate to="/director/results" replace />} />
       </Route>

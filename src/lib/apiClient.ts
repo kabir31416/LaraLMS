@@ -64,6 +64,17 @@ async function rawRequest<T>(path: string, options: RequestInit): Promise<{ body
   return { body, status: res.status };
 }
 
+async function rawFormRequest<T>(path: string, formData: FormData): Promise<{ body: Envelope<T>; status: number }> {
+  const headers = new Headers();
+  // No Content-Type here on purpose — the browser sets the correct
+  // multipart/form-data boundary itself; setting it manually breaks upload.
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  const res = await fetch(`${BASE_URL}${path}`, { method: "POST", headers, credentials: "include", body: formData });
+  const body = (await res.json().catch(() => ({ success: false, error: { code: "PARSE_ERROR", message: "Invalid server response" } }))) as Envelope<T>;
+  return { body, status: res.status };
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = rawRequest<{ accessToken: string }>("/auth/refresh", { method: "POST" })
@@ -82,7 +93,7 @@ async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
-async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<{ data: T; meta?: Record<string, unknown> }> {
   const { body, status } = await rawRequest<T>(path, options);
 
   if (status === 401 && !isRetry && path !== "/auth/login" && path !== "/auth/refresh") {
@@ -95,12 +106,41 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
   if (!body.success) {
     throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
   }
-  return body.data as T;
+  return { data: body.data as T, meta: body.meta };
+}
+
+async function formRequest<T>(path: string, formData: FormData, isRetry = false): Promise<{ data: T; meta?: Record<string, unknown> }> {
+  const { body, status } = await rawFormRequest<T>(path, formData);
+
+  if (status === 401 && !isRetry) {
+    const refreshed = hasRefreshCapability && (await tryRefresh());
+    if (refreshed) return formRequest<T>(path, formData, true);
+    setAccessToken(null);
+    onUnauthorized?.();
+  }
+
+  if (!body.success) {
+    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
+  }
+  return { data: body.data as T, meta: body.meta };
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, { method: "GET" }),
-  post: <T>(path: string, data?: unknown) => request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
-  patch: <T>(path: string, data?: unknown) => request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }),
-  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  get: <T>(path: string) => request<T>(path, { method: "GET" }).then((r) => r.data),
+  post: <T>(path: string, data?: unknown) => request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }).then((r) => r.data),
+  patch: <T>(path: string, data?: unknown) => request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }).then((r) => r.data),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }).then((r) => r.data),
+  /**
+   * Same as `get`, but also returns the response envelope's `meta` (page/
+   * limit/total/totalPages) — needed by pages that do real server-side
+   * pagination instead of the "fetch up to 100, filter client-side" pattern
+   * most existing list pages use (Admission Result feature).
+   */
+  getWithMeta: <T>(path: string) => request<T>(path, { method: "GET" }),
+  /**
+   * POST with a `multipart/form-data` body (file upload) — used by the
+   * Admission Result PDF import. Everything else about auth/refresh/error
+   * handling is identical to `post`, just without JSON-encoding the body.
+   */
+  postForm: <T>(path: string, formData: FormData) => formRequest<T>(path, formData).then((r) => r.data),
 };

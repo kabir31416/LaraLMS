@@ -20,13 +20,13 @@ export async function getById(id: string): Promise<AcademicSessionDoc> {
   return doc;
 }
 
-export async function create(req: Request, data: Pick<AcademicSessionDoc, "name" | "startDate" | "endDate">) {
+export async function create(req: Request, data: Pick<AcademicSessionDoc, "name" | "startDate" | "endDate"> & Partial<Pick<AcademicSessionDoc, "status">>) {
   const doc = await AcademicSession.create(data);
   await recordAudit({ req, action: "academic-session.create", module: "academic", targetCollection: "academicsessions", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<Pick<AcademicSessionDoc, "name" | "startDate" | "endDate">>) {
+export async function update(req: Request, id: string, patch: Partial<Pick<AcademicSessionDoc, "name" | "startDate" | "endDate" | "status">>) {
   const doc = await getById(id);
   const before = doc.toObject();
   Object.assign(doc, patch);

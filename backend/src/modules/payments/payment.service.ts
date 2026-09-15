@@ -61,6 +61,9 @@ export async function create(
   const student = await Student.findById(data.studentId);
   if (!student) throw ApiError.notFound("Student not found");
 
+  const paymentMethodService = await import("../paymentMethods/paymentMethod.service");
+  await paymentMethodService.assertActiveMethod(data.method);
+
   const paidAmount = data.amount - data.discount + data.fine;
   if (paidAmount < 0) throw ApiError.badRequest("Discount cannot exceed amount + fine");
 
