@@ -14,13 +14,17 @@ import { toast } from "sonner";
 import type { StudentImportListMeta, StudentImportSession } from "@/types/studentImport";
 
 /**
- * Bulk Student Upload — entry page ("এক্সেল থেকে শিক্ষার্থী যুক্ত করুন"),
- * reached from the Students page. Mirrors the existing Admission Result
- * (Chance Result) PDF-import UI's upload+history tab pattern
- * (ChanceResults.tsx / UploadImportTab.tsx / ImportHistoryTab.tsx), but for
- * Excel. Uploading here only parses/validates and creates a preview
- * session — no Student is created until an admin approves a row on the
- * preview page (/students/import/:sessionId).
+ * Bulk Student Upload — entry page ("এক্সেল থেকে ভর্তি"), reached from the
+ * Admission page (lives under Admission, not Student, since this is an
+ * admission workflow — the resulting rows only ever become Students via
+ * the same approval path a normal admission goes through). Mirrors the
+ * existing Admission Result (Chance Result) PDF-import UI's upload+history
+ * tab pattern (ChanceResults.tsx / UploadImportTab.tsx /
+ * ImportHistoryTab.tsx), but for Excel. Uploading here only parses/
+ * validates and creates a preview session — no Student is created until an
+ * admin approves a row on the preview page (/admission/import/:sessionId).
+ * The backend API path (/students/import/...) is unchanged — only the
+ * frontend route/UI location moved.
  */
 function friendlyError(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback;
@@ -85,7 +89,7 @@ export default function StudentImportUpload() {
       formData.append("file", file);
       const session = await api.postForm<StudentImportSession>("/students/import/upload", formData);
       toast.success("ফাইল পার্স করা হয়েছে — প্রিভিউ যাচাই করে অনুমোদন দিন।");
-      navigate(`/students/import/${session._id}`);
+      navigate(`/admission/import/${session._id}`);
     } catch (err) {
       toast.error(friendlyError(err, "আপলোড ব্যর্থ হয়েছে।"));
     } finally {
@@ -99,12 +103,12 @@ export default function StudentImportUpload() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/students")} title="শিক্ষার্থী তালিকায় ফিরে যান">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admission")} title="ভর্তি পাতায় ফিরে যান">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">এক্সেল থেকে শিক্ষার্থী যুক্ত করুন</h1>
-            <p className="text-sm text-muted-foreground">এক্সেল ফাইল আপলোড করুন, প্রতিটি সারি যাচাই করুন এবং একে একে অনুমোদন দিয়ে শিক্ষার্থী যুক্ত করুন।</p>
+            <h1 className="text-2xl font-bold">এক্সেল থেকে ভর্তি</h1>
+            <p className="text-sm text-muted-foreground">এক্সেল ফাইল আপলোড করুন, প্রতিটি সারি যাচাই করুন এবং একে একে অনুমোদন দিয়ে শিক্ষার্থী ভর্তি করুন।</p>
           </div>
         </div>
 
@@ -189,7 +193,7 @@ export default function StudentImportUpload() {
                           <TableCell className="text-center text-sm">{s.failedRows}</TableCell>
                           <TableCell><Badge variant="outline" className={badge.className}>{badge.label}</Badge></TableCell>
                           <TableCell className="text-right">
-                            <Button size="sm" variant="outline" onClick={() => navigate(`/students/import/${s._id}`)}>
+                            <Button size="sm" variant="outline" onClick={() => navigate(`/admission/import/${s._id}`)}>
                               <Eye className="h-3.5 w-3.5 mr-1" /> দেখুন
                             </Button>
                           </TableCell>

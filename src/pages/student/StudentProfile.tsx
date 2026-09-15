@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
 import { RELATIONS } from "@/types/student";
 import { useStudentSelf } from "./useStudentSelf";
 import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
@@ -167,7 +168,7 @@ export default function StudentProfile() {
         <Card>
           <CardHeader><CardTitle className="text-base">HSC তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5"><Label>প্রতিষ্ঠান</Label><Input value={form.hscInstitution} onChange={(e) => update("hscInstitution", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>প্রতিষ্ঠান</Label><HscInstitutionCombobox value={form.hscInstitution} onChange={(v) => update("hscInstitution", v)} /></div>
             <div className="space-y-1.5"><Label>বোর্ড</Label><Input value={form.hscBoard} onChange={(e) => update("hscBoard", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>পাসের সাল</Label><Input value={form.hscPassingYear} onChange={(e) => update("hscPassingYear", e.target.value)} placeholder="২০২৪" /></div>
             <div className="space-y-1.5"><Label>গ্রুপ</Label><Input value={form.hscGroup} onChange={(e) => update("hscGroup", e.target.value)} /></div>

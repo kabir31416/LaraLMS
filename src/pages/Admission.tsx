@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserPlus, Users, TrendingUp, CalendarDays, CalendarRange, UserCheck } from "lucide-react";
+import { UserPlus, Users, TrendingUp, CalendarDays, CalendarRange, UserCheck, FileSpreadsheet, ListChecks } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { useStudents } from "@/contexts/StudentContext";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
@@ -24,6 +25,7 @@ interface AdmissionSummary {
 }
 
 const Admission = () => {
+  const navigate = useNavigate();
   const { students } = useStudents();
   const [formOpen, setFormOpen] = useState(false);
   const [summary, setSummary] = useState<AdmissionSummary | null>(null);
@@ -48,9 +50,17 @@ const Admission = () => {
             <h1 className="text-2xl font-bold">ভর্তি</h1>
             <p className="text-sm text-muted-foreground">নতুন শিক্ষার্থী ভর্তি করুন</p>
           </div>
-          <Button onClick={() => setFormOpen(true)}>
-            <UserPlus className="mr-2 h-4 w-4" /> নতুন ভর্তি
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => navigate("/students")}>
+              <ListChecks className="mr-2 h-4 w-4" /> ভর্তি তালিকা
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/admission/import")}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel থেকে ভর্তি
+            </Button>
+            <Button onClick={() => setFormOpen(true)}>
+              <UserPlus className="mr-2 h-4 w-4" /> নতুন ভর্তি
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">

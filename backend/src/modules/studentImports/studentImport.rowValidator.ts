@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { Course } from "../courses/course.model";
 import { Student } from "../students/student.model";
 import { PaymentMethod } from "../paymentMethods/paymentMethod.model";
+import { HscInstitution } from "../hscInstitutions/hscInstitution.model";
 import { getSettings } from "../settings/settings.service";
 import type { ParsedRowResult } from "./studentImport.excel";
 import type { ParsedStudentRow } from "./studentImportRow.model";
@@ -57,6 +58,11 @@ function resolveCourse(courseName: string | undefined, lookup: Map<string, Cours
   return { message: `কোর্স "${courseName}" নিষ্ক্রিয় — সক্রিয় করুন অথবা সঠিক কোর্স ব্যবহার করুন।`, level: "ERROR" };
 }
 
+/** Trim + collapse whitespace + lowercase — must match hscInstitution.service.ts's own normalize() exactly, since this only reads that collection's normalizedName key. */
+function normalizeInstitutionName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise<ValidatedRow[]> {
   const [courseLookup, settings, activePaymentMethods] = await Promise.all([
     loadCourseLookup(),
@@ -64,6 +70,20 @@ export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise
     PaymentMethod.find({ status: "সক্রিয়" }).select("name"),
   ]);
   const activeMethodNames = new Set(activePaymentMethods.map((m) => m.name));
+
+  // Informational only (§8 of the spec) — a row whose HSC institution isn't
+  // yet in the master data is still fully approvable; it just becomes a new
+  // institution record at approval time (student.service.ts's
+  // syncHscInstitution), never here at preview/validation time.
+  const institutionNames = Array.from(
+    new Set(parsedRows.map((r) => r.parsed.hscInstitution).filter((n): n is string => !!n && n.trim().length > 0)),
+  );
+  const knownInstitutionNames = new Set<string>();
+  if (institutionNames.length > 0) {
+    const normalizedNames = institutionNames.map(normalizeInstitutionName);
+    const matches = await HscInstitution.find({ normalizedName: { $in: normalizedNames } }).select("normalizedName");
+    for (const m of matches) knownInstitutionNames.add(m.normalizedName);
+  }
 
   const phones = Array.from(new Set(parsedRows.map((r) => r.parsed.phone).filter((p): p is string => !!p)));
   const existingByPhone = new Map<string, string>();
@@ -128,6 +148,10 @@ export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise
         messages.push(`রোল/রেজিস্ট্রেশন নম্বর "${row.parsed.rollNumber}" ইতোমধ্যে ব্যবহৃত হয়েছে (গ্লোবাল রোল স্কোপ)।`);
         hasError = true;
       }
+    }
+
+    if (parsed.hscInstitution && parsed.hscInstitution.trim() && !knownInstitutionNames.has(normalizeInstitutionName(parsed.hscInstitution))) {
+      warnings.push(`"${parsed.hscInstitution}" নতুন HSC প্রতিষ্ঠান হিসেবে যুক্ত হবে (অনুমোদনের সময়)।`);
     }
 
     if (parsed.paid !== undefined && parsed.paid < 0) { messages.push('"ভর্তির সময় প্রদান" ঋণাত্মক হতে পারে না।'); hasError = true; }

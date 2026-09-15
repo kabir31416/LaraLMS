@@ -55,9 +55,9 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>
         <Route path="/" element={<Index />} />
         <Route path="/students" element={<Students />} />
-        <Route path="/students/import" element={<StudentImportUpload />} />
-        <Route path="/students/import/:sessionId" element={<StudentImportPreview />} />
         <Route path="/admission" element={<Admission />} />
+        <Route path="/admission/import" element={<StudentImportUpload />} />
+        <Route path="/admission/import/:sessionId" element={<StudentImportPreview />} />
         <Route path="/admission-result" element={<AdmissionResult />} />
         <Route path="/chance-results" element={<ChanceResults />} />
         <Route path="/fees" element={<FeeManagement />} />

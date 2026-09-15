@@ -142,6 +142,9 @@ export const listStudentsQuerySchema = z.object({
     batchId: z.string().optional(), // also accepts "unassigned"
     directorId: z.string().optional(),
     dueOnly: z.enum(["true", "false"]).optional(),
+    dueStatus: z.enum(["all", "has", "none"]).optional(),
+    hscInstitution: z.string().optional(),
+    birthdayToday: z.enum(["true", "false"]).optional(),
     profileStatus: z.enum(["incomplete", "complete"]).optional(),
     admissionRollStatus: z.enum(["added", "missing"]).optional(),
     sortBy: z.string().optional(),

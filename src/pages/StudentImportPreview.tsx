@@ -22,7 +22,7 @@ import type { PopulatedStudentRef, StudentImportListMeta, StudentImportRow, Stud
 
 /**
  * Bulk Student Upload — preview + individual row approval
- * (/students/import/:importSessionId). This is the ONLY page that can turn
+ * (/admission/import/:sessionId). This is the ONLY page that can turn
  * a previewed row into a real Student — it never trusts anything cached in
  * this component; every approve/reject re-fetches the row's authoritative
  * state from the backend (the backend re-validates on every approve too —
@@ -105,7 +105,7 @@ export default function StudentImportPreview() {
     return <Navigate to="/login" replace />;
   }
   if (!sessionId) {
-    return <Navigate to="/students/import" replace />;
+    return <Navigate to="/admission/import" replace />;
   }
 
   const replaceRow = (updated: StudentImportRow) => {
@@ -161,7 +161,7 @@ export default function StudentImportPreview() {
     <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/students/import")} title="আপলোড পাতায় ফিরে যান">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/admission/import")} title="আপলোড পাতায় ফিরে যান">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="min-w-0">

@@ -11,6 +11,26 @@ import { toAsciiDigits } from "../../common/utils/digits";
 import * as guardianService from "../guardians/guardian.service";
 
 /**
+ * `hscInstitution` mirrors HscInstitution master data by name, same
+ * established convention as Course/MaterialType/PaymentMethod (Bulk Student
+ * Upload spec §5-§8) — never a ref, so a later rename of the master record
+ * never rewrites an already-admitted student's history. Called from both
+ * create() and applyPatch() (used by both the normal admin edit and the
+ * student's own self-edit), so every entry point that can set this field —
+ * including bulk-import's approveRow(), which calls create() below — ends
+ * up registering/reusing the same master-data record. Mutates the body/patch
+ * in place so the canonical (first-registered) spelling is what actually
+ * gets stored on the Student, not whatever casing/spacing the caller typed.
+ */
+async function syncHscInstitution(body: Record<string, unknown>): Promise<void> {
+  if (typeof body.hscInstitution === "string" && body.hscInstitution.trim()) {
+    const hscInstitutionService = await import("../hscInstitutions/hscInstitution.service");
+    const institution = await hscInstitutionService.getOrCreateByName(body.hscInstitution);
+    body.hscInstitution = institution.name;
+  }
+}
+
+/**
  * No student-create/update path here provisions a Portal login — there is
  * no login account for a student at all. The Student Portal authenticates
  * by matching phone + Roll Number directly against the live Student record
@@ -119,6 +139,15 @@ async function withGuardians(docs: StudentDoc[]): Promise<Record<string, unknown
  * Added/Missing against the same base filter a list() call is using
  * (Admission Result feature §11).
  */
+/** yyyy-mm-dd -> "-MM-DD" (2-digit) suffix for a same-day-and-month-any-year `dob` match — see the birthdayToday filter below. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function buildStudentFilter(req: Request): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};
   if (req.query.course) filter.course = req.query.course;
@@ -126,7 +155,27 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
   if (req.query.batchId === "unassigned") filter.currentBatchId = { $exists: false };
   else if (req.query.batchId) filter.currentBatchId = req.query.batchId;
-  if (req.query.dueOnly === "true") filter.due = { $gt: 0 };
+
+  // dueStatus is the 3-state successor to the older boolean dueOnly (kept for
+  // backward compatibility — nothing in this codebase currently sends it,
+  // but it's cheap to keep honoring).
+  if (req.query.dueStatus === "has" || req.query.dueOnly === "true") filter.due = { $gt: 0 };
+  else if (req.query.dueStatus === "none") filter.due = { $lte: 0 };
+
+  // Case/whitespace-insensitive exact match against the HSC institution's
+  // canonical master-data name — covers both newly-synced records (see
+  // syncHscInstitution) and any pre-existing free-text spelling variance.
+  if (typeof req.query.hscInstitution === "string" && req.query.hscInstitution.trim()) {
+    filter.hscInstitution = new RegExp(`^${escapeRegex(req.query.hscInstitution.trim())}$`, "i");
+  }
+
+  // Same day-and-month as today, any birth year — dob is stored as a plain
+  // "yyyy-mm-dd" string (student.model.ts), so this is a simple suffix
+  // match, not a date-arithmetic query.
+  if (req.query.birthdayToday === "true") {
+    const today = new Date();
+    filter.dob = new RegExp(`-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}$`);
+  }
 
   if (req.query.directorId) {
     const { Batch } = await import("../batches/batch.model");
@@ -154,6 +203,49 @@ export async function list(req: Request) {
   ]);
   const items = await withGuardians(docs);
   return { items, meta: buildMeta(page, limit, total) };
+}
+
+/**
+ * Backs the Student List's Print/Export actions — the same filter/search
+ * logic as list() (so "print/export respects every active filter" holds by
+ * construction, not by keeping two filter-building implementations in
+ * sync), but returns every matching row in one shot instead of one page, so
+ * "export exactly the 75 filtered students, not all 1000" is possible
+ * without the frontend ever fetching the full unfiltered collection itself.
+ * Capped defensively rather than truly unbounded — a print/export click is
+ * still one request/response cycle, not a background job.
+ */
+const EXPORT_MAX_ROWS = 2000;
+
+export async function exportList(req: Request): Promise<Record<string, unknown>[]> {
+  const filter = await buildStudentFilter(req);
+  Object.assign(filter, buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]));
+
+  const docs = await Student.find(filter).sort({ name: 1 }).limit(EXPORT_MAX_ROWS);
+  const withG = await withGuardians(docs);
+
+  const batchIds = [...new Set(docs.map((d) => d.currentBatchId).filter(Boolean).map((id) => String(id)))];
+  const { Batch } = await import("../batches/batch.model");
+  const batches = batchIds.length ? await Batch.find({ _id: { $in: batchIds } }).select("name") : [];
+  const batchNameById = new Map(batches.map((b) => [String(b._id), b.name]));
+
+  return withG.map((s) => {
+    const row = s as Record<string, unknown> & { currentBatchId?: unknown };
+    return {
+      id: String(row._id),
+      name: row.name,
+      rollNumber: row.currentRollNumber,
+      registrationId: row.registrationId,
+      phone: row.phone,
+      guardianMobile: row.guardianMobile,
+      dob: row.dob,
+      course: row.course,
+      batchName: row.currentBatchId ? batchNameById.get(String(row.currentBatchId)) : undefined,
+      hscInstitution: row.hscInstitution,
+      due: row.due,
+      status: row.status,
+    };
+  });
 }
 
 /** Total/Added/Missing counts for the Admission Result page's summary cards — always the full three-way breakdown of whatever batch/course/director scope is selected, independent of any admissionRollStatus filter applied to the list itself (Admission Result feature §11). */
@@ -328,6 +420,7 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
 
   const registrationId = await generateRegistrationId();
   const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
+  await syncHscInstitution(rest);
   const doc = await Student.create({
     ...rest,
     registrationId,
@@ -416,6 +509,7 @@ async function applyCourseIdIfPresent(doc: StudentDoc, patch: Record<string, unk
 async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, unknown> & GuardianInline) {
   const before = doc.toObject();
 
+  await syncHscInstitution(patch);
   await applyRollNumberIfPresent(doc, patch);
   const courseChanged = await applyCourseIdIfPresent(doc, patch);
   const { rollNumber: _rollNumber, courseId: _courseId, ...rest } = patch;

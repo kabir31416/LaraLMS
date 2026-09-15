@@ -9,6 +9,7 @@ import subjectRoutes from "../modules/subjects/subject.routes";
 import lectureRoutes from "../modules/lectures/lecture.routes";
 import studentRoutes from "../modules/students/student.routes";
 import studentImportRoutes from "../modules/studentImports/studentImport.routes";
+import hscInstitutionRoutes from "../modules/hscInstitutions/hscInstitution.routes";
 import guardianRoutes from "../modules/guardians/guardian.routes";
 import batchRoutes from "../modules/batches/batch.routes";
 import staffRoutes from "../modules/staff/staff.routes";
@@ -48,6 +49,7 @@ router.use("/lectures", lectureRoutes);
 // are never at risk of a future "/students/:id"-style route swallowing them.
 router.use("/students/import", studentImportRoutes);
 router.use("/students", studentRoutes);
+router.use("/hsc-institutions", hscInstitutionRoutes);
 router.use("/guardians", guardianRoutes);
 router.use("/batches", batchRoutes);
 router.use("/staff", staffRoutes);

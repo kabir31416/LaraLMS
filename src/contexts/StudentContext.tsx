@@ -16,7 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
  * currentBatchId <-> batchId) so every existing page keeps reading the same
  * property names it always has.
  */
-interface ApiStudent {
+export interface ApiStudent {
   _id: string;
   registrationId: string;
   currentRollNumber?: string;
@@ -69,7 +69,8 @@ interface ApiStudent {
   guardianAddress?: string;
 }
 
-function fromApi(doc: ApiStudent): Student {
+/** Exported so the Student List page (Students.tsx) can map its own server-paginated/filtered fetch through the exact same field translation, without duplicating it or routing that fetch through this context's own 100-row-capped global list. */
+export function fromApi(doc: ApiStudent): Student {
   return {
     id: doc._id,
     studentId: doc.registrationId,

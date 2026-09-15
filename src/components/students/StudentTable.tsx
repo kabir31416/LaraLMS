@@ -19,7 +19,6 @@ import {
 import { Eye, Pencil, Trash2, MoreVertical } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
-import { useStaff } from "@/contexts/StaffContext";
 
 interface StudentTableProps {
   students: Student[];
@@ -27,10 +26,21 @@ interface StudentTableProps {
   onDelete: (id: string) => void;
 }
 
+/** dd MMM yyyy from a "yyyy-mm-dd" dob string, without pulling in date-fns just for this — malformed/absent values fall back to "—". */
+function formatDob(dob?: string): string {
+  if (!dob) return "—";
+  const parts = dob.split("-");
+  if (parts.length !== 3) return dob;
+  const [y, m, d] = parts;
+  const MONTHS = ["জানু", "ফেব্রু", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্ট", "অক্টো", "নভে", "ডিসে"];
+  const monthIdx = Number(m) - 1;
+  if (Number.isNaN(monthIdx) || monthIdx < 0 || monthIdx > 11) return dob;
+  return `${Number(d)} ${MONTHS[monthIdx]} ${y}`;
+}
+
 export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) {
   const navigate = useNavigate();
   const { batches } = useBatches();
-  const { getStaff } = useStaff();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
 
   if (students.length === 0) {
@@ -51,10 +61,9 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
             <TableHead>রোল</TableHead>
             <TableHead>নাম</TableHead>
             <TableHead className="hidden lg:table-cell">ব্যাচ</TableHead>
-            <TableHead className="hidden lg:table-cell">সময়</TableHead>
-            <TableHead className="hidden md:table-cell">রুম</TableHead>
-            <TableHead className="hidden xl:table-cell">ডিরেক্টর</TableHead>
             <TableHead>মোবাইল</TableHead>
+            <TableHead className="hidden md:table-cell">অভিভাবকের নম্বর</TableHead>
+            <TableHead className="hidden xl:table-cell">জন্মতারিখ</TableHead>
             <TableHead className="text-right">বকেয়া</TableHead>
             <TableHead>স্ট্যাটাস</TableHead>
             <TableHead className="w-[60px]"></TableHead>
@@ -63,7 +72,6 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
         <TableBody>
           {students.map((student) => {
             const batch = getBatchByStudent(student.batchId);
-            const directorName = batch?.directorId ? getStaff(batch.directorId)?.name : undefined;
             return (
               <TableRow
                 key={student.id}
@@ -85,10 +93,9 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                 <TableCell className="hidden lg:table-cell text-xs">
                   {batch ? batch.name : <span className="text-muted-foreground italic">Batch assigned হয়নি</span>}
                 </TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{batch?.batchTime || "—"}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm">{batch?.roomNumber || "—"}</TableCell>
-                <TableCell className="hidden xl:table-cell text-sm">{directorName || "—"}</TableCell>
                 <TableCell className="text-sm">{student.mobile}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm">{student.guardianMobile || "—"}</TableCell>
+                <TableCell className="hidden xl:table-cell text-sm">{formatDob(student.dob)}</TableCell>
                 <TableCell className="text-right">
                   {student.due > 0 ? (
                     <span className="text-destructive font-semibold text-sm">৳ {student.due.toLocaleString("bn-BD")}</span>
