@@ -8,6 +8,7 @@ import courseRoutes from "../modules/courses/course.routes";
 import subjectRoutes from "../modules/subjects/subject.routes";
 import lectureRoutes from "../modules/lectures/lecture.routes";
 import studentRoutes from "../modules/students/student.routes";
+import studentImportRoutes from "../modules/studentImports/studentImport.routes";
 import guardianRoutes from "../modules/guardians/guardian.routes";
 import batchRoutes from "../modules/batches/batch.routes";
 import staffRoutes from "../modules/staff/staff.routes";
@@ -43,6 +44,9 @@ router.use("/sessions", academicSessionRoutes);
 router.use("/courses", courseRoutes);
 router.use("/subjects", subjectRoutes);
 router.use("/lectures", lectureRoutes);
+// Mounted before "/students" so its fixed-segment paths (e.g. /students/import/history)
+// are never at risk of a future "/students/:id"-style route swallowing them.
+router.use("/students/import", studentImportRoutes);
 router.use("/students", studentRoutes);
 router.use("/guardians", guardianRoutes);
 router.use("/batches", batchRoutes);

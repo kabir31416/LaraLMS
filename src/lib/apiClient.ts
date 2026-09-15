@@ -153,4 +153,29 @@ export const api = {
    * handling is identical to `post`, just without JSON-encoding the body.
    */
   postForm: <T>(path: string, formData: FormData) => formRequest<T>(path, formData).then((r) => r.data),
+  /**
+   * GET a binary response (e.g. the Bulk Student Upload .xlsx template) and
+   * trigger a browser download — the JSON envelope helpers above can't be
+   * used here since the endpoint returns the file bytes directly, not
+   * `{success,data}`. No 401-refresh retry (template download isn't worth
+   * the complexity); a stale token just surfaces as a toast-able error.
+   */
+  downloadFile: async (path: string, filename: string): Promise<void> => {
+    const headers = new Headers();
+    if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+    const res = await fetch(`${BASE_URL}${path}`, { headers, credentials: "include" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new ApiClientError(res.status, body?.error?.code ?? "UNKNOWN", describeError(body?.error?.message, body?.error?.fields));
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

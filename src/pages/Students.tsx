@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { UserPlus } from "lucide-react";
+import { UserPlus, FileSpreadsheet } from "lucide-react";
 import { useStudents } from "@/contexts/StudentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { StudentFilters } from "@/components/students/StudentFilters";
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
 
 const Students = () => {
+  const navigate = useNavigate();
   const { students, deleteStudent } = useStudents();
   const { batches } = useBatches();
   const [search, setSearch] = useState("");
@@ -68,9 +70,14 @@ const Students = () => {
             <h1 className="text-2xl font-bold">শিক্ষার্থী</h1>
             <p className="text-sm text-muted-foreground">মোট {students.length} জন শিক্ষার্থী</p>
           </div>
-          <Button onClick={() => { setEditStudent(null); setFormOpen(true); }}>
-            <UserPlus className="mr-2 h-4 w-4" /> নতুন ভর্তি
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/students/import")}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" /> এক্সেল থেকে শিক্ষার্থী যুক্ত করুন
+            </Button>
+            <Button onClick={() => { setEditStudent(null); setFormOpen(true); }}>
+              <UserPlus className="mr-2 h-4 w-4" /> নতুন ভর্তি
+            </Button>
+          </div>
         </div>
 
         <StudentFilters

@@ -22,6 +22,8 @@ import Notices from "./pages/Notices";
 import Reports from "./pages/Reports";
 import AdmissionResult from "./pages/AdmissionResult";
 import ChanceResults from "./pages/ChanceResults";
+import StudentImportUpload from "./pages/StudentImportUpload";
+import StudentImportPreview from "./pages/StudentImportPreview";
 
 // Shared (Admin + Director)
 import Exams from "./pages/Exams";
@@ -53,6 +55,8 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>
         <Route path="/" element={<Index />} />
         <Route path="/students" element={<Students />} />
+        <Route path="/students/import" element={<StudentImportUpload />} />
+        <Route path="/students/import/:sessionId" element={<StudentImportPreview />} />
         <Route path="/admission" element={<Admission />} />
         <Route path="/admission-result" element={<AdmissionResult />} />
         <Route path="/chance-results" element={<ChanceResults />} />
