@@ -1,37 +1,66 @@
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { useBooks } from "@/contexts/BookContext";
+import { api } from "@/lib/apiClient";
+import type { StudentMaterialHistoryRow } from "@/types/material";
 import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
 
 export default function StudentBooks() {
   const { user, student } = useStudentSelf();
-  const { getStudentIssues, books } = useBooks();
+  const [rows, setRows] = useState<StudentMaterialHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!student) return;
+    api.get<StudentMaterialHistoryRow[]>(`/materials/students/${student.id}/history`)
+      .then(setRows)
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [student]);
+
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
-  const issues = getStudentIssues(student.id);
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">আমার বই</h1>
-        <Card><CardHeader><CardTitle className="text-base">ইস্যু ইতিহাস</CardTitle></CardHeader>
+        <h1 className="text-2xl font-bold">আমার ম্যাটেরিয়াল</h1>
+        <Card>
+          <CardHeader><CardTitle className="text-base">বিতরণ ইতিহাস</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>বই</TableHead><TableHead>সংখ্যা</TableHead><TableHead>ইস্যু তারিখ</TableHead><TableHead>স্ট্যাটাস</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>তারিখ</TableHead>
+                  <TableHead>ম্যাটেরিয়াল</TableHead>
+                  <TableHead>টাইপ</TableHead>
+                  <TableHead>পরিমাণ</TableHead>
+                  <TableHead>Free/Paid</TableHead>
+                  <TableHead>মূল্য</TableHead>
+                  <TableHead>বিতরণকারী</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {issues.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">কোনো বই ইস্যু হয়নি</TableCell></TableRow> :
-                  issues.map((i) => {
-                    const book = books.find((b) => b.id === i.bookId);
-                    return <TableRow key={i.id}>
-                      <TableCell className="font-medium">{book?.name || "—"}</TableCell>
-                      <TableCell>{i.quantity}</TableCell>
-                      <TableCell>{i.issueDate}</TableCell>
-                      <TableCell><Badge variant="outline">{i.status}</Badge></TableCell>
-                    </TableRow>;
-                  })}
+                {loading ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">কোনো ম্যাটেরিয়াল বিতরণ করা হয়নি</TableCell></TableRow>
+                ) : (
+                  rows.map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{r.date}</TableCell>
+                      <TableCell className="font-medium">{r.materialName}</TableCell>
+                      <TableCell><Badge variant="outline">{r.materialType}</Badge></TableCell>
+                      <TableCell>{r.quantity}</TableCell>
+                      <TableCell>{r.isPaid ? "Paid" : "Free"}</TableCell>
+                      <TableCell>{r.isPaid ? `৳ ${r.lineTotal}` : "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{r.distributedBy}</TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

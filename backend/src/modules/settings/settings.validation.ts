@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PUBLIC_INFO_ALLOWED_FIELDS, PUBLIC_RESULTS_ALLOWED_FIELDS } from "./settings.model";
+import { DUPLICATE_DISTRIBUTION_RULES, PUBLIC_INFO_ALLOWED_FIELDS, PUBLIC_RESULTS_ALLOWED_FIELDS } from "./settings.model";
 
 export const updateSettingsSchema = z.object({
   body: z
@@ -58,6 +58,15 @@ const printSchema = z.object({
   signatureLabel: z.string().trim().max(60).optional(),
   paperSize: z.enum(["A4", "Letter"]).optional(),
   showLogoOnDocuments: z.boolean().optional(),
+});
+
+export const updateMaterialSettingsSchema = z.object({
+  body: z
+    .object({
+      duplicateDistributionRule: z.enum(DUPLICATE_DISTRIBUTION_RULES).optional(),
+      defaultMinimumStock: z.number().min(0).optional(),
+    })
+    .strict(),
 });
 
 export const updateInstitutionSettingsSchema = z.object({

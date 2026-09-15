@@ -17,6 +17,7 @@ import { PublicInfoTab } from "@/components/settings/PublicInfoTab";
 import { PublicMarksheetTab } from "@/components/settings/PublicMarksheetTab";
 import { InstitutionTab } from "@/components/settings/InstitutionTab";
 import { FinanceTab } from "@/components/settings/FinanceTab";
+import { MaterialsTab } from "@/components/settings/MaterialsTab";
 import { ResultSettingsTab } from "@/components/settings/ResultSettingsTab";
 import { StudentSettingsTab } from "@/components/settings/StudentSettingsTab";
 import { AuditLogTab } from "@/components/settings/AuditLogTab";
@@ -27,7 +28,7 @@ import { AuditLogTab } from "@/components/settings/AuditLogTab";
  * (প্রতিষ্ঠান/শিক্ষার্থী/ফলাফল/পাবলিক/অডিট) sections behind a left-hand
  * category nav, per the "don't make one giant settings page" requirement.
  */
-type Section = "institution" | "academic" | "student" | "result" | "finance" | "classExams" | "public" | "audit";
+type Section = "institution" | "academic" | "student" | "result" | "finance" | "materials" | "classExams" | "public" | "audit";
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: "institution", label: "প্রতিষ্ঠান" },
@@ -35,6 +36,7 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: "student", label: "শিক্ষার্থী" },
   { key: "result", label: "ফলাফল" },
   { key: "finance", label: "ফিন্যান্স" },
+  { key: "materials", label: "ম্যাটেরিয়াল" },
   { key: "classExams", label: "ক্লাস / এক্সাম" },
   { key: "public", label: "পাবলিক" },
   { key: "audit", label: "অডিট লগ" },
@@ -103,6 +105,7 @@ export default function Settings() {
             {section === "student" && <StudentSettingsTab />}
             {section === "result" && <ResultSettingsTab />}
             {section === "finance" && <FinanceTab />}
+            {section === "materials" && <MaterialsTab />}
             {section === "classExams" && <ClassExamsTab />}
             {section === "audit" && <AuditLogTab />}
 

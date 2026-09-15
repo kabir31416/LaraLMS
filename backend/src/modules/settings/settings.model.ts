@@ -133,3 +133,24 @@ const publicResultsSettingsSchema = new Schema<PublicResultsSettingsDoc>(
 );
 
 export const PublicResultsSettings = model<PublicResultsSettingsDoc>("PublicResultsSettings", publicResultsSettingsSchema);
+
+// -------------------- Material Settings (Coaching Material Inventory §21) --------------------
+
+export const DUPLICATE_DISTRIBUTION_RULES = ["allow", "warn", "block"] as const;
+
+export interface MaterialSettingsDoc extends Document {
+  /** §8 — "allow" never checks, "warn" (default) surfaces a warning but still lets an admin distribute again, "block" refuses outright. */
+  duplicateDistributionRule: (typeof DUPLICATE_DISTRIBUTION_RULES)[number];
+  /** Pre-filled as the suggested Minimum Stock Alert on a new Material's Add form — never applied retroactively to existing materials. */
+  defaultMinimumStock: number;
+}
+
+const materialSettingsSchema = new Schema<MaterialSettingsDoc>(
+  {
+    duplicateDistributionRule: { type: String, enum: DUPLICATE_DISTRIBUTION_RULES, default: "warn" },
+    defaultMinimumStock: { type: Number, default: 0, min: 0 },
+  },
+  { timestamps: true },
+);
+
+export const MaterialSettings = model<MaterialSettingsDoc>("MaterialSettings", materialSettingsSchema);

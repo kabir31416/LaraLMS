@@ -1,6 +1,6 @@
 import { Schema, model, Document, Types } from "mongoose";
 
-export const TRANSACTION_SOURCES = ["manual", "student_fee", "admission_fee", "book_sale", "book_issue", "exam_fee"] as const;
+export const TRANSACTION_SOURCES = ["manual", "student_fee", "admission_fee", "material_sale", "exam_fee"] as const;
 export const PAYMENT_METHODS = ["নগদ", "বিকাশ", "নগদ (মোবাইল)", "রকেট", "ব্যাংক", "অন্যান্য"] as const;
 
 export interface IncomeEntryDoc extends Document {

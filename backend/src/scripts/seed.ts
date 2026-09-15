@@ -8,11 +8,13 @@ import { env } from "../config/env";
 import { Role } from "../modules/rbac/role.model";
 import { User } from "../modules/users/user.model";
 import { PaymentMethod } from "../modules/paymentMethods/paymentMethod.model";
+import { MaterialType } from "../modules/materialTypes/materialType.model";
 import { DEFAULT_ROLE_PERMISSIONS } from "../modules/rbac/permissions";
 import { hashPassword } from "../common/utils/password";
 import { logger } from "../logger/logger";
 
 const DEFAULT_PAYMENT_METHODS = ["নগদ", "বিকাশ", "নগদ (মোবাইল)", "রকেট", "ব্যাংক", "অন্যান্য"];
+const DEFAULT_MATERIAL_TYPES = ["Lecture Sheet", "Class Note", "Model Test", "Question Bank", "Handout", "Suggestion", "Other"];
 
 async function seedRoles() {
   const roleDocs = new Map<string, string>();
@@ -59,11 +61,23 @@ async function seedPaymentMethods() {
   logger.info(`Seeded ${DEFAULT_PAYMENT_METHODS.length} default payment methods.`);
 }
 
+/** Same idempotent, empty-collection-only convention as seedPaymentMethods — never touches an existing deployment's material types. */
+async function seedMaterialTypes() {
+  const count = await MaterialType.countDocuments();
+  if (count > 0) {
+    logger.info("Material types already exist — skipping seed.");
+    return;
+  }
+  await MaterialType.insertMany(DEFAULT_MATERIAL_TYPES.map((name, i) => ({ name, displayOrder: i })));
+  logger.info(`Seeded ${DEFAULT_MATERIAL_TYPES.length} default material types.`);
+}
+
 async function run() {
   await connectDB();
   const roles = await seedRoles();
   await seedAdmin(roles.get("admin")!);
   await seedPaymentMethods();
+  await seedMaterialTypes();
   await disconnectDB();
   logger.info("Seed complete.");
 }

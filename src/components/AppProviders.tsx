@@ -9,7 +9,7 @@ import { PaymentProvider } from "@/contexts/PaymentContext";
 import { BatchProvider } from "@/contexts/BatchContext";
 import { RoutineProvider } from "@/contexts/RoutineContext";
 import { BranchProvider } from "@/contexts/BranchContext";
-import { BookProvider } from "@/contexts/BookContext";
+import { MaterialProvider } from "@/contexts/MaterialContext";
 import { AccountsProvider } from "@/contexts/AccountsContext";
 import { BranchLedgerProvider } from "@/contexts/BranchLedgerContext";
 import { AttendanceProvider } from "@/contexts/AttendanceContext";
@@ -23,7 +23,7 @@ const queryClient = new QueryClient();
  * Single flattened provider tree. Order matters:
  *   Auth → StudentSelf (needs only Auth; the Student Portal's one call) →
  *   Academic (master data) → Staff → Student → Payment (needs Student)
- *   → Batch (needs staff+student) → Routine/Branch/Book/Accounts/
+ *   → Batch (needs staff+student) → Routine/Branch/Material/Accounts/
  *   BranchLedger (need Branch) → Attendance/Notice (feature layers)
  *
  * There is no AccountsAutoBridge component anymore — payments are mirrored
@@ -43,7 +43,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
                     <BatchProvider>
                       <RoutineProvider>
                         <BranchProvider>
-                          <BookProvider>
+                          <MaterialProvider>
                             <AccountsProvider>
                               <BranchLedgerProvider>
                                 <AttendanceProvider>
@@ -55,7 +55,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
                                 </AttendanceProvider>
                               </BranchLedgerProvider>
                             </AccountsProvider>
-                          </BookProvider>
+                          </MaterialProvider>
                         </BranchProvider>
                       </RoutineProvider>
                     </BatchProvider>

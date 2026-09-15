@@ -4,6 +4,7 @@ import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
 import {
   updateInstitutionSettingsSchema,
+  updateMaterialSettingsSchema,
   updatePublicInfoSettingsSchema,
   updatePublicResultsSettingsSchema,
   updateSettingsSchema,
@@ -45,5 +46,8 @@ router.patch(
   validate(updatePublicResultsSettingsSchema),
   settingsController.updatePublicResultsSettings,
 );
+
+router.get("/material", settingsController.getMaterialSettings);
+router.patch("/material", requirePermission(PERMISSIONS.SETTINGS_MANAGE), validate(updateMaterialSettingsSchema), settingsController.updateMaterialSettings);
 
 export default router;

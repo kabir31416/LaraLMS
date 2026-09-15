@@ -50,7 +50,7 @@ const adminMenu = [
   { title: "স্টাফ", url: "/staff", icon: UserCog },
   { title: "ব্যাচ", url: "/batches", icon: Layers },
   { title: "শিক্ষক", url: "/teachers", icon: GraduationCap },
-  { title: "বই", url: "/books", icon: BookOpen },
+  { title: "ম্যাটেরিয়াল", url: "/books", icon: BookOpen },
   { title: "হিসাব", url: "/accounts", icon: Calculator },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
@@ -71,7 +71,7 @@ const studentMenu = [
   { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck },
   { title: "ফলাফল", url: "/student/results", icon: Award },
   { title: "পেমেন্ট", url: "/student/payments", icon: DollarSign },
-  { title: "বই", url: "/student/books", icon: BookOpen },
+  { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen },
   { title: "নোটিশ", url: "/student/notices", icon: Bell },
   { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video },
 ];

@@ -42,10 +42,6 @@ export async function update(req: Request, id: string, patch: Partial<BranchDoc>
 export async function remove(req: Request, id: string): Promise<void> {
   const doc = await getDocOrThrow(id);
 
-  const { BranchStock } = await import("../books/branchStock.model");
-  if (await BranchStock.exists({ branchId: id, quantity: { $gt: 0 } })) {
-    throw ApiError.conflict("This branch still has book stock — transfer or clear it first");
-  }
   const { IncomeEntry } = await import("../accounts/income.model");
   const { ExpenseEntry } = await import("../accounts/expense.model");
   const { BranchLedgerEntry } = await import("../accounts/branchLedger.model");

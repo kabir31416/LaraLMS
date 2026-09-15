@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Pencil, Phone, Mail, MapPin } from "lucide-react";
+import { ArrowLeft, Pencil, Phone, Mail, MapPin, Trophy } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
@@ -21,7 +21,7 @@ import { gradeFor } from "@/lib/grading";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 import { api } from "@/lib/apiClient";
 import type { ChanceResult } from "@/types/chanceResult";
-import { Trophy } from "lucide-react";
+import type { StudentMaterialHistoryRow } from "@/types/material";
 
 const StudentProfile = () => {
   const { id } = useParams();
@@ -37,6 +37,7 @@ const StudentProfile = () => {
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
   const [admissionHistory, setAdmissionHistory] = useState<ChanceResult[]>([]);
+  const [materialHistory, setMaterialHistory] = useState<StudentMaterialHistoryRow[]>([]);
 
   const student = getStudent(id || "");
 
@@ -70,6 +71,17 @@ const StudentProfile = () => {
     api.get<{ history: ChanceResult[] }>(`/admission-results/student/${student.id}`)
       .then((res) => { if (!cancelled) setAdmissionHistory(res.history); })
       .catch(() => { if (!cancelled) setAdmissionHistory([]); });
+    return () => { cancelled = true; };
+  }, [student]);
+
+  // Coaching Material Inventory distribution history — same direct-call
+  // reasoning as the Chance Result fetch above.
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    api.get<StudentMaterialHistoryRow[]>(`/materials/students/${student.id}/history`)
+      .then((rows) => { if (!cancelled) setMaterialHistory(rows); })
+      .catch(() => { if (!cancelled) setMaterialHistory([]); });
     return () => { cancelled = true; };
   }, [student]);
 
@@ -170,6 +182,7 @@ const StudentProfile = () => {
             <TabsTrigger value="attendance">উপস্থিতি</TabsTrigger>
             <TabsTrigger value="results">ফলাফল</TabsTrigger>
             <TabsTrigger value="admission">চান্স রেজাল্ট</TabsTrigger>
+            <TabsTrigger value="materials">ম্যাটেরিয়াল</TabsTrigger>
             <TabsTrigger value="payments">পেমেন্ট</TabsTrigger>
           </TabsList>
 
@@ -394,6 +407,44 @@ const StudentProfile = () => {
                 </Table>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Coaching Material Inventory — distribution history */}
+          <TabsContent value="materials">
+            <Card className="border-none shadow-sm">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>তারিখ</TableHead>
+                    <TableHead>ম্যাটেরিয়াল</TableHead>
+                    <TableHead>টাইপ</TableHead>
+                    <TableHead className="text-center">পরিমাণ</TableHead>
+                    <TableHead>Free/Paid</TableHead>
+                    <TableHead className="text-right">মূল্য</TableHead>
+                    <TableHead>বিতরণকারী</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {materialHistory.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">কোনো ম্যাটেরিয়াল বিতরণ করা হয়নি</TableCell></TableRow>
+                  ) : (
+                    materialHistory.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{r.date}</TableCell>
+                        <TableCell className="font-medium">{r.materialName}</TableCell>
+                        <TableCell><Badge variant="outline">{r.materialType}</Badge></TableCell>
+                        <TableCell className="text-center">{r.quantity}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={r.isPaid ? "" : "bg-info/10 text-info border-info/20"}>{r.isPaid ? "Paid" : "Free"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{r.isPaid ? `৳ ${r.lineTotal.toLocaleString()}` : "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.distributedBy}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
           </TabsContent>
 
           {/* Payment History */}

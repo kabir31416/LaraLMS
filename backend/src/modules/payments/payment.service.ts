@@ -53,7 +53,7 @@ export async function create(
     feeType: string;
     month?: string;
     note?: string;
-    source?: "admission" | "regular";
+    source?: "admission" | "regular" | "material";
     admissionFeeComponent?: number;
     courseFeeComponent?: number;
   },
@@ -80,18 +80,25 @@ export async function create(
     createdBy: req.user?.id,
   });
 
-  // Same due formula as student.service.ts's computeFees — kept local here
-  // rather than importing it, matching the enrollment module's convention of
-  // mutating Student directly instead of routing through another module's
-  // private helpers.
-  student.paid += paidAmount;
-  const isOneTime = student.feeType === "এককালীন";
-  const totalFee = isOneTime
-    ? student.totalCourseFee + student.admissionFee - student.discount
-    : student.admissionFee + student.monthlyFee * student.courseDuration - student.discount;
-  student.totalFee = totalFee;
-  student.due = totalFee - student.paid;
-  await student.save();
+  // A material payment is a real fee-collection event but is NOT part of
+  // tuition — the Coaching Material Inventory module (§6) reuses this
+  // function purely to get a real receipt + Payment-history row, and must
+  // never move the student's tuition due/paid/totalFee balance.
+  const isMaterialPayment = data.source === "material";
+  if (!isMaterialPayment) {
+    // Same due formula as student.service.ts's computeFees — kept local here
+    // rather than importing it, matching the enrollment module's convention of
+    // mutating Student directly instead of routing through another module's
+    // private helpers.
+    student.paid += paidAmount;
+    const isOneTime = student.feeType === "এককালীন";
+    const totalFee = isOneTime
+      ? student.totalCourseFee + student.admissionFee - student.discount
+      : student.admissionFee + student.monthlyFee * student.courseDuration - student.discount;
+    student.totalFee = totalFee;
+    student.due = totalFee - student.paid;
+    await student.save();
+  }
 
   await recordAudit({ req, action: "payment.create", module: "payments", targetCollection: "payments", targetId: String(doc._id), after: doc.toObject() });
 
@@ -100,19 +107,21 @@ export async function create(
   // happened to have the Accounts page open. Never blocks the payment
   // itself: a fresh install with no Branch yet just skips this until one
   // exists, and the (source, refId) unique index makes a retry a no-op.
+  // A material payment goes through this exact same universal mirror as
+  // every other fee type — no new branch-specific logic is introduced here.
   try {
     const defaultBranch = await Branch.findOne().sort({ createdAt: 1 });
     if (defaultBranch) {
       const isAdmission = data.source === "admission" || (data.note || "").includes("ভর্তি") || data.feeType === "এককালীন";
       await accountsService.recordAutoIncome({
         date: doc.date,
-        category: isAdmission ? "ভর্তি ফি" : "কোর্স ফি",
+        category: isMaterialPayment ? "ম্যাটেরিয়াল ফি" : isAdmission ? "ভর্তি ফি" : "কোর্স ফি",
         amount: paidAmount,
         branchId: String(defaultBranch._id),
         method: data.method as never,
         studentId: data.studentId,
         note: `রসিদ: ${receiptNo}${data.month ? ` (${data.month})` : ""}`,
-        source: isAdmission ? "admission_fee" : "student_fee",
+        source: isMaterialPayment ? "material_sale" : isAdmission ? "admission_fee" : "student_fee",
         refId: String(doc._id),
       });
     }

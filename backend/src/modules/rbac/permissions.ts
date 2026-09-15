@@ -65,9 +65,19 @@ export const PERMISSIONS = {
   NOTICES_MANAGE: "notices:manage",
   NOTICES_READ: "notices:read",
 
-  // Books
-  BOOKS_MANAGE: "books:manage",
-  BOOKS_READ_OWN: "books:read:own",
+  // Coaching Material Inventory & Student Distribution
+  MATERIALS_VIEW: "materials:view",
+  MATERIALS_CREATE: "materials:create",
+  MATERIALS_UPDATE: "materials:update",
+  MATERIALS_DEACTIVATE: "materials:deactivate",
+  MATERIALS_STOCK_ADD: "materials:stock:add",
+  MATERIALS_STOCK_ADJUST: "materials:stock:adjust",
+  MATERIALS_DISTRIBUTE: "materials:distribute",
+  MATERIALS_DISTRIBUTION_VIEW: "materials:distribution:view",
+  MATERIALS_DISTRIBUTION_REVERSE: "materials:distribution:reverse",
+  MATERIALS_REPORT_VIEW: "materials:report:view",
+  MATERIALS_READ_OWN: "materials:read:own",
+  MATERIAL_TYPES_MANAGE: "material-types:manage",
 
   // Branches
   BRANCHES_MANAGE: "branches:manage",
@@ -116,6 +126,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "stud
     PERMISSIONS.RESULTS_READ_OWN,
     PERMISSIONS.VIDEOS_READ,
     PERMISSIONS.NOTICES_READ,
-    PERMISSIONS.BOOKS_READ_OWN,
+    PERMISSIONS.MATERIALS_READ_OWN,
   ],
 };

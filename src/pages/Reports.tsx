@@ -5,7 +5,7 @@ import FeeCollectionReport from "@/components/reports/FeeCollectionReport";
 import DueReport from "@/components/reports/DueReport";
 import AttendanceReport from "@/components/reports/AttendanceReport";
 import ResultReport from "@/components/reports/ResultReport";
-import BookDistributionReport from "@/components/reports/BookDistributionReport";
+import MaterialDistributionReport from "@/components/reports/MaterialDistributionReport";
 import StaffReport from "@/components/reports/StaffReport";
 import BranchLedgerReport from "@/components/reports/BranchLedgerReport";
 
@@ -25,7 +25,7 @@ export default function Reports() {
             <TabsTrigger value="due">বকেয়া</TabsTrigger>
             <TabsTrigger value="attendance">উপস্থিতি</TabsTrigger>
             <TabsTrigger value="result">ফলাফল</TabsTrigger>
-            <TabsTrigger value="book">বই বিতরণ</TabsTrigger>
+            <TabsTrigger value="book">ম্যাটেরিয়াল বিতরণ</TabsTrigger>
             <TabsTrigger value="staff">স্টাফ</TabsTrigger>
             <TabsTrigger value="branch">ব্রাঞ্চ লেজার</TabsTrigger>
           </TabsList>
@@ -34,7 +34,7 @@ export default function Reports() {
           <TabsContent value="due" className="pt-4"><DueReport /></TabsContent>
           <TabsContent value="attendance" className="pt-4"><AttendanceReport /></TabsContent>
           <TabsContent value="result" className="pt-4"><ResultReport /></TabsContent>
-          <TabsContent value="book" className="pt-4"><BookDistributionReport /></TabsContent>
+          <TabsContent value="book" className="pt-4"><MaterialDistributionReport /></TabsContent>
           <TabsContent value="staff" className="pt-4"><StaffReport /></TabsContent>
           <TabsContent value="branch" className="pt-4"><BranchLedgerReport /></TabsContent>
         </Tabs>

@@ -1,5 +1,7 @@
 import { Request } from "express";
 import {
+  MaterialSettings,
+  MaterialSettingsDoc,
   PublicInfoSettings,
   PublicInfoSettingsDoc,
   PublicResultsSettings,
@@ -57,5 +59,18 @@ export async function updatePublicResultsSettings(req: Request, patch: Partial<P
     before,
     after: settings.toObject(),
   });
+  return settings;
+}
+
+export async function getMaterialSettings(): Promise<MaterialSettingsDoc> {
+  return getOrCreateSingleton(MaterialSettings, {} as MaterialSettingsDoc);
+}
+
+export async function updateMaterialSettings(req: Request, patch: Partial<MaterialSettingsDoc>): Promise<MaterialSettingsDoc> {
+  const settings = await getMaterialSettings();
+  const before = settings.toObject();
+  Object.assign(settings, patch);
+  await settings.save();
+  await recordAudit({ req, action: "settings.material.update", module: "settings", targetCollection: "materialsettings", targetId: String(settings._id), before, after: settings.toObject() });
   return settings;
 }
