@@ -253,28 +253,30 @@ export function MaterialsListTab() {
           ) : historyRows.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">কোনো স্টক মুভমেন্ট নেই</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>তারিখ</TableHead>
-                  <TableHead>ধরন</TableHead>
-                  <TableHead className="text-right">পরিবর্তন</TableHead>
-                  <TableHead className="text-right">আগে → পরে</TableHead>
-                  <TableHead>কারণ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {historyRows.map((h) => (
-                  <TableRow key={h.id}>
-                    <TableCell className="text-sm">{new Date(h.createdAt).toLocaleString("bn-BD")}</TableCell>
-                    <TableCell><Badge variant="outline">{h.movementType}</Badge></TableCell>
-                    <TableCell className={`text-right font-semibold ${h.quantity > 0 ? "text-success" : "text-destructive"}`}>{h.quantity > 0 ? `+${h.quantity}` : h.quantity}</TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">{h.previousStock} → {h.newStock}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{h.reason || "—"}</TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>তারিখ</TableHead>
+                    <TableHead>ধরন</TableHead>
+                    <TableHead className="text-right">পরিবর্তন</TableHead>
+                    <TableHead className="text-right">আগে → পরে</TableHead>
+                    <TableHead>কারণ</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {historyRows.map((h) => (
+                    <TableRow key={h.id}>
+                      <TableCell className="text-sm">{new Date(h.createdAt).toLocaleString("bn-BD")}</TableCell>
+                      <TableCell><Badge variant="outline">{h.movementType}</Badge></TableCell>
+                      <TableCell className={`text-right font-semibold ${h.quantity > 0 ? "text-success" : "text-destructive"}`}>{h.quantity > 0 ? `+${h.quantity}` : h.quantity}</TableCell>
+                      <TableCell className="text-right text-sm text-muted-foreground">{h.previousStock} → {h.newStock}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{h.reason || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </DialogContent>
       </Dialog>

@@ -64,3 +64,35 @@
     font-family: var(--font-sans);
   }
 }
+
+/**
+ * Print-only-this-element support for FeeManagement.tsx's Payment Receipt
+ * dialog. `window.print()` on the live page would otherwise print the
+ * dashboard/sidebar behind the dialog too (a Radix Dialog is a portal
+ * layered *over* the page's own DOM, not a replacement for it, and
+ * Tailwind's `print:hidden` only ever hides elements that carry that class
+ * — the sidebar/header never did). The classic fix: hide every element by
+ * default when printing, then re-reveal only the one marked
+ * `id="receipt-print"` and its descendants, and lift it out of the
+ * dialog's centered/fixed positioning so it prints as an ordinary
+ * top-of-page document instead of wherever it happened to sit on screen.
+ * Other pages' printing (Reports' printReport()) opens a separate, already
+ * self-contained window and never touches this rule.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-print,
+  #receipt-print * {
+    visibility: visible;
+  }
+  #receipt-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}

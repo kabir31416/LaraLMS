@@ -319,7 +319,7 @@ function ExamDetail({ exam, onBack }: { exam: ClassExam; onBack: () => void }) {
                     <div className="flex justify-between gap-3">
                       <div className="flex-1">
                         <p className="font-medium mb-2">{i + 1}. {q.text}</p>
-                        <ul className="grid grid-cols-2 gap-1 text-sm">
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
                           {(["A", "B", "C", "D"] as const).map((k) => {
                             const v = ({ A: q.optionA, B: q.optionB, C: q.optionC, D: q.optionD })[k];
                             if (!v) return null;
@@ -346,7 +346,7 @@ function ExamDetail({ exam, onBack }: { exam: ClassExam; onBack: () => void }) {
             {questions.map((q, i) => (
               <div key={q.id} className="border rounded-lg p-3">
                 <p className="font-medium mb-2">{i + 1}. {q.text}</p>
-                <ul className="grid grid-cols-2 gap-1 text-sm">
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
                   <li>A. {q.optionA}</li><li>B. {q.optionB}</li>
                   {q.optionC && <li>C. {q.optionC}</li>}{q.optionD && <li>D. {q.optionD}</li>}
                 </ul>
