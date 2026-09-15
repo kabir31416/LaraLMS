@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search } from "lucide-react";
-import { COURSES, SECTIONS } from "@/types/student";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
 
@@ -18,8 +18,6 @@ interface StudentFiltersProps {
   onCourseChange: (value: string) => void;
   batch: string;
   onBatchChange: (value: string) => void;
-  section: string;
-  onSectionChange: (value: string) => void;
   director: string;
   onDirectorChange: (value: string) => void;
   dueOnly: boolean;
@@ -33,13 +31,12 @@ export function StudentFilters({
   onCourseChange,
   batch,
   onBatchChange,
-  section,
-  onSectionChange,
   director,
   onDirectorChange,
   dueOnly,
   onDueOnlyChange,
 }: StudentFiltersProps) {
+  const { activeCourses } = useAcademic();
   const { batches } = useBatches();
   const { staff } = useStaff();
   const directors = staff.filter((s) => s.staffType === "Batch Director");
@@ -61,8 +58,8 @@ export function StudentFilters({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">সকল কোর্স</SelectItem>
-          {COURSES.map((c) => (
-            <SelectItem key={c} value={c}>{c}</SelectItem>
+          {activeCourses.map((c) => (
+            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -86,17 +83,6 @@ export function StudentFilters({
           <SelectItem value="all">সকল ডিরেক্টর</SelectItem>
           {directors.map((d) => (
             <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={section} onValueChange={onSectionChange}>
-        <SelectTrigger className="w-[140px]">
-          <SelectValue placeholder="সেকশন" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">সকল সেকশন</SelectItem>
-          {SECTIONS.map((s) => (
-            <SelectItem key={s} value={s}>{s}</SelectItem>
           ))}
         </SelectContent>
       </Select>

@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { UserSearch, Plus, Trash2, AlertTriangle, RotateCcw } from "lucide-react";
+import { UserSearch, Search, AlertTriangle, RotateCcw } from "lucide-react";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useMaterials } from "@/contexts/MaterialContext";
@@ -24,10 +24,8 @@ import { MaterialStudentPicker, PickedStudent } from "./MaterialStudentPicker";
 import type { DuplicateWarning, MaterialDistribution } from "@/types/material";
 import { toast } from "sonner";
 
-interface ItemRow { materialId: string; quantity: number }
-
 export function DistributionTab() {
-  const { activeCourses, activePaymentMethods } = useAcademic();
+  const { activePaymentMethods } = useAcademic();
   const { batches } = useBatches();
   const { materials, getMaterial } = useMaterials();
 
@@ -36,7 +34,9 @@ export function DistributionTab() {
   // ---- New Distribution ----
   const [pickerOpen, setPickerOpen] = useState(false);
   const [student, setStudent] = useState<PickedStudent | null>(null);
-  const [items, setItems] = useState<ItemRow[]>([]);
+  const [materialSearch, setMaterialSearch] = useState("");
+  // materialId -> quantity, for every checked material
+  const [selected, setSelected] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [collectPayment, setCollectPayment] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -44,16 +44,25 @@ export function DistributionTab() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const relevantMaterials = useMemo(
-    () => materials.filter((m) => m.status === "সক্রিয়" && (!student?.course || activeCourses.find((c) => c.id === m.courseId)?.name === student.course || true)),
-    [materials, student, activeCourses],
-  );
+  const visibleMaterials = useMemo(() => {
+    const q = materialSearch.trim().toLowerCase();
+    return materials.filter((m) => m.status === "সক্রিয়" && (!q || m.name.toLowerCase().includes(q) || m.materialType.toLowerCase().includes(q)));
+  }, [materials, materialSearch]);
 
-  const addRow = () => setItems((prev) => [...prev, { materialId: "", quantity: 1 }]);
-  const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx));
-  const updateRow = (idx: number, patch: Partial<ItemRow>) => setItems((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const toggleMaterial = (materialId: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (checked) next[materialId] = 1;
+      else delete next[materialId];
+      return next;
+    });
+  };
 
-  const validItems = items.filter((i) => i.materialId && i.quantity > 0);
+  const setQuantity = (materialId: string, quantity: number) => {
+    setSelected((prev) => ({ ...prev, [materialId]: quantity }));
+  };
+
+  const validItems = useMemo(() => Object.entries(selected).map(([materialId, quantity]) => ({ materialId, quantity })), [selected]);
   const totalPaid = validItems.reduce((sum, i) => {
     const m = getMaterial(i.materialId);
     return sum + (m?.isPaid ? m.price * i.quantity : 0);
@@ -73,7 +82,8 @@ export function DistributionTab() {
 
   const resetForm = () => {
     setStudent(null);
-    setItems([]);
+    setMaterialSearch("");
+    setSelected({});
     setNote("");
     setCollectPayment(true);
     setPaymentMethod("");
@@ -82,13 +92,11 @@ export function DistributionTab() {
 
   const validate = (): string | null => {
     if (!student) return "শিক্ষার্থী নির্বাচন করুন";
-    if (validItems.length === 0) return "কমপক্ষে একটি ম্যাটেরিয়াল যোগ করুন";
-    const seen = new Set<string>();
+    if (validItems.length === 0) return "কমপক্ষে একটি ম্যাটেরিয়াল নির্বাচন করুন";
     for (const i of validItems) {
-      if (seen.has(i.materialId)) return "একই ম্যাটেরিয়াল একাধিকবার যোগ করা হয়েছে";
-      seen.add(i.materialId);
       const m = getMaterial(i.materialId);
       if (!m) continue;
+      if (!i.quantity || i.quantity <= 0) return `"${m.name}" এর পরিমাণ শূন্যের বেশি হতে হবে`;
       if (m.currentStock === 0) return `"${m.name}" স্টকে নেই`;
       if (i.quantity > m.currentStock) return `"${m.name}" এর জন্য পর্যাপ্ত স্টক নেই — উপলব্ধ: ${m.currentStock}, অনুরোধ: ${i.quantity}`;
     }
@@ -122,6 +130,8 @@ export function DistributionTab() {
     }
   };
 
+  const selectedCount = validItems.length;
+
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={setTab}>
@@ -130,9 +140,9 @@ export function DistributionTab() {
           <TabsTrigger value="history">বিতরণ হিস্ট্রি</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="new" className="pt-4">
+        <TabsContent value="new" className="pt-4 space-y-4">
           <Card className="border-none shadow-sm">
-            <CardHeader><CardTitle className="text-base">শিক্ষার্থী</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">১. শিক্ষার্থী নির্বাচন করুন</CardTitle></CardHeader>
             <CardContent>
               {student ? (
                 <div className="flex items-center justify-between bg-muted/40 rounded-lg p-3">
@@ -150,82 +160,108 @@ export function DistributionTab() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-sm mt-4">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">ম্যাটেরিয়াল সমূহ</CardTitle>
-              <Button size="sm" variant="outline" onClick={addRow}><Plus className="h-4 w-4 mr-1" /> লাইন যোগ করুন</Button>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {items.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">এখনো কোনো ম্যাটেরিয়াল যোগ করা হয়নি</p>
-              ) : (
-                items.map((row, idx) => {
-                  const m = row.materialId ? getMaterial(row.materialId) : undefined;
-                  return (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Select value={row.materialId} onValueChange={(v) => updateRow(idx, { materialId: v })}>
-                        <SelectTrigger className="flex-1"><SelectValue placeholder="ম্যাটেরিয়াল নির্বাচন করুন" /></SelectTrigger>
-                        <SelectContent>
-                          {relevantMaterials.map((rm) => (
-                            <SelectItem key={rm.id} value={rm.id}>
-                              {rm.name} {rm.isPaid ? `(৳${rm.price})` : "(Free)"} — স্টক: {rm.currentStock}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input type="number" min={1} value={row.quantity} onChange={(e) => updateRow(idx, { quantity: Number(e.target.value) || 1 })} className="w-24" />
-                      {m && <Badge variant="outline" className="whitespace-nowrap">{m.isPaid ? `৳ ${m.price * row.quantity}` : "Free"}</Badge>}
-                      <Button size="icon" variant="ghost" className="text-destructive" onClick={() => removeRow(idx)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  );
-                })
-              )}
-
-              {warnings.length > 0 && (
-                <Alert className="bg-warning/10 border-warning/20">
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  <AlertDescription>
-                    <p className="font-medium text-warning mb-1">এই শিক্ষার্থীকে নিচের ম্যাটেরিয়াল(গুলো) আগে দেওয়া হয়েছে:</p>
-                    <ul className="space-y-1 text-sm">
-                      {warnings.map((w) => (
-                        <li key={w.materialId}>
-                          <span className="font-medium">{w.materialName}</span> — {w.previousDistributions.map((p) => `${p.date} (${p.quantity} পিস)`).join(", ")}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-xs text-muted-foreground mt-1">আবার বিতরণ করতে চাইলে সরাসরি নিশ্চিত করুন — এটি স্বয়ংক্রিয়ভাবে আটকানো হবে না।</p>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {totalPaid > 0 && (
-                <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">মোট পেইড পরিমাণ: <span className="text-primary">৳ {totalPaid.toLocaleString()}</span></p>
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked={collectPayment} onCheckedChange={(v) => setCollectPayment(!!v)} id="collect-payment" />
-                      <Label htmlFor="collect-payment" className="text-sm cursor-pointer">এখনই পেমেন্ট সংগ্রহ করুন</Label>
-                    </div>
-                  </div>
-                  {collectPayment && (
-                    <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                      <SelectTrigger className="max-w-xs"><SelectValue placeholder="পেমেন্ট পদ্ধতি নির্বাচন করুন" /></SelectTrigger>
-                      <SelectContent>{activePaymentMethods.map((pm) => (<SelectItem key={pm.id} value={pm.name}>{pm.name}</SelectItem>))}</SelectContent>
-                    </Select>
+          {student && (
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-base">২. ম্যাটেরিয়াল বেছে নিন</CardTitle>
+                <div className="relative pt-2">
+                  <Search className="absolute left-3 top-1/2 translate-y-[3px] -translate-x-0 h-4 w-4 text-muted-foreground" />
+                  <Input value={materialSearch} onChange={(e) => setMaterialSearch(e.target.value)} placeholder="নাম বা টাইপ দিয়ে খুঁজুন..." className="pl-9 max-w-sm" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="border rounded-lg divide-y max-h-[420px] overflow-y-auto">
+                  {visibleMaterials.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">কোনো ম্যাটেরিয়াল পাওয়া যায়নি</p>
+                  ) : (
+                    visibleMaterials.map((m) => {
+                      const checked = m.id in selected;
+                      const outOfStock = m.currentStock === 0;
+                      return (
+                        <label
+                          key={m.id}
+                          className={`flex items-center gap-3 p-3 transition-colors ${outOfStock ? "opacity-50" : "hover:bg-muted/40 cursor-pointer"}`}
+                        >
+                          <Checkbox checked={checked} disabled={outOfStock} onCheckedChange={(v) => toggleMaterial(m.id, !!v)} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{m.name}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <Badge variant="outline" className="text-xs">{m.materialType}</Badge>
+                              {m.isPaid ? <Badge variant="outline" className="text-xs">৳ {m.price}</Badge> : <Badge variant="outline" className="text-xs bg-info/10 text-info border-info/20">Free</Badge>}
+                              <span className={`text-xs ${outOfStock ? "text-destructive" : "text-muted-foreground"}`}>
+                                {outOfStock ? "স্টকে নেই" : `স্টক: ${m.currentStock}`}
+                              </span>
+                            </div>
+                          </div>
+                          {checked && (
+                            <Input
+                              type="number"
+                              min={1}
+                              max={m.currentStock}
+                              value={selected[m.id]}
+                              onClick={(e) => e.preventDefault()}
+                              onChange={(e) => setQuantity(m.id, Number(e.target.value) || 1)}
+                              className="w-20 shrink-0"
+                            />
+                          )}
+                        </label>
+                      );
+                    })
                   )}
                 </div>
-              )}
 
-              <div className="space-y-1.5">
-                <Label>নোট (ঐচ্ছিক)</Label>
-                <Input value={note} onChange={(e) => setNote(e.target.value)} />
-              </div>
+                {selectedCount > 0 && (
+                  <p className="text-sm text-muted-foreground">{selectedCount}টি ম্যাটেরিয়াল নির্বাচিত হয়েছে</p>
+                )}
 
-              <div className="flex justify-end">
-                <Button onClick={handleSubmitClick} disabled={submitting}>বিতরণ নিশ্চিত করুন</Button>
-              </div>
-            </CardContent>
-          </Card>
+                {warnings.length > 0 && (
+                  <Alert className="bg-warning/10 border-warning/20">
+                    <AlertTriangle className="h-4 w-4 text-warning" />
+                    <AlertDescription>
+                      <p className="font-medium text-warning mb-1">এই শিক্ষার্থীকে নিচের ম্যাটেরিয়াল(গুলো) আগে দেওয়া হয়েছে:</p>
+                      <ul className="space-y-1 text-sm">
+                        {warnings.map((w) => (
+                          <li key={w.materialId}>
+                            <span className="font-medium">{w.materialName}</span> — {w.previousDistributions.map((p) => `${p.date} (${p.quantity} পিস)`).join(", ")}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-muted-foreground mt-1">আবার বিতরণ করতে চাইলে সরাসরি নিশ্চিত করুন — এটি স্বয়ংক্রিয়ভাবে আটকানো হবে না।</p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {totalPaid > 0 && (
+                  <div className="border rounded-lg p-3 space-y-3 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">মোট পেইড পরিমাণ: <span className="text-primary">৳ {totalPaid.toLocaleString()}</span></p>
+                      <div className="flex items-center gap-2">
+                        <Checkbox checked={collectPayment} onCheckedChange={(v) => setCollectPayment(!!v)} id="collect-payment" />
+                        <Label htmlFor="collect-payment" className="text-sm cursor-pointer">এখনই পেমেন্ট সংগ্রহ করুন</Label>
+                      </div>
+                    </div>
+                    {collectPayment && (
+                      <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                        <SelectTrigger className="max-w-xs"><SelectValue placeholder="পেমেন্ট পদ্ধতি নির্বাচন করুন" /></SelectTrigger>
+                        <SelectContent>{activePaymentMethods.map((pm) => (<SelectItem key={pm.id} value={pm.name}>{pm.name}</SelectItem>))}</SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label>নোট (ঐচ্ছিক)</Label>
+                  <Input value={note} onChange={(e) => setNote(e.target.value)} />
+                </div>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSubmitClick} disabled={submitting || selectedCount === 0}>
+                    {selectedCount > 0 ? `${selectedCount}টি ম্যাটেরিয়াল বিতরণ করুন` : "বিতরণ করুন"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="pt-4">

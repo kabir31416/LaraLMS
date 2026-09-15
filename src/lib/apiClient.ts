@@ -75,6 +75,16 @@ async function rawFormRequest<T>(path: string, formData: FormData): Promise<{ bo
   return { body, status: res.status };
 }
 
+/** Appends which field(s) failed validation to the error message, so a toast never shows a bare "Invalid input" with no indication of what to fix. */
+function describeError(message: string | undefined, fields?: Record<string, string[]>): string {
+  const base = message ?? "Request failed";
+  if (!fields || Object.keys(fields).length === 0) return base;
+  const detail = Object.entries(fields)
+    .map(([field, msgs]) => `${field === "_" ? "" : field + ": "}${msgs.join(", ")}`)
+    .join("; ");
+  return `${base} — ${detail}`;
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = rawRequest<{ accessToken: string }>("/auth/refresh", { method: "POST" })
@@ -104,7 +114,7 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
   }
 
   if (!body.success) {
-    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
+    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", describeError(body.error?.message, body.error?.fields), body.error?.fields);
   }
   return { data: body.data as T, meta: body.meta };
 }
@@ -120,7 +130,7 @@ async function formRequest<T>(path: string, formData: FormData, isRetry = false)
   }
 
   if (!body.success) {
-    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
+    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", describeError(body.error?.message, body.error?.fields), body.error?.fields);
   }
   return { data: body.data as T, meta: body.meta };
 }
