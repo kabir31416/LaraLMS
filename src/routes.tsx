@@ -11,7 +11,6 @@ import Students from "./pages/Students";
 import Admission from "./pages/Admission";
 import StudentProfile from "./pages/StudentProfile";
 import FeeManagement from "./pages/FeeManagement";
-import Routine from "./pages/Routine";
 import Books from "./pages/Books";
 import Accounts from "./pages/Accounts";
 import StaffPage from "./pages/Staff";
@@ -61,7 +60,6 @@ export function AppRoutes() {
         <Route path="/admission-result" element={<AdmissionResult />} />
         <Route path="/chance-results" element={<ChanceResults />} />
         <Route path="/fees" element={<FeeManagement />} />
-        <Route path="/routine" element={<Routine />} />
         <Route path="/books" element={<Books />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/staff" element={<StaffPage />} />
