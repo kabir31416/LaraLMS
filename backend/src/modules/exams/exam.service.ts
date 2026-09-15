@@ -3,16 +3,18 @@ import { Types } from "mongoose";
 import { OfflineExam, OfflineExamDoc } from "./exam.model";
 import { OfflineResult } from "./result.model";
 import { Batch } from "../batches/batch.model";
-import { Student } from "../students/student.model";
-import { Subject } from "../subjects/subject.model";
-import { Lecture } from "../lectures/lecture.model";
+import { Student, StudentDoc } from "../students/student.model";
+import { Staff } from "../staff/staff.model";
+import { Subject, SubjectDoc } from "../subjects/subject.model";
+import { Lecture, LectureDoc } from "../lectures/lecture.model";
 import * as guardianService from "../guardians/guardian.service";
+import { getSettings, updateSettings } from "../settings/settings.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, parsePagination } from "../../common/utils/pagination";
 import { sendSms } from "../../common/utils/sms";
-import { env } from "../../config/env";
 import { PERMISSIONS } from "../rbac/permissions";
+import { RESULT_SMS_VARIABLES, ResultSmsVariable, renderTemplate, validateTemplatePlaceholders } from "./exam.smsTemplate";
 
 /** Batch Directors may only manage exams/results for batches they direct, unless they also hold a broad permission. */
 async function assertCanActOnBatch(req: Request, batchId: string): Promise<void> {
@@ -144,37 +146,84 @@ export async function listResults(req: Request) {
   return { items, meta: buildMeta(page, limit, total) };
 }
 
-/** yyyy-mm-dd (the format every date is stored in) -> dd-mm-yyyy (the format the guardian SMS uses). */
+/** yyyy-mm-dd (the format every date is stored in) -> dd-mm-yyyy (the format guardian SMS uses). */
 function formatDateForSms(dateStr: string): string {
   const [y, m, d] = dateStr.split("-");
   return y && m && d ? `${d}-${m}-${y}` : dateStr;
 }
 
+/** Highest-first grade band whose minPercent the percentage clears — Settings.gradeScale (settings.model.ts), never a separate hard-coded scale. */
+function computeGrade(percentage: number, gradeScale: { minPercent: number; grade: string }[]): string {
+  const sorted = [...gradeScale].sort((a, b) => b.minPercent - a.minPercent);
+  return sorted.find((band) => percentage >= band.minPercent)?.grade ?? "";
+}
+
 /**
- * The one guardian-SMS template for a Result Entry submission (Phase 5
- * §14). There's no existing Settings-driven template system to hook into
- * (checked: Settings only covers exams/grading/roll-number-scope), so this
- * is a single well-formed message rather than a configurable set — the
- * closing line is still adjustable per-deployment via SMS_SIGNATURE so it
- * isn't hard-coded to any one coaching centre's name.
+ * Every {{variable}} the Result SMS template system supports, resolved for
+ * one student's one result — see exam.smsTemplate.ts's RESULT_SMS_VARIABLES
+ * for the full list. Absent students get a textual "অনুপস্থিত" rather than
+ * blank numbers, and percentage/grade/result are left blank for them (there
+ * is nothing to grade).
  */
-function buildResultSms(input: {
-  studentName: string;
-  roll?: string;
-  subjectName: string;
-  lectureTitle: string;
+async function buildResultSmsVariables(input: {
+  student: StudentDoc;
+  subject: SubjectDoc;
+  lecture: LectureDoc;
+  exam: OfflineExamDoc;
+  batchName: string;
   marks: number | null;
-  fullMarks: number;
   attendance: "Present" | "Absent";
+  guardianName?: string;
   date: string;
-}): string {
-  const rollPart = input.roll ? ` (Roll: ${input.roll})` : "";
-  const dateBn = formatDateForSms(input.date);
-  const signature = env.SMS_SIGNATURE;
-  if (input.attendance === "Absent") {
-    return `প্রিয় অভিভাবক,\nআপনার সন্তান ${input.studentName}${rollPart} ${dateBn} তারিখের ${input.subjectName} ক্লাসের ${input.lectureTitle} পরীক্ষায় অনুপস্থিত ছিল।\n${signature}.`;
+}): Promise<Record<string, string>> {
+  const settings = await getSettings();
+  const isGraded = input.attendance === "Present" && input.marks !== null;
+
+  let obtainedMarks = "অনুপস্থিত";
+  let percentage = "";
+  let grade = "";
+  let result = "অনুপস্থিত";
+  if (isGraded && input.marks !== null) {
+    const pct = input.exam.fullMarks > 0 ? Math.round((input.marks / input.exam.fullMarks) * 100) : 0;
+    obtainedMarks = String(input.marks);
+    percentage = String(pct);
+    grade = computeGrade(pct, settings.gradeScale);
+    result = pct >= settings.passingPercentage ? "পাস" : "ফেল";
   }
-  return `প্রিয় অভিভাবক,\nআপনার সন্তান ${input.studentName}${rollPart} ${dateBn} তারিখের ${input.subjectName} ক্লাসের ${input.lectureTitle} পরীক্ষায় ${input.marks}/${input.fullMarks} পেয়েছে।\nউপস্থিতি: উপস্থিত।\n${signature}.`;
+
+  return {
+    studentName: input.student.name,
+    roll: input.student.currentRollNumber || "",
+    registrationId: input.student.registrationId || "",
+    courseName: input.student.course || "",
+    batchName: input.batchName,
+    examName: input.exam.title,
+    subjectName: input.subject.name,
+    fullMarks: String(input.exam.fullMarks),
+    obtainedMarks,
+    percentage,
+    grade,
+    result,
+    guardianName: input.guardianName || "",
+    date: formatDateForSms(input.date),
+  };
+}
+
+/**
+ * A Batch Director's own Result SMS template (Staff.resultSmsTemplate) if
+ * they've set one, else the Settings-wide default (settings.model.ts's
+ * SettingsDoc.resultSmsTemplate) — never a hard-coded string. A caller with
+ * no linked staff record (an Admin-type account) always gets the default,
+ * since "their own template" doesn't apply to them.
+ */
+async function resolveResultSmsTemplate(req: Request): Promise<string> {
+  const staffId = req.user?.staffId;
+  if (staffId) {
+    const staff = await Staff.findById(staffId).select("resultSmsTemplate");
+    if (staff?.resultSmsTemplate) return staff.resultSmsTemplate;
+  }
+  const settings = await getSettings();
+  return settings.resultSmsTemplate;
 }
 
 export interface SubmitResultItem {
@@ -183,27 +232,42 @@ export interface SubmitResultItem {
   attendance: "Present" | "Absent";
 }
 
+export interface FailedSmsStudent {
+  studentId: string;
+  name: string;
+  roll?: string;
+  /** Why this particular student's SMS didn't go out — lets the UI show a precise message instead of a generic failure. */
+  reason: "guardianPhoneMissing" | "gatewayFailed";
+}
+
 export interface SubmitResultSummary {
   examId: string;
   resultsSaved: number;
   smsSent: number;
   smsFailed: number;
-  failedStudents: { studentId: string; name: string; roll?: string }[];
+  failedStudents: FailedSmsStudent[];
+}
+
+interface PersistedResult {
+  exam: OfflineExamDoc;
+  subject: SubjectDoc;
+  lecture: LectureDoc;
+  batch: InstanceType<typeof Batch>;
+  studentById: Map<string, StudentDoc>;
 }
 
 /**
- * The Result Entry page's single "Send Result" action (Phase 5 §5-§14):
- * upserts the exam (never a duplicate for the same batch+subject+lecture+
- * date — see create()'s comment), saves marks and attendance together in
- * the same collections the rest of the app already reads (OfflineResult /
- * AttendanceEntry, source "Exam"), then best-effort texts each present-or-
- * absent student's guardian. SMS failures never undo the save — they're
- * only reported back so the caller can offer a retry (resendSms below).
+ * The shared save step behind both "Save Result" (saveResult) and "Send
+ * Result" (submitResult) — upserts the exam (never a duplicate for the same
+ * batch+subject+lecture+date), saves marks and attendance together in the
+ * same collections the rest of the app already reads (OfflineResult /
+ * AttendanceEntry, source "Exam"). Never sends SMS — that's the caller's
+ * job, only after this has actually committed.
  */
-export async function submitResult(
+async function persistResult(
   req: Request,
   data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
-): Promise<SubmitResultSummary> {
+): Promise<PersistedResult> {
   await assertCanActOnBatch(req, data.batchId);
 
   const [subject, lecture, batch] = await Promise.all([
@@ -261,81 +325,256 @@ export async function submitResult(
 
   await recordAudit({
     req,
-    action: "exam.submit-result",
+    action: "exam.save-result",
     module: "exams",
     targetCollection: "offlineexams",
     targetId: String(exam._id),
     after: { batchId: data.batchId, subjectId: data.subjectId, lectureId: data.lectureId, date: data.date, count: data.items.length },
   });
 
-  let smsSent = 0;
-  const failedStudents: { studentId: string; name: string; roll?: string }[] = [];
-  for (const item of data.items) {
-    const student = studentById.get(item.studentId);
-    if (!student) continue;
-    const guardian = await guardianService.getPrimary(item.studentId);
-    if (!guardian?.phone) {
-      failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber });
-      continue;
-    }
-    const message = buildResultSms({
-      studentName: student.name,
-      roll: student.currentRollNumber,
-      subjectName: subject.name,
-      lectureTitle: lecture.title,
-      marks: item.marks,
-      fullMarks: data.fullMarks,
-      attendance: item.attendance,
-      date: data.date,
-    });
-    const res = await sendSms(guardian.phone, message);
-    if (res.ok) smsSent++;
-    else failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber });
-  }
-
-  return { examId: String(exam._id), resultsSaved: data.items.length, smsSent, smsFailed: failedStudents.length, failedStudents };
+  return { exam, subject, lecture, batch, studentById };
 }
 
-/** Retry guardian SMS for specific students of an already-submitted result, re-reading whatever marks/attendance were actually saved rather than trusting the caller to resend them (Phase 5 §12). */
+/**
+ * "Save Result" — saves marks + attendance only. Never calls the SMS
+ * gateway. Safe to click repeatedly: persistResult() always upserts the
+ * same exam/result/attendance rows for this batch+subject+lecture+date
+ * rather than creating new ones (Phase 5 §9, unchanged by this feature).
+ */
+export async function saveResult(
+  req: Request,
+  data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+): Promise<{ examId: string; resultsSaved: number }> {
+  const { exam } = await persistResult(req, data);
+  return { examId: String(exam._id), resultsSaved: data.items.length };
+}
+
+/**
+ * "Send Result" — saves first (persistResult, identical to Save Result),
+ * then — only once that save has actually committed — renders and sends
+ * each present-or-absent student's guardian SMS using the caller's
+ * resolved Result SMS template. SMS failures never undo the save; they're
+ * only reported back (and recorded per-student on OfflineResult.smsStatus)
+ * so the caller can offer a retry (resendSms below).
+ *
+ * A short-lived, self-expiring lock on the exam document (smsSendingLockedAt)
+ * prevents two near-simultaneous Send Result requests for the same exam —
+ * a double-click that slipped past the frontend's own disable, or a
+ * network retry — from both sending SMS. There is no MongoDB replica set
+ * in this deployment (same documented constraint as every other multi-write
+ * flow in this codebase), so this atomic conditional update is the
+ * concurrency guard, not a transaction.
+ */
+export async function submitResult(
+  req: Request,
+  data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+): Promise<SubmitResultSummary> {
+  const { exam, subject, lecture, batch, studentById } = await persistResult(req, data);
+
+  const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
+  const claimed = await OfflineExam.findOneAndUpdate(
+    { _id: exam._id, $or: [{ smsSendingLockedAt: { $exists: false } }, { smsSendingLockedAt: { $lt: staleBefore } }] },
+    { $set: { smsSendingLockedAt: new Date() } },
+    { new: false },
+  );
+  if (!claimed) {
+    throw ApiError.conflict("এই রেজাল্টের SMS ইতিমধ্যে পাঠানো হচ্ছে — একটু পরে আবার চেষ্টা করুন।");
+  }
+
+  try {
+    const template = await resolveResultSmsTemplate(req);
+    let smsSent = 0;
+    const failedStudents: FailedSmsStudent[] = [];
+
+    for (const item of data.items) {
+      const student = studentById.get(item.studentId);
+      if (!student) continue;
+      const guardian = await guardianService.getPrimary(item.studentId);
+      if (!guardian?.phone) {
+        failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" });
+        await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "failed" } });
+        continue;
+      }
+      const variables = await buildResultSmsVariables({
+        student,
+        subject,
+        lecture,
+        exam,
+        batchName: batch.name,
+        marks: item.marks,
+        attendance: item.attendance,
+        guardianName: guardian.name,
+        date: data.date,
+      });
+      const message = renderTemplate(template, variables);
+      const res = await sendSms(guardian.phone, message);
+      if (res.ok) {
+        smsSent++;
+        await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });
+      } else {
+        failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: "gatewayFailed" });
+        await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "failed" } });
+      }
+    }
+
+    await recordAudit({
+      req,
+      action: "exam.send-result-sms",
+      module: "exams",
+      targetCollection: "offlineexams",
+      targetId: String(exam._id),
+      after: { smsSent, smsFailed: failedStudents.length },
+    });
+
+    return { examId: String(exam._id), resultsSaved: data.items.length, smsSent, smsFailed: failedStudents.length, failedStudents };
+  } finally {
+    await OfflineExam.updateOne({ _id: exam._id }, { $set: { lastSmsSentAt: new Date() }, $unset: { smsSendingLockedAt: "" } });
+  }
+}
+
+/** Retry guardian SMS for specific students of an already-submitted result, re-reading whatever marks/attendance were actually saved rather than trusting the caller to resend them (Phase 5 §12). Uses the same template system and per-student status tracking as submitResult. */
 export async function resendSms(req: Request, examId: string, studentIds: string[]): Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">> {
   const exam = await getById(examId);
   await assertCanActOnBatch(req, String(exam.batchId));
 
-  const [subject, lecture] = await Promise.all([Subject.findById(exam.subjectId), Lecture.findById(exam.lectureId)]);
-  if (!subject || !lecture) throw ApiError.notFound("Subject or lecture not found");
+  const [subject, lecture, batch] = await Promise.all([
+    Subject.findById(exam.subjectId),
+    Lecture.findById(exam.lectureId),
+    Batch.findById(exam.batchId),
+  ]);
+  if (!subject || !lecture || !batch) throw ApiError.notFound("Subject, lecture, or batch not found");
 
   const { AttendanceEntry } = await import("../attendance/attendance.model");
+  // Scoped to this exam's own batch — a crafted studentIds array must never
+  // let a resend text a student outside the exam it's attached to (Result
+  // SMS Template + Data Safety §3/§7).
   const [students, results, attendances] = await Promise.all([
-    Student.find({ _id: { $in: studentIds } }),
+    Student.find({ _id: { $in: studentIds }, currentBatchId: exam.batchId }),
     OfflineResult.find({ examId, studentId: { $in: studentIds } }),
     AttendanceEntry.find({ examId, studentId: { $in: studentIds } }),
   ]);
   const resultByStudent = new Map(results.map((r) => [String(r.studentId), r.marks]));
   const attendanceByStudent = new Map(attendances.map((a) => [String(a.studentId), a.status]));
 
+  const template = await resolveResultSmsTemplate(req);
   let smsSent = 0;
-  const failedStudents: { studentId: string; name: string; roll?: string }[] = [];
+  const failedStudents: FailedSmsStudent[] = [];
   for (const student of students) {
     const sid = String(student._id);
     const guardian = await guardianService.getPrimary(sid);
     if (!guardian?.phone) {
-      failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber });
+      failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" });
+      await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "failed" } });
       continue;
     }
-    const message = buildResultSms({
-      studentName: student.name,
-      roll: student.currentRollNumber,
-      subjectName: subject.name,
-      lectureTitle: lecture.title,
+    const variables = await buildResultSmsVariables({
+      student,
+      subject,
+      lecture,
+      exam,
+      batchName: batch.name,
       marks: resultByStudent.get(sid) ?? null,
-      fullMarks: exam.fullMarks,
       attendance: (attendanceByStudent.get(sid) as "Present" | "Absent") || "Absent",
+      guardianName: guardian.name,
       date: exam.date,
     });
+    const message = renderTemplate(template, variables);
     const res = await sendSms(guardian.phone, message);
-    if (res.ok) smsSent++;
-    else failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber });
+    if (res.ok) {
+      smsSent++;
+      await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });
+    } else {
+      failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber, reason: "gatewayFailed" });
+      await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "failed" } });
+    }
   }
 
+  await recordAudit({
+    req,
+    action: "exam.send-result-sms",
+    module: "exams",
+    targetCollection: "offlineexams",
+    targetId: String(exam._id),
+    after: { smsSent, smsFailed: failedStudents.length, retry: true },
+  });
+
   return { smsSent, smsFailed: failedStudents.length, failedStudents };
+}
+
+export interface ResultSmsTemplateConfig {
+  scope: "director" | "admin-default";
+  effectiveTemplate: string;
+  customTemplate?: string;
+  isDefault: boolean;
+  variables: ResultSmsVariable[];
+}
+
+/**
+ * A Batch Director sees/edits their own template (falling back to the
+ * Settings-wide default when they haven't set one); a caller with no
+ * linked staff record but broad exam access (Admin) sees/edits the
+ * Settings-wide default itself (Settings §2 — extend existing config, no
+ * parallel system). RBAC is enforced by the route (EXAMS_MANAGE or
+ * OFFLINE_RESULTS_MANAGE_OWN_BATCH), same as every other exam endpoint.
+ */
+export async function getResultSmsTemplateConfig(req: Request): Promise<ResultSmsTemplateConfig> {
+  const settings = await getSettings();
+  const staffId = req.user?.staffId;
+  if (staffId) {
+    const staff = await Staff.findById(staffId).select("resultSmsTemplate");
+    const customTemplate = staff?.resultSmsTemplate;
+    return {
+      scope: "director",
+      effectiveTemplate: customTemplate || settings.resultSmsTemplate,
+      customTemplate,
+      isDefault: !customTemplate,
+      variables: RESULT_SMS_VARIABLES,
+    };
+  }
+  return {
+    scope: "admin-default",
+    effectiveTemplate: settings.resultSmsTemplate,
+    customTemplate: settings.resultSmsTemplate,
+    isDefault: true,
+    variables: RESULT_SMS_VARIABLES,
+  };
+}
+
+/** Rejects any placeholder that isn't one of RESULT_SMS_VARIABLES's known keys up front, rather than silently sending a broken SMS with a literal "{{typo}}" in it later. */
+export async function updateResultSmsTemplate(req: Request, template: string): Promise<ResultSmsTemplateConfig> {
+  const unknown = validateTemplatePlaceholders(template);
+  if (unknown.length > 0) {
+    throw ApiError.badRequest(`টেমপ্লেটে অসমর্থিত ভ্যারিয়েবল আছে: ${unknown.map((k) => `{{${k}}}`).join(", ")}`);
+  }
+
+  const staffId = req.user?.staffId;
+  if (staffId) {
+    const staff = await Staff.findById(staffId);
+    if (!staff) throw ApiError.forbidden("No linked staff record");
+    const before = staff.toObject();
+    staff.resultSmsTemplate = template;
+    await staff.save();
+    await recordAudit({
+      req,
+      action: "result-sms-template.update",
+      module: "exams",
+      targetCollection: "staff",
+      targetId: String(staff._id),
+      before,
+      after: staff.toObject(),
+    });
+  } else {
+    const perms = req.user!.permissions;
+    if (!perms.includes("*") && !perms.includes(PERMISSIONS.EXAMS_MANAGE)) throw ApiError.forbidden("Missing permission");
+    await updateSettings(req, { resultSmsTemplate: template });
+    await recordAudit({
+      req,
+      action: "result-sms-template.update",
+      module: "exams",
+      targetCollection: "settings",
+      after: { resultSmsTemplate: template },
+    });
+  }
+
+  return getResultSmsTemplateConfig(req);
 }

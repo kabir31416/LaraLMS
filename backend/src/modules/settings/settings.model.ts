@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from "mongoose";
+import { DEFAULT_RESULT_SMS_TEMPLATE } from "../exams/exam.smsTemplate";
 
 export interface GradeBand {
   minPercent: number;
@@ -22,6 +23,15 @@ export interface SettingsDoc extends Document {
    * changes later (Settings §6/§24 historical-snapshot requirement).
    */
   admissionFeeBdt: number;
+  /**
+   * The fallback Result SMS template (Result Entry's "Send Result") used
+   * whenever a Batch Director hasn't configured their own (Staff.
+   * resultSmsTemplate) — see exam.service.ts's resolveResultSmsTemplate.
+   * Admin-editable via the same GET/PATCH /exams/result-sms-template a
+   * Batch Director uses for their own, branched by whether the caller has
+   * a linked staff record (Settings §2 "extend, don't duplicate config").
+   */
+  resultSmsTemplate: string;
 }
 
 const gradeBandSchema = new Schema<GradeBand>(
@@ -50,6 +60,7 @@ const settingsSchema = new Schema<SettingsDoc>(
     },
     rollNumberScope: { type: String, enum: ["batch", "course", "global"], default: "batch" },
     admissionFeeBdt: { type: Number, default: 200, min: 0 },
+    resultSmsTemplate: { type: String, trim: true, default: DEFAULT_RESULT_SMS_TEMPLATE },
   },
   { timestamps: true },
 );

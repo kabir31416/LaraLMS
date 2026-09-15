@@ -80,6 +80,13 @@ export const resendSmsSchema = z.object({
   body: z.object({ studentIds: z.array(z.string().length(24)).min(1) }),
 });
 
+/** "Save Result" has the identical request shape as "Send Result" (submitResultSchema) — same fields, same cross-field mark/attendance rules — it's the same save step, just without the SMS phase. Reused as-is rather than duplicated. */
+export const saveResultSchema = submitResultSchema;
+
+export const updateResultSmsTemplateSchema = z.object({
+  body: z.object({ template: z.string().trim().min(1).max(2000) }),
+});
+
 export const listResultsQuerySchema = z.object({
   query: z.object({
     page: z.string().optional(),

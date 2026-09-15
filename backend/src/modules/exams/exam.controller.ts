@@ -27,6 +27,19 @@ export const submitResult = asyncHandler(async (req: Request, res: Response) => 
   sendSuccess(res, summary);
 });
 
+export const saveResult = asyncHandler(async (req: Request, res: Response) => {
+  const result = await examService.saveResult(req, req.body);
+  sendSuccess(res, result);
+});
+
+export const getResultSmsTemplate = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await examService.getResultSmsTemplateConfig(req));
+});
+
+export const updateResultSmsTemplate = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await examService.updateResultSmsTemplate(req, req.body.template));
+});
+
 export const resendSms = asyncHandler(async (req: Request, res: Response) => {
   const summary = await examService.resendSms(req, req.params.id, req.body.studentIds);
   sendSuccess(res, summary);

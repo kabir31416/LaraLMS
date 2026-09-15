@@ -18,9 +18,6 @@ import {
   BarChart3 as ReportIcon,
   User,
   ListChecks,
-  Facebook,
-  Github,
-  Linkedin,
   Phone,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -140,66 +137,25 @@ export function AppSidebar() {
         Fixed, non-scrolling footer (SidebarContent above is the only
         `flex-1 overflow-auto` region in this layout, so a sibling
         SidebarFooter always stays pinned below it — see sidebar.tsx). Admin
-        only, per spec. Content is 100% from DEVELOPER_INFO (source-level
-        constants, never Settings/DB-backed) — no Admin action can edit,
-        hide, or remove it (§11 of the spec).
+        only. Content is 100% from DEVELOPER_INFO (source-level constants,
+        never Settings/DB-backed) — no Admin action can edit, hide, or
+        remove it. Kept to just product name / developer / phone, no
+        social links.
       */}
-      {isAdmin && (
+      {isAdmin && !collapsed && (
         <SidebarFooter className="border-t border-sidebar-border p-3">
-          {!collapsed ? (
-            <div className="space-y-2">
-              <div>
-                <p className="text-sm font-bold text-sidebar-primary-foreground">{DEVELOPER_INFO.productName}</p>
-                <p className="text-xs text-sidebar-foreground/60">
-                  Developed by <span className="font-medium text-sidebar-foreground/90">{DEVELOPER_INFO.developerName}</span>
-                </p>
-              </div>
-              <a
-                href={`tel:${DEVELOPER_INFO.phone}`}
-                className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
-              >
-                <Phone className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.phone}
-              </a>
-              <div className="space-y-1 pt-1.5 border-t border-sidebar-border/60">
-                <a
-                  href={DEVELOPER_INFO.social.facebook.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
-                >
-                  <Facebook className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.social.facebook.handle}
-                </a>
-                <a
-                  href={DEVELOPER_INFO.social.github.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
-                >
-                  <Github className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.social.github.handle}
-                </a>
-                <a
-                  href={DEVELOPER_INFO.social.linkedin.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
-                >
-                  <Linkedin className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.social.linkedin.handle}
-                </a>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <a href={DEVELOPER_INFO.social.facebook.url} target="_blank" rel="noopener noreferrer" title={`Facebook ${DEVELOPER_INFO.social.facebook.handle}`}>
-                <Facebook className="h-4 w-4 text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors" />
-              </a>
-              <a href={DEVELOPER_INFO.social.github.url} target="_blank" rel="noopener noreferrer" title={`GitHub ${DEVELOPER_INFO.social.github.handle}`}>
-                <Github className="h-4 w-4 text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors" />
-              </a>
-              <a href={DEVELOPER_INFO.social.linkedin.url} target="_blank" rel="noopener noreferrer" title={`LinkedIn ${DEVELOPER_INFO.social.linkedin.handle}`}>
-                <Linkedin className="h-4 w-4 text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors" />
-              </a>
-            </div>
-          )}
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-sidebar-primary-foreground">{DEVELOPER_INFO.productName}</p>
+            <p className="text-xs text-sidebar-foreground/60">
+              Developed by <span className="font-medium text-sidebar-foreground/90">{DEVELOPER_INFO.developerName}</span>
+            </p>
+            <a
+              href={`tel:${DEVELOPER_INFO.phone}`}
+              className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
+            >
+              <Phone className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.phone}
+            </a>
+          </div>
         </SidebarFooter>
       )}
     </Sidebar>

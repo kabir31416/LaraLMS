@@ -20,6 +20,19 @@ export interface OfflineExamDoc extends Document {
    * this exam" admin action can flip individual exams later if needed.
    */
   isPublished: boolean;
+  /**
+   * Transient concurrency guard for the "Send Result" SMS phase (exam.
+   * service.ts's submitResult) — claimed atomically before looping over
+   * guardians and cleared right after, so two near-simultaneous Send
+   * Result requests for the same exam (a double-click slipping past the
+   * frontend's own disable, or a network retry) can never both send SMS.
+   * Self-expiring (checked against a short staleness window, not just
+   * existence) so a request that crashed mid-send can't leave this exam
+   * permanently locked.
+   */
+  smsSendingLockedAt?: Date;
+  /** Set once the SMS phase completes (regardless of per-student success/failure) — auditability, and lets the UI show "SMS last sent at ...". */
+  lastSmsSentAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +46,8 @@ const offlineExamSchema = new Schema<OfflineExamDoc>(
     fullMarks: { type: Number, required: true, min: 1 },
     date: { type: String, required: true },
     isPublished: { type: Boolean, default: true },
+    smsSendingLockedAt: { type: Date },
+    lastSmsSentAt: { type: Date },
   },
   { timestamps: true },
 );

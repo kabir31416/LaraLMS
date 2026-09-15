@@ -10,9 +10,4 @@ export const DEVELOPER_INFO = {
   productName: "LaraLMS",
   developerName: "Sahariar Kabir",
   phone: "01999667701",
-  social: {
-    facebook: { handle: "@kabir31416", url: "https://www.facebook.com/kabir31416" },
-    github: { handle: "@kabir31416", url: "https://github.com/kabir31416" },
-    linkedin: { handle: "@kabir31416", url: "https://www.linkedin.com/in/kabir31416" },
-  },
 } as const;
