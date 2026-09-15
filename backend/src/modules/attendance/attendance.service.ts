@@ -57,6 +57,22 @@ function hasBroadReadAccess(req: Request): boolean {
   return perms.includes("*") || perms.includes(PERMISSIONS.ATTENDANCE_READ);
 }
 
+/**
+ * Unlike `Model.find()`, `Model.aggregate()`'s `$match` is sent to MongoDB
+ * as-is — Mongoose never casts a query string to the schema's ObjectId type
+ * for it (see material.service.ts's distributionReport for the same
+ * pattern). Without this, filtering by a specific batch/student here always
+ * matched zero documents against the ObjectId-typed batchId/studentId
+ * fields, silently making every batch-wise or student-scoped attendance
+ * view (stats/percentages/byStudent) come back empty.
+ */
+function toObjectId(id: string): Types.ObjectId | undefined {
+  return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : undefined;
+}
+function toObjectIds(ids: string[]): Types.ObjectId[] {
+  return ids.map(toObjectId).filter((id): id is Types.ObjectId => !!id);
+}
+
 export async function list(req: Request) {
   if (!hasBroadReadAccess(req)) {
     if (!req.user!.studentId) throw ApiError.forbidden("No linked student record");
@@ -98,9 +114,9 @@ export async function percentages(
   }
 
   const filter: Record<string, unknown> = {};
-  if (params.studentIds?.length) filter.studentId = { $in: params.studentIds };
-  if (params.batchId) filter.batchId = params.batchId;
-  else if (params.batchIds?.length) filter.batchId = { $in: params.batchIds };
+  if (params.studentIds?.length) filter.studentId = { $in: toObjectIds(params.studentIds) };
+  if (params.batchId) filter.batchId = toObjectId(params.batchId);
+  else if (params.batchIds?.length) filter.batchId = { $in: toObjectIds(params.batchIds) };
   if (params.dateFrom || params.dateTo) {
     filter.date = {
       ...(params.dateFrom ? { $gte: params.dateFrom } : {}),
@@ -129,8 +145,8 @@ export async function byStudent(
   }
 
   const filter: Record<string, unknown> = {};
-  if (params.batchId) filter.batchId = params.batchId;
-  if ((params as Record<string, unknown>).studentId) filter.studentId = (params as Record<string, unknown>).studentId;
+  if (params.batchId) filter.batchId = toObjectId(params.batchId);
+  if ((params as Record<string, unknown>).studentId) filter.studentId = toObjectId((params as Record<string, unknown>).studentId as string);
   if (params.dateFrom || params.dateTo) {
     filter.date = {
       ...(params.dateFrom ? { $gte: params.dateFrom } : {}),
@@ -164,9 +180,9 @@ export async function stats(req: Request, params: { batchId?: string; batchIds?:
   }
 
   const filter: Record<string, unknown> = {};
-  if (params.batchId) filter.batchId = params.batchId;
-  else if (params.batchIds?.length) filter.batchId = { $in: params.batchIds };
-  if ((params as Record<string, unknown>).studentId) filter.studentId = (params as Record<string, unknown>).studentId;
+  if (params.batchId) filter.batchId = toObjectId(params.batchId);
+  else if (params.batchIds?.length) filter.batchId = { $in: toObjectIds(params.batchIds) };
+  if ((params as Record<string, unknown>).studentId) filter.studentId = toObjectId((params as Record<string, unknown>).studentId as string);
   if (params.dateFrom || params.dateTo) {
     filter.date = {
       ...(params.dateFrom ? { $gte: params.dateFrom } : {}),
