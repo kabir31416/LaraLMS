@@ -22,6 +22,7 @@ import Notices from "./pages/Notices";
 import Reports from "./pages/Reports";
 import AdmissionResult from "./pages/AdmissionResult";
 import ChanceResults from "./pages/ChanceResults";
+import ResultManagement from "./pages/ResultManagement";
 import StudentImportUpload from "./pages/StudentImportUpload";
 import StudentImportPreview from "./pages/StudentImportPreview";
 
@@ -67,6 +68,7 @@ export function AppRoutes() {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/notices" element={<Notices />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/result-management" element={<ResultManagement />} />
       </Route>
 
       {/* Admin — Admission Result (upload/preview/confirm/process pipeline + its roll-bookkeeping front page) can be individually disabled per-Admin (User.deniedPermissions), so it's gated by its own dedicated permission on top of the Admin role. */}
@@ -92,6 +94,7 @@ export function AppRoutes() {
         <Route path="/director" element={<DirectorDashboard />} />
         <Route path="/director/students" element={<DirectorStudents />} />
         <Route path="/director/results" element={<DirectorResults />} />
+        <Route path="/director/result-management" element={<ResultManagement />} />
         <Route path="/director/admission-result" element={<AdmissionResult />} />
         <Route path="/director/chance-results" element={<ChanceResults />} />
         {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}

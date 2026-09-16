@@ -19,6 +19,7 @@ import {
   User,
   ListChecks,
   Phone,
+  FileSpreadsheet,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -47,6 +48,7 @@ const adminMenu = [
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "এক্সাম", url: "/exams", icon: FileText },
+  { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
   { title: "নোটিশ", url: "/notices", icon: Bell },
   { title: "রিপোর্ট", url: "/reports", icon: ReportIcon },
@@ -62,6 +64,7 @@ const directorMenu = [
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
   // Marks and attendance are both entered together here now — there's no separate attendance page for directors anymore.
   { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList },
+  { title: "ফলাফল ব্যবস্থাপনা", url: "/director/result-management", icon: FileSpreadsheet },
   { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
@@ -84,10 +87,16 @@ export function AppSidebar() {
   const location = useLocation();
   const { user } = useAuth();
 
-  const menuItems = user?.role === "Batch Director" ? directorMenu
+  const rawMenuItems = user?.role === "Batch Director" ? directorMenu
     : user?.role === "Student" ? studentMenu
     : adminMenu;
-  const isAdmin = menuItems === adminMenu;
+  const isAdmin = rawMenuItems === adminMenu;
+  // Only adminMenu entries ever carry a `permission` field (e.g. Admission
+  // Result) — an item without one always shows, same as before this filter existed.
+  const menuItems = rawMenuItems.filter((item) => {
+    const permission = (item as { permission?: string }).permission;
+    return !permission || hasPermission(user, permission);
+  });
 
   return (
     <Sidebar collapsible="icon">

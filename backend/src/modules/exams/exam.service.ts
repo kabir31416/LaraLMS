@@ -16,8 +16,8 @@ import { sendSms } from "../../common/utils/sms";
 import { PERMISSIONS } from "../rbac/permissions";
 import { RESULT_SMS_VARIABLES, ResultSmsVariable, renderTemplate, validateTemplatePlaceholders } from "./exam.smsTemplate";
 
-/** Batch Directors may only manage exams/results for batches they direct, unless they also hold a broad permission. */
-async function assertCanActOnBatch(req: Request, batchId: string): Promise<void> {
+/** Batch Directors may only manage exams/results for batches they direct, unless they also hold a broad permission. Exported for reuse by resultManagement.service.ts's mark-edit endpoint — same capability, same permission, just a different UI surface. */
+export async function assertCanActOnBatch(req: Request, batchId: string): Promise<void> {
   const perms = req.user!.permissions;
   if (perms.includes("*") || perms.includes(PERMISSIONS.EXAMS_MANAGE)) return;
   if (!perms.includes(PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH)) throw ApiError.forbidden("Missing permission");
@@ -28,8 +28,8 @@ async function assertCanActOnBatch(req: Request, batchId: string): Promise<void>
   }
 }
 
-/** Resolves the batchId scope a caller may see, or undefined for "no restriction." Throws if they may see nothing. */
-async function readScope(req: Request): Promise<{ batchIds?: string[] } | null> {
+/** Resolves the batchId scope a caller may see, or undefined for "no restriction." Throws if they may see nothing. Exported for reuse by resultManagement.service.ts. */
+export async function readScope(req: Request): Promise<{ batchIds?: string[] } | null> {
   const perms = req.user!.permissions;
   if (perms.includes("*") || perms.includes(PERMISSIONS.EXAMS_MANAGE) || perms.includes(PERMISSIONS.RESULTS_READ)) {
     return null; // unrestricted
@@ -152,8 +152,8 @@ function formatDateForSms(dateStr: string): string {
   return y && m && d ? `${d}-${m}-${y}` : dateStr;
 }
 
-/** Highest-first grade band whose minPercent the percentage clears — Settings.gradeScale (settings.model.ts), never a separate hard-coded scale. */
-function computeGrade(percentage: number, gradeScale: { minPercent: number; grade: string }[]): string {
+/** Highest-first grade band whose minPercent the percentage clears — Settings.gradeScale (settings.model.ts), never a separate hard-coded scale. Exported for reuse by resultManagement.service.ts and anywhere else that needs the exact same grade calculation as SMS/marksheet. */
+export function computeGrade(percentage: number, gradeScale: { minPercent: number; grade: string }[]): string {
   const sorted = [...gradeScale].sort((a, b) => b.minPercent - a.minPercent);
   return sorted.find((band) => percentage >= band.minPercent)?.grade ?? "";
 }

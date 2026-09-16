@@ -19,6 +19,7 @@ import paymentMethodRoutes from "../modules/paymentMethods/paymentMethod.routes"
 import attendanceRoutes from "../modules/attendance/attendance.routes";
 import examRoutes from "../modules/exams/exam.routes";
 import resultRoutes from "../modules/exams/result.routes";
+import resultManagementRoutes from "../modules/exams/resultManagement.routes";
 import materialTypeRoutes from "../modules/materialTypes/materialType.routes";
 import materialRoutes from "../modules/materials/material.routes";
 import branchRoutes from "../modules/branches/branch.routes";
@@ -59,6 +60,7 @@ router.use("/payment-methods", paymentMethodRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/exams", examRoutes);
 router.use("/results", resultRoutes);
+router.use("/result-management", resultManagementRoutes);
 router.use("/material-types", materialTypeRoutes);
 router.use("/materials", materialRoutes);
 router.use("/branches", branchRoutes);
