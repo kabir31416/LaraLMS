@@ -7,6 +7,8 @@ interface StatCardProps {
   icon: LucideIcon;
   trend?: string;
   variant: "primary" | "success" | "warning" | "info";
+  /** Makes the whole card a click target (e.g. a dashboard alert tile that jumps to the relevant page) — purely additive, every existing call site without it renders exactly as before. */
+  onClick?: () => void;
 }
 
 const variantStyles = {
@@ -16,9 +18,15 @@ const variantStyles = {
   info: "bg-info/10 text-info",
 };
 
-export function StatCard({ title, value, icon: Icon, trend, variant }: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, trend, variant, onClick }: StatCardProps) {
   return (
-    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
+    <Card
+      className={`border-none shadow-sm hover:shadow-md transition-shadow ${onClick ? "cursor-pointer" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div className="space-y-1">

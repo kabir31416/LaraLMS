@@ -18,7 +18,6 @@ import {
   BarChart3 as ReportIcon,
   User,
   ListChecks,
-  Phone,
   FileSpreadsheet,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -32,11 +31,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
-  SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import { DEVELOPER_INFO } from "@/config/developerInfo";
 import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 
 const adminMenu = [
@@ -90,7 +87,6 @@ export function AppSidebar() {
   const rawMenuItems = user?.role === "Batch Director" ? directorMenu
     : user?.role === "Student" ? studentMenu
     : adminMenu;
-  const isAdmin = rawMenuItems === adminMenu;
   // Only adminMenu entries ever carry a `permission` field (e.g. Admission
   // Result) — an item without one always shows, same as before this filter existed.
   const menuItems = rawMenuItems.filter((item) => {
@@ -143,32 +139,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      {/*
-        Fixed, non-scrolling footer (SidebarContent above is the only
-        `flex-1 overflow-auto` region in this layout, so a sibling
-        SidebarFooter always stays pinned below it — see sidebar.tsx). Admin
-        only. Content is 100% from DEVELOPER_INFO (source-level constants,
-        never Settings/DB-backed) — no Admin action can edit, hide, or
-        remove it. Kept to just product name / developer / phone, no
-        social links.
-      */}
-      {isAdmin && !collapsed && (
-        <SidebarFooter className="border-t border-sidebar-border p-3">
-          <div className="space-y-1">
-            <p className="text-sm font-bold text-sidebar-primary-foreground">{DEVELOPER_INFO.productName}</p>
-            <p className="text-xs text-sidebar-foreground/60">
-              Developed by <span className="font-medium text-sidebar-foreground/90">{DEVELOPER_INFO.developerName}</span>
-            </p>
-            <a
-              href={`tel:${DEVELOPER_INFO.phone}`}
-              className="flex items-center gap-1.5 text-xs text-sidebar-foreground/70 hover:text-sidebar-primary-foreground transition-colors"
-            >
-              <Phone className="h-3 w-3 shrink-0" /> {DEVELOPER_INFO.phone}
-            </a>
-          </div>
-        </SidebarFooter>
-      )}
     </Sidebar>
   );
 }

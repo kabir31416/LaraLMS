@@ -1,17 +1,33 @@
-import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp, UserCheck, UserX, Layers, ClipboardCheck, Bell, Pin } from "lucide-react";
+import { Users, UserPlus, DollarSign, AlertCircle, Package, TrendingUp, UserCheck, UserX, Layers, ClipboardCheck, Bell, Pin, Cake, FileText, Boxes, UserCog, Receipt, FileSpreadsheet, Megaphone } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useAttendance } from "@/contexts/AttendanceContext";
 import { useNotices, filterNoticesFor } from "@/contexts/NoticeContext";
 import { format, subDays } from "date-fns";
+import { bn } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
+
+interface MaterialDashboardStats {
+  lowStockCount: number;
+  outOfStockCount: number;
+}
+
+/** Time-of-day greeting — purely cosmetic, no data dependency. */
+function greetingFor(hour: number): string {
+  if (hour < 12) return "শুভ সকাল";
+  if (hour < 17) return "শুভ অপরাহ্ন";
+  return "শুভ সন্ধ্যা";
+}
 
 interface AdminDashboardSummary {
   totalStudents: number;
@@ -33,10 +49,51 @@ interface AdminDashboardSummary {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
   const { students } = useStudents();
   const { payments } = usePayments();
   const { batches } = useBatches();
   const { notices } = useNotices();
+  const { listExams } = useAttendance();
+
+  const now = useMemo(() => new Date(), []);
+
+  // Smart Alerts — every figure here reuses an existing, already-filtered
+  // endpoint (no new backend routes): birthday-today and due-student counts
+  // come from Student List's own filters (student.service.ts's
+  // buildStudentFilter), today's exam count reuses Result Entry's own
+  // listExams, and material stock reuses Books' own dashboard stats. Each
+  // is read via its list endpoint's `meta.total` rather than fetching (and
+  // counting) the matching rows client-side, so this stays cheap regardless
+  // of how many students/materials exist.
+  const [birthdayCount, setBirthdayCount] = useState<number | null>(null);
+  const [dueStudentCount, setDueStudentCount] = useState<number | null>(null);
+  const [todayExamCount, setTodayExamCount] = useState<number | null>(null);
+  const [materialStats, setMaterialStats] = useState<MaterialDashboardStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const todayStr = format(now, "yyyy-MM-dd");
+
+    api.getWithMeta<unknown[]>("/students?birthdayToday=true&limit=1")
+      .then((res) => { if (!cancelled) setBirthdayCount((res.meta as { total?: number } | undefined)?.total ?? 0); })
+      .catch(() => { if (!cancelled) setBirthdayCount(null); });
+
+    api.getWithMeta<unknown[]>("/students?dueStatus=has&limit=1")
+      .then((res) => { if (!cancelled) setDueStudentCount((res.meta as { total?: number } | undefined)?.total ?? 0); })
+      .catch(() => { if (!cancelled) setDueStudentCount(null); });
+
+    listExams({ date: todayStr })
+      .then((exams) => { if (!cancelled) setTodayExamCount(exams.length); })
+      .catch(() => { if (!cancelled) setTodayExamCount(null); });
+
+    api.get<MaterialDashboardStats>("/materials/dashboard/stats")
+      .then((data) => { if (!cancelled) setMaterialStats(data); })
+      .catch(() => { if (!cancelled) setMaterialStats(null); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Module 4 (extended in Modules 15-20): server-side aggregation for
   // everything that already has a real collection (Student, Batch, Payment,
@@ -108,9 +165,72 @@ const Index = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+          <div>
+            <h1 className="text-2xl font-bold">{greetingFor(now.getHours())}!</h1>
+            <p className="text-muted-foreground text-sm">{format(now, "EEEE, d MMMM yyyy", { locale: bn })} — আজকের সারসংক্ষেপ</p>
+          </div>
+        </div>
+
+        {/* Quick Actions — one click to the most common daily tasks, instead of hunting through the sidebar. */}
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/admission")}>
+                <UserPlus className="h-5 w-5 text-primary" /><span className="text-xs">নতুন ভর্তি</span>
+              </Button>
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/fees")}>
+                <Receipt className="h-5 w-5 text-primary" /><span className="text-xs">পেমেন্ট নিন</span>
+              </Button>
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/attendance")}>
+                <ClipboardCheck className="h-5 w-5 text-primary" /><span className="text-xs">উপস্থিতি</span>
+              </Button>
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/result-management")}>
+                <FileSpreadsheet className="h-5 w-5 text-primary" /><span className="text-xs">ফলাফল ব্যবস্থাপনা</span>
+              </Button>
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/notices")}>
+                <Megaphone className="h-5 w-5 text-primary" /><span className="text-xs">নোটিশ দিন</span>
+              </Button>
+              <Button variant="outline" className="h-auto flex-col gap-1.5 py-3" onClick={() => navigate("/staff")}>
+                <UserCog className="h-5 w-5 text-primary" /><span className="text-xs">স্টাফ</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Smart Alerts — each tile reuses an existing filtered endpoint's own count (never a new backend route) and jumps straight to the page that acts on it. */}
         <div>
-          <h1 className="text-2xl font-bold">ড্যাশবোর্ড</h1>
-          <p className="text-muted-foreground text-sm">স্বাগতম! আজকের সারসংক্ষেপ দেখুন</p>
+          <h2 className="text-sm font-semibold text-muted-foreground mb-2">আজকের জন্য গুরুত্বপূর্ণ</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title="আজকের জন্মদিন"
+              value={birthdayCount === null ? "—" : String(birthdayCount)}
+              icon={Cake}
+              variant="info"
+              onClick={() => navigate("/students")}
+            />
+            <StatCard
+              title="আজকের এক্সাম"
+              value={todayExamCount === null ? "—" : String(todayExamCount)}
+              icon={FileText}
+              variant="primary"
+              onClick={() => navigate("/exams")}
+            />
+            <StatCard
+              title="বকেয়া আছে এমন শিক্ষার্থী"
+              value={dueStudentCount === null ? "—" : String(dueStudentCount)}
+              icon={AlertCircle}
+              variant="warning"
+              onClick={() => navigate("/fees")}
+            />
+            <StatCard
+              title="লো/আউট অব স্টক ম্যাটেরিয়াল"
+              value={materialStats === null ? "—" : String(materialStats.lowStockCount + materialStats.outOfStockCount)}
+              icon={Boxes}
+              variant="warning"
+              onClick={() => navigate("/books")}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -132,6 +252,7 @@ const Index = () => {
           <StatCard title="মাসিক বকেয়া" value={`৳ ${monthlyDue.toLocaleString()}`} icon={TrendingUp} variant="primary" />
         </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="border-none shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">দৈনিক উপস্থিতি (গত ৭ দিন)</CardTitle>
@@ -165,6 +286,7 @@ const Index = () => {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card className="border-none shadow-sm">
