@@ -35,6 +35,7 @@ interface CreateUserInput {
   roleId: string;
   linkedStaffId?: string;
   linkedStudentId?: string;
+  deniedPermissions?: string[];
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
@@ -76,6 +77,7 @@ export async function createUser(req: Request, input: CreateUserInput): Promise<
     existing.mustChangePassword = !input.password;
     existing.failedLoginCount = 0;
     if (existing.status === "locked") existing.status = "active";
+    if (input.deniedPermissions) existing.deniedPermissions = input.deniedPermissions;
     await existing.save();
 
     await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(existing._id), before, after: { identifier: existing.identifier, roleId: existing.roleId } });
@@ -93,6 +95,7 @@ export async function createUser(req: Request, input: CreateUserInput): Promise<
       linkedStaffId: input.linkedStaffId,
       linkedStudentId: input.linkedStudentId,
       mustChangePassword: !input.password,
+      deniedPermissions: input.deniedPermissions ?? [],
     });
   } catch (err) {
     if (isDuplicateKeyError(err)) throw ApiError.conflict("A user with this identifier already exists");
@@ -127,7 +130,11 @@ export async function getUserById(id: string): Promise<UserDoc> {
   return user;
 }
 
-export async function updateUser(req: Request, id: string, patch: { roleId?: string; status?: "active" | "locked"; overridePermissions?: string[] }): Promise<UserDoc> {
+export async function updateUser(
+  req: Request,
+  id: string,
+  patch: { roleId?: string; status?: "active" | "locked"; overridePermissions?: string[]; deniedPermissions?: string[] },
+): Promise<UserDoc> {
   const user = await getUserById(id);
   const before = user.toObject();
   if (patch.roleId) user.roleId = patch.roleId as never;
@@ -136,6 +143,7 @@ export async function updateUser(req: Request, id: string, patch: { roleId?: str
     if (patch.status === "active") user.failedLoginCount = 0;
   }
   if (patch.overridePermissions) user.overridePermissions = patch.overridePermissions;
+  if (patch.deniedPermissions) user.deniedPermissions = patch.deniedPermissions;
   await user.save();
   await recordAudit({ req, action: "user.update", module: "users", targetCollection: "users", targetId: id, before, after: user.toObject() });
   return user;

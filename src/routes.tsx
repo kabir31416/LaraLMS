@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
 import Marksheet from "./pages/Marksheet";
@@ -57,8 +58,6 @@ export function AppRoutes() {
         <Route path="/admission" element={<Admission />} />
         <Route path="/admission/import" element={<StudentImportUpload />} />
         <Route path="/admission/import/:sessionId" element={<StudentImportPreview />} />
-        <Route path="/admission-result" element={<AdmissionResult />} />
-        <Route path="/chance-results" element={<ChanceResults />} />
         <Route path="/fees" element={<FeeManagement />} />
         <Route path="/books" element={<Books />} />
         <Route path="/accounts" element={<Accounts />} />
@@ -68,6 +67,12 @@ export function AppRoutes() {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/notices" element={<Notices />} />
         <Route path="/reports" element={<Reports />} />
+      </Route>
+
+      {/* Admin — Admission Result (upload/preview/confirm/process pipeline + its roll-bookkeeping front page) can be individually disabled per-Admin (User.deniedPermissions), so it's gated by its own dedicated permission on top of the Admin role. */}
+      <Route element={<ProtectedRoute roles={["Admin"]} permission={ADMISSION_RESULTS_MANAGE}><Outlet /></ProtectedRoute>}>
+        <Route path="/admission-result" element={<AdmissionResult />} />
+        <Route path="/chance-results" element={<ChanceResults />} />
       </Route>
 
       {/* Admin or Director can view a student's full profile */}

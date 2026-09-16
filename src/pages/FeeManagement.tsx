@@ -564,7 +564,22 @@ function ReceiptDialog({
   const batch = student ? batches.find((b) => b.id === student.batchId) : undefined;
 
   const showLogo = institution?.print.showLogoOnDocuments !== false && !!institution?.logoUrl;
+
+  // Historical (as-of-this-payment) figures, derived from this payment's own
+  // stored snapshot (previousDue) plus the student's totalFee — never from
+  // the student's *live* due/paid, which would silently drift for an old
+  // receipt once later payments are recorded. totalFee itself only changes
+  // if the student's billing plan (fee/discount) is edited, so treating it
+  // as stable across a payment's own history matches how payment.service.ts's
+  // create() already recomputes and re-saves it on every payment. Payment
+  // Transactions remain the sole source of truth — this is pure arithmetic
+  // over already-stored fields, never an independent recalculation.
+  const totalFee = student?.totalFee;
   const currentDue = payment.previousDue !== undefined ? payment.previousDue - payment.paidAmount : undefined;
+  const previousPaid = totalFee !== undefined && payment.previousDue !== undefined ? totalFee - payment.previousDue : undefined;
+  const totalPaidToDate = totalFee !== undefined && currentDue !== undefined ? totalFee - currentDue : undefined;
+  const courseFeeLabel = student?.feeType === "মাসিক" ? "মাসিক ফি" : "কোর্স ফি";
+  const courseFeeValue = student?.feeType === "মাসিক" ? student?.monthlyFee : student?.totalCourseFee;
 
   const handlePrint = () => {
     applyReceiptPageSize(institution?.print.paperSize || "A4");
@@ -633,6 +648,12 @@ function ReceiptDialog({
                       <span className="text-right">{batch.name}</span>
                     </div>
                   )}
+                  {student.guardianName && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground shrink-0">অভিভাবকের নাম:</span>
+                      <span className="text-right">{student.guardianName}</span>
+                    </div>
+                  )}
                 </>
               )}
               <div className="flex justify-between gap-3">
@@ -656,6 +677,18 @@ function ReceiptDialog({
             </div>
 
             <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
+              {student && courseFeeValue !== undefined && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{courseFeeLabel}:</span>
+                  <span>৳ {courseFeeValue.toLocaleString()}</span>
+                </div>
+              )}
+              {student?.admissionFee !== undefined && student.admissionFee > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>ভর্তি ফি:</span>
+                  <span>৳ {student.admissionFee.toLocaleString()}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">পরিমাণ:</span>
                 <span>৳ {payment.amount.toLocaleString()}</span>
@@ -673,9 +706,27 @@ function ReceiptDialog({
                 </div>
               )}
               <div className="flex justify-between border-t pt-2 mt-2">
-                <span className="font-semibold">মোট পরিশোধিত:</span>
+                <span className="font-semibold">বর্তমান পেমেন্ট:</span>
                 <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
               </div>
+              {previousPaid !== undefined && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>পূর্বে পরিশোধিত:</span>
+                  <span>৳ {previousPaid.toLocaleString()}</span>
+                </div>
+              )}
+              {totalPaidToDate !== undefined && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>সর্বমোট পরিশোধিত:</span>
+                  <span>৳ {totalPaidToDate.toLocaleString()}</span>
+                </div>
+              )}
+              {totalFee !== undefined && (
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>সর্বমোট পরিশোধযোগ্য:</span>
+                  <span>৳ {totalFee.toLocaleString()}</span>
+                </div>
+              )}
               {payment.previousDue !== undefined && (
                 <div className="flex justify-between text-xs text-muted-foreground pt-1">
                   <span>পূর্ববর্তী বকেয়া:</span>

@@ -249,7 +249,26 @@ export async function exportList(req: Request): Promise<Record<string, unknown>[
 }
 
 /** Total/Added/Missing counts for the Admission Result page's summary cards — always the full three-way breakdown of whatever batch/course/director scope is selected, independent of any admissionRollStatus filter applied to the list itself (Admission Result feature §11). */
+/**
+ * Admission Result feature is gated for Admin by its own dedicated
+ * permission (PERMISSIONS.ADMISSION_RESULTS_MANAGE) on top of the broad
+ * STUDENTS_READ/STUDENTS_UPDATE the route itself accepts — an Admin can be
+ * individually denied this one permission (User.deniedPermissions) without
+ * touching STUDENTS_READ/STUDENTS_UPDATE, which every other Student List/
+ * Profile page still needs. A Batch Director's own scoped permission
+ * (STUDENTS_READ_OWN_BATCH / STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH) is
+ * a completely separate path and is never affected by this check.
+ */
+function assertAdmissionResultAccess(req: Request, broadPermission: string): void {
+  const perms = req.user!.permissions;
+  const hasBroadAccess = perms.includes("*") || perms.includes(broadPermission);
+  if (!hasBroadAccess) return; // batch-director-scoped caller — unaffected, existing behavior
+  const hasAdmissionResultAccess = perms.includes("*") || perms.includes(PERMISSIONS.ADMISSION_RESULTS_MANAGE);
+  if (!hasAdmissionResultAccess) throw ApiError.forbidden("Admission Result access has been disabled for this account.");
+}
+
 export async function admissionRollStats(req: Request): Promise<{ total: number; added: number; missing: number }> {
+  assertAdmissionResultAccess(req, PERMISSIONS.STUDENTS_READ);
   const filter = await buildStudentFilter(req);
   const [total, added] = await Promise.all([
     Student.countDocuments(filter),
@@ -267,6 +286,7 @@ export async function admissionRollStats(req: Request): Promise<{ total: number;
  */
 export async function updateAdmissionRoll(req: Request, id: string, rawAdmissionRoll: string): Promise<Record<string, unknown>> {
   const doc = await getDocOrThrow(id);
+  assertAdmissionResultAccess(req, PERMISSIONS.STUDENTS_UPDATE);
 
   const perms = req.user!.permissions;
   const hasBroadAccess = perms.includes("*") || perms.includes(PERMISSIONS.STUDENTS_UPDATE);

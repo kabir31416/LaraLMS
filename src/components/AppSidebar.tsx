@@ -34,14 +34,16 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useAuth } from "@/contexts/AuthContext";
+import { hasPermission, useAuth } from "@/contexts/AuthContext";
 import { DEVELOPER_INFO } from "@/config/developerInfo";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 
 const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
   { title: "শিক্ষার্থী", url: "/students", icon: Users },
   { title: "ভর্তি", url: "/admission", icon: UserPlus },
-  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks },
+  // Individually disable-able per-Admin (User.deniedPermissions) — see routes.tsx's matching permission-gated route block.
+  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks, permission: ADMISSION_RESULTS_MANAGE },
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "এক্সাম", url: "/exams", icon: FileText },

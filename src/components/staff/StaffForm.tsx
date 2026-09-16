@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff, type StaffType } from "@/ty
 import { toast } from "sonner";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 
 /**
  * Only "Admin" still goes through the password-based User/Role login here —
@@ -45,6 +46,33 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
   );
   const [submitting, setSubmitting] = useState(false);
   const [createLogin, setCreateLogin] = useState(false);
+
+  // Per-Admin "Admission Result" toggle (User.deniedPermissions) — only
+  // relevant for staffType "Admin", since that's the only type with a real
+  // password login at all. Defaults to allowed (true), matching the
+  // backward-compatible default every existing Admin already has.
+  const [admissionResultAllowed, setAdmissionResultAllowed] = useState(true);
+  const [existingAdminUserId, setExistingAdminUserId] = useState<string | undefined>(undefined);
+
+  // Editing an existing Admin: look up their login (if one exists) so the
+  // toggle reflects their actual current permission instead of always
+  // defaulting to "allowed".
+  useEffect(() => {
+    if (!open || !isEdit || !editStaff || editStaff.staffType !== "Admin") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const users = await api.get<{ _id: string; deniedPermissions?: string[] }[]>(`/users?linkedStaffId=${editStaff.id}`);
+        if (cancelled) return;
+        const existing = users[0];
+        setExistingAdminUserId(existing?._id);
+        setAdmissionResultAllowed(!existing?.deniedPermissions?.includes(ADMISSION_RESULTS_MANAGE));
+      } catch {
+        // No login found (or lookup failed) — leave the default (allowed, no login to edit).
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isEdit, editStaff]);
 
   // Only fetched when actually needed (creating a login), so a plain staff
   // add never requires Role-management permission.
@@ -113,6 +141,8 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
         toast.success("স্টাফ যোগ হয়েছে");
       }
 
+      const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
+
       if (!isEdit && createLogin) {
         const roleId = await findRoleId(form.staffType);
         if (roleId) {
@@ -120,6 +150,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
             identifier: form.mobile,
             roleId,
             linkedStaffId: staffRecord.id,
+            deniedPermissions,
           });
           toast.success(
             res.tempPassword
@@ -128,6 +159,9 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
             { duration: 15000 },
           );
         }
+      } else if (isEdit && existingAdminUserId) {
+        // Existing Admin login — only the Admission Result permission can change here (role/password reset stay untouched).
+        await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions });
       }
 
       onOpenChange(false);
@@ -214,6 +248,15 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
               <Checkbox checked={createLogin} onCheckedChange={(v) => setCreateLogin(!!v)} id="create-login" />
               <label htmlFor="create-login" className="text-sm cursor-pointer">
                 একই সাথে এডমিন প্যানেল লগইন (পাসওয়ার্ড সহ) তৈরি করুন — শুধু এডমিনদের জন্য, সাময়িক পাসওয়ার্ড দেখানো হবে
+              </label>
+            </div>
+          )}
+          {/* Per-Admin "Admission Result" permission toggle — shown while creating a new Admin login, or editing an Admin who already has one. Super Admin (the built-in admin role itself) always keeps full access; this only ever narrows one specific Admin's own login. */}
+          {((!isEdit && LOGIN_ELIGIBLE.includes(form.staffType) && createLogin) || (isEdit && !!existingAdminUserId)) && (
+            <div className="space-y-1.5 md:col-span-2 flex items-center gap-2 border rounded-lg p-3">
+              <Checkbox checked={admissionResultAllowed} onCheckedChange={(v) => setAdmissionResultAllowed(!!v)} id="admission-result-allowed" />
+              <label htmlFor="admission-result-allowed" className="text-sm cursor-pointer">
+                অ্যাডমিশন রেজাল্ট ব্যবহারের অনুমতি — বন্ধ করলে এই এডমিন সাইডবারে অ্যাডমিশন রেজাল্ট দেখতে বা ব্যবহার করতে পারবেন না
               </label>
             </div>
           )}
