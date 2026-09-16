@@ -3,6 +3,17 @@ import { asyncHandler } from "../../common/utils/asyncHandler";
 import { sendSuccess } from "../../common/utils/apiResponse";
 import * as service from "./resultManagement.service";
 
+export const listStudentResults = asyncHandler(async (req: Request, res: Response) => {
+  const { batchId, search, page, limit } = req.query as Record<string, string | undefined>;
+  const { items, meta } = await service.listStudentResults(req, { batchId, search, page, limit });
+  sendSuccess(res, items, 200, meta);
+});
+
+export const getTopStudents = asyncHandler(async (req: Request, res: Response) => {
+  const { batchId, limit } = req.query as Record<string, string | undefined>;
+  sendSuccess(res, await service.getTopStudents(req, { batchId, limit: limit ? Number(limit) : undefined }));
+});
+
 export const getStudentResult = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, await service.getStudentResultDetail(req, req.params.studentId));
 });

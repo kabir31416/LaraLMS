@@ -8,6 +8,8 @@ import { Lecture } from "../lectures/lecture.model";
 import { getSettings } from "../settings/settings.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
+import { buildMeta, buildSearchFilter } from "../../common/utils/pagination";
+import { MAX_PAGE_SIZE } from "../../config/constants";
 import { assertCanActOnBatch, computeGrade, readScope } from "./exam.service";
 
 /**
@@ -61,6 +63,143 @@ export interface StudentResultDetail {
     phone: string;
   };
   rows: ResultRowView[];
+}
+
+export interface StudentResultSummaryRow {
+  studentId: string;
+  name: string;
+  rollNumber?: string;
+  phone: string;
+  course?: string;
+  batchName?: string;
+  totalObtained: number;
+  totalFullMarks: number;
+  percentage: number | null;
+  grade: string;
+  result: "পাস" | "ফেল" | null;
+}
+
+/** Resolves the Mongo filter for "which students may this caller see", honoring an optional batchId narrowing — used by both listStudentResults and getTopStudents so the two stay consistently scoped. */
+async function resolveStudentScopeFilter(req: Request, batchId?: string): Promise<Record<string, unknown>> {
+  const scope = await readScope(req);
+  if (scope?.batchIds) {
+    if (batchId) {
+      if (!scope.batchIds.includes(batchId)) throw ApiError.forbidden("You may only view results for batches you direct");
+      return { currentBatchId: batchId };
+    }
+    return { currentBatchId: { $in: scope.batchIds } };
+  }
+  return batchId ? { currentBatchId: batchId } : {};
+}
+
+/** Bulk-computes each given student's overall (all-subjects, all-exams) obtained/full marks in exactly two queries — never one query per student. */
+async function computeOverallTotals(studentIds: string[]): Promise<Map<string, { obtained: number; full: number }>> {
+  const results = await OfflineResult.find({ studentId: { $in: studentIds }, marks: { $ne: null } }).select("studentId examId marks");
+  const examIds = Array.from(new Set(results.map((r) => String(r.examId))));
+  const exams = await OfflineExam.find({ _id: { $in: examIds } }).select("fullMarks");
+  const fullMarksByExam = new Map(exams.map((e) => [String(e._id), e.fullMarks]));
+
+  const totals = new Map<string, { obtained: number; full: number }>();
+  for (const r of results) {
+    const sid = String(r.studentId);
+    const fullMarks = fullMarksByExam.get(String(r.examId)) ?? 0;
+    const acc = totals.get(sid) ?? { obtained: 0, full: 0 };
+    acc.obtained += r.marks as number;
+    acc.full += fullMarks;
+    totals.set(sid, acc);
+  }
+  return totals;
+}
+
+function summarize(
+  student: { _id: unknown; name: string; currentRollNumber?: string; phone: string; course?: string; currentBatchId?: unknown },
+  totals: { obtained: number; full: number } | undefined,
+  batchNameById: Map<string, string>,
+  gradeScale: { minPercent: number; grade: string }[],
+  passingPercentage: number,
+): StudentResultSummaryRow {
+  const percentage = totals && totals.full > 0 ? Math.round((totals.obtained / totals.full) * 10000) / 100 : null;
+  return {
+    studentId: String(student._id),
+    name: student.name,
+    rollNumber: student.currentRollNumber,
+    phone: student.phone,
+    course: student.course,
+    batchName: student.currentBatchId ? batchNameById.get(String(student.currentBatchId)) : undefined,
+    totalObtained: totals?.obtained ?? 0,
+    totalFullMarks: totals?.full ?? 0,
+    percentage,
+    grade: percentage !== null ? computeGrade(percentage, gradeScale) : "",
+    result: percentage === null ? null : percentage >= passingPercentage ? "পাস" : "ফেল",
+  };
+}
+
+/**
+ * Full student result list — every student in scope (all students for
+ * Admin with no batch filter, only the director's own batches otherwise),
+ * one row per student with their OVERALL result across every subject/exam,
+ * backend-paginated (never the whole collection loaded at once). Batch is
+ * an optional narrowing filter on top of this, not a required first step.
+ */
+export async function listStudentResults(
+  req: Request,
+  params: { batchId?: string; search?: string; page?: string; limit?: string },
+): Promise<{ items: StudentResultSummaryRow[]; meta: ReturnType<typeof buildMeta> }> {
+  const filter = await resolveStudentScopeFilter(req, params.batchId);
+  // Same searchable fields as the main Student List (student.service.ts's
+  // list()) — name/phone/roll/registrationId — even though registrationId
+  // itself isn't shown as a column here anymore.
+  Object.assign(filter, buildSearchFilter(params.search, ["name", "phone", "currentRollNumber", "registrationId"]));
+  // Defaults to 50/page (Result Management's own convention) rather than
+  // the app-wide DEFAULT_PAGE_SIZE (20) — the frontend always sends an
+  // explicit limit, this default only matters for a raw/manual API call.
+  const page = Math.max(1, Number(params.page) || 1);
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(params.limit) || 50));
+  const skip = (page - 1) * limit;
+
+  const [students, total] = await Promise.all([
+    Student.find(filter).select("name currentRollNumber phone course currentBatchId").sort({ currentRollNumber: 1, name: 1 }).skip(skip).limit(limit),
+    Student.countDocuments(filter),
+  ]);
+
+  const [totalsByStudent, settings] = await Promise.all([
+    computeOverallTotals(students.map((s) => String(s._id))),
+    getSettings(),
+  ]);
+  const batchIds = Array.from(new Set(students.map((s) => String(s.currentBatchId)).filter((id) => id !== "undefined")));
+  const batches = await Batch.find({ _id: { $in: batchIds } }).select("name");
+  const batchNameById = new Map(batches.map((b) => [String(b._id), b.name]));
+
+  const items = students.map((s) => summarize(s, totalsByStudent.get(String(s._id)), batchNameById, settings.gradeScale, settings.passingPercentage));
+  return { items, meta: buildMeta(page, limit, total) };
+}
+
+/**
+ * Top performers (by overall percentage) within scope — a small, bounded
+ * aggregation (only students who have at least one graded result, sorted
+ * and capped at `limit`), computed server-side so the browser never has to
+ * fetch every student's results just to find the best ones.
+ */
+export async function getTopStudents(req: Request, params: { batchId?: string; limit?: number }): Promise<StudentResultSummaryRow[]> {
+  const filter = await resolveStudentScopeFilter(req, params.batchId);
+  const limit = Math.min(50, Math.max(1, params.limit ?? 10));
+
+  const students = await Student.find(filter).select("name currentRollNumber phone course currentBatchId");
+  if (students.length === 0) return [];
+
+  const [totalsByStudent, settings] = await Promise.all([
+    computeOverallTotals(students.map((s) => String(s._id))),
+    getSettings(),
+  ]);
+  const batchIds = Array.from(new Set(students.map((s) => String(s.currentBatchId)).filter((id) => id !== "undefined")));
+  const batches = await Batch.find({ _id: { $in: batchIds } }).select("name");
+  const batchNameById = new Map(batches.map((b) => [String(b._id), b.name]));
+
+  return students
+    .map((s) => summarize(s, totalsByStudent.get(String(s._id)), batchNameById, settings.gradeScale, settings.passingPercentage))
+    .filter((row) => row.percentage !== null)
+    .sort((a, b) => (b.percentage as number) - (a.percentage as number))
+    .slice(0, limit);
 }
 
 /**

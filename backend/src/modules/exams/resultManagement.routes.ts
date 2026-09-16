@@ -2,7 +2,13 @@ import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth.middleware";
 import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
-import { batchResultsQuerySchema, studentIdParamSchema, updateResultMarkSchema } from "./resultManagement.validation";
+import {
+  batchResultsQuerySchema,
+  listStudentResultsQuerySchema,
+  studentIdParamSchema,
+  topStudentsQuerySchema,
+  updateResultMarkSchema,
+} from "./resultManagement.validation";
 import * as controller from "./resultManagement.controller";
 import { PERMISSIONS } from "../rbac/permissions";
 
@@ -19,6 +25,18 @@ const router = Router();
 
 router.use(requireAuth);
 
+router.get(
+  "/students",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.EXAMS_READ_OWN_BATCH, PERMISSIONS.RESULTS_READ, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(listStudentResultsQuerySchema),
+  controller.listStudentResults,
+);
+router.get(
+  "/top-students",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.EXAMS_READ_OWN_BATCH, PERMISSIONS.RESULTS_READ, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(topStudentsQuerySchema),
+  controller.getTopStudents,
+);
 router.get(
   "/students/:studentId",
   requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.EXAMS_READ_OWN_BATCH, PERMISSIONS.RESULTS_READ, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),

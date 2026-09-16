@@ -2,6 +2,22 @@ import { z } from "zod";
 
 export const studentIdParamSchema = z.object({ params: z.object({ studentId: z.string().length(24) }) });
 
+export const listStudentResultsQuerySchema = z.object({
+  query: z.object({
+    batchId: z.string().length(24).optional(),
+    search: z.string().trim().optional(),
+    page: z.string().optional(),
+    limit: z.string().optional(),
+  }),
+});
+
+export const topStudentsQuerySchema = z.object({
+  query: z.object({
+    batchId: z.string().length(24).optional(),
+    limit: z.string().optional(),
+  }),
+});
+
 export const batchResultsQuerySchema = z.object({
   query: z.object({
     batchId: z.string().length(24),

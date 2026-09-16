@@ -10,16 +10,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Search, ChevronsUpDown, Check, Pencil, Save, X, Printer, FileSpreadsheet } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Search, Pencil, Save, X, Printer, FileSpreadsheet, ArrowLeft, Trophy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
-import { useStudents } from "@/contexts/StudentContext";
 import { api } from "@/lib/apiClient";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { printReport, exportExcel } from "@/lib/exporters";
@@ -34,14 +38,25 @@ import { toast } from "@/hooks/use-toast";
  * Entry, /marksheet, reports) picks up the change immediately.
  */
 
-interface SearchStudent {
-  id: string;
+interface StudentResultSummaryRow {
+  studentId: string;
   name: string;
-  studentId: string; // Registration ID
   rollNumber?: string;
-  mobile: string;
+  phone: string;
   course?: string;
-  batchId?: string;
+  batchName?: string;
+  totalObtained: number;
+  totalFullMarks: number;
+  percentage: number | null;
+  grade: string;
+  result: "পাস" | "ফেল" | null;
+}
+
+interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 interface ResultRowView {
@@ -147,47 +162,65 @@ const ResultManagement = () => {
 /* Individual Result                                                     */
 /* -------------------------------------------------------------------- */
 
+const PAGE_SIZE = 50;
+
 function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
   const { user } = useAuth();
   const { batches } = useBatches();
-  const { students: contextStudents } = useStudents();
 
+  // Director: batch filter options are only their own batches (backend
+  // still independently enforces this via readScope regardless of what the
+  // dropdown offers). Admin: every batch, plus "সকল ব্যাচ" (all).
   const myBatches = useMemo(
-    () => (isDirector && user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    () => (isDirector && user ? batches.filter((b) => b.directorId === user.staffId) : batches),
     [batches, isDirector, user],
   );
 
-  // Director: pick a batch first (own batches only, same client-scoping
-  // DirectorStudents.tsx already relies on), then pick a student from it —
-  // never hits the unscoped /students search. Admin: free-text server-side
-  // search across name/registrationId/roll/phone, same fields Students.tsx
-  // already searches, plus course/batch filters.
-  const [directorBatchId, setDirectorBatchId] = useState("");
-  const directorBatchStudents = useMemo(
-    () => contextStudents.filter((s) => s.batchId === directorBatchId),
-    [contextStudents, directorBatchId],
-  );
-
+  const [batchId, setBatchId] = useState("all");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchStudent[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const [items, setItems] = useState<StudentResultSummaryRow[]>([]);
+  const [meta, setMeta] = useState<ListMeta | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+
+  const [topStudents, setTopStudents] = useState<StudentResultSummaryRow[]>([]);
+  const [loadingTop, setLoadingTop] = useState(true);
+
+  const buildFilterQs = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (batchId !== "all") qs.set("batchId", batchId);
+    if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
+    return qs;
+  }, [batchId, debouncedSearch]);
+
+  const loadList = useCallback(() => {
+    setLoadingList(true);
+    const qs = buildFilterQs();
+    qs.set("page", String(page));
+    qs.set("limit", String(PAGE_SIZE));
+    api
+      .getWithMeta<StudentResultSummaryRow[]>(`/result-management/students?${qs.toString()}`)
+      .then((res) => { setItems(res.data); setMeta((res.meta as unknown as ListMeta) ?? null); })
+      .catch((err) => toast({ title: "লোড ব্যর্থ", description: friendlyError(err, "শিক্ষার্থী তালিকা লোড করা যায়নি।") }))
+      .finally(() => setLoadingList(false));
+  }, [buildFilterQs, page]);
+
+  useEffect(() => { loadList(); }, [loadList]);
+  // Any filter change other than page itself restarts at page 1.
+  useEffect(() => { setPage(1); }, [batchId, debouncedSearch]);
 
   useEffect(() => {
-    if (isDirector || !debouncedSearch.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    let cancelled = false;
-    setSearching(true);
+    setLoadingTop(true);
+    const qs = new URLSearchParams({ limit: "10" });
+    if (batchId !== "all") qs.set("batchId", batchId);
     api
-      .get<SearchStudent[]>(`/students?search=${encodeURIComponent(debouncedSearch.trim())}&limit=10`)
-      .then((docs) => { if (!cancelled) setSearchResults(docs); })
-      .catch(() => { if (!cancelled) setSearchResults([]); })
-      .finally(() => { if (!cancelled) setSearching(false); });
-    return () => { cancelled = true; };
-  }, [debouncedSearch, isDirector]);
+      .get<StudentResultSummaryRow[]>(`/result-management/top-students?${qs.toString()}`)
+      .then(setTopStudents)
+      .catch(() => setTopStudents([]))
+      .finally(() => setLoadingTop(false));
+  }, [batchId]);
 
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string } | null>(null);
   const [detail, setDetail] = useState<StudentResultDetail | null>(null);
@@ -233,125 +266,133 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
     });
   };
 
+  // Drill-down into one student's full result history.
+  if (selectedStudent) {
+    return (
+      <div className="space-y-4">
+        <Button variant="outline" size="sm" onClick={() => setSelectedStudent(null)}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" />তালিকায় ফিরুন
+        </Button>
+
+        {loadingDetail && (
+          <Card className="border-none shadow-sm"><CardContent className="py-8"><Skeleton className="h-32 w-full" /></CardContent></Card>
+        )}
+
+        {!loadingDetail && detail && (
+          <Card className="border-none shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 flex-wrap print:hidden">
+              <div>
+                <CardTitle className="text-base">{detail.student.name}</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  আইডি: {detail.student.registrationId} • রোল: {detail.student.rollNumber || "—"} • কোর্স: {detail.student.course || "—"} • ব্যাচ: {detail.student.batchName || "—"} • মোবাইল: {detail.student.phone}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleExport}><FileSpreadsheet className="h-4 w-4 mr-1.5" />এক্সপোর্ট</Button>
+                <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1.5" />প্রিন্ট</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>বিষয়</TableHead>
+                      <TableHead>পরীক্ষা</TableHead>
+                      <TableHead>তারিখ</TableHead>
+                      <TableHead className="text-right">পূর্ণমান</TableHead>
+                      <TableHead className="w-[140px]">প্রাপ্ত নম্বর</TableHead>
+                      <TableHead className="text-right">শতকরা</TableHead>
+                      <TableHead>গ্রেড</TableHead>
+                      <TableHead>ফলাফল</TableHead>
+                      <TableHead className="print:hidden">প্রকাশিত</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.rows.length === 0 ? (
+                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">কোনো ফলাফল পাওয়া যায়নি</TableCell></TableRow>
+                    ) : detail.rows.map((row) => (
+                      <ResultRowEditable key={row.resultId} row={row} onUpdated={handleMarkUpdated} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  const resultBadge = (result: "পাস" | "ফেল" | null) => (
+    <Badge
+      className={
+        result === "পাস" ? "bg-success/10 text-success border-success/20"
+          : result === "ফেল" ? "bg-destructive/10 text-destructive border-destructive/20"
+          : "bg-muted text-muted-foreground"
+      }
+    >
+      {result ?? "কোনো ফলাফল নেই"}
+    </Badge>
+  );
+
   return (
     <div className="space-y-4">
       <Card className="border-none shadow-sm">
-        <CardHeader><CardTitle className="text-base">শিক্ষার্থী নির্বাচন</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {isDirector ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>ব্যাচ</Label>
-                <Select value={directorBatchId} onValueChange={(v) => { setDirectorBatchId(v); setSelectedStudent(null); }}>
-                  <SelectTrigger><SelectValue placeholder="ব্যাচ নির্বাচন করুন" /></SelectTrigger>
-                  <SelectContent>
-                    {myBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>শিক্ষার্থী</Label>
-                <Select
-                  value={selectedStudent?.id || ""}
-                  onValueChange={(v) => {
-                    const s = directorBatchStudents.find((x) => x.id === v);
-                    if (s) setSelectedStudent({ id: s.id, name: s.name });
-                  }}
-                  disabled={!directorBatchId}
-                >
-                  <SelectTrigger><SelectValue placeholder={directorBatchId ? "শিক্ষার্থী নির্বাচন করুন" : "প্রথমে ব্যাচ নির্বাচন করুন"} /></SelectTrigger>
-                  <SelectContent>
-                    {directorBatchStudents.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name} ({s.studentId})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        <CardHeader><CardTitle className="text-base">ফিল্টার</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>ব্যাচ</Label>
+            <Select value={batchId} onValueChange={setBatchId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">সকল ব্যাচ</SelectItem>
+                {myBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>খুঁজুন (আইডি, রোল, নাম বা মোবাইল)</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="খুঁজুন..." className="pl-9" />
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label>শিক্ষার্থী খুঁজুন (আইডি, রোল, নাম বা মোবাইল)</Label>
-              <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                    <span className="truncate flex items-center gap-2">
-                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      {selectedStudent ? selectedStudent.name : "শিক্ষার্থী খুঁজুন..."}
-                    </span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] max-w-[calc(100vw-2rem)] p-0 bg-popover" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput placeholder="আইডি, রোল, নাম বা মোবাইল..." value={search} onValueChange={setSearch} />
-                    <CommandList className="max-h-[40vh]">
-                      <CommandEmpty>{searching ? "খোঁজা হচ্ছে..." : "কোনো শিক্ষার্থী পাওয়া যায়নি"}</CommandEmpty>
-                      <CommandGroup>
-                        {searchResults.map((s) => (
-                          <CommandItem
-                            key={s.id}
-                            value={s.id}
-                            onSelect={() => {
-                              setSelectedStudent({ id: s.id, name: s.name });
-                              setSearchOpen(false);
-                            }}
-                          >
-                            <Check className={cn("mr-2 h-4 w-4 shrink-0", selectedStudent?.id === s.id ? "opacity-100" : "opacity-0")} />
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({s.studentId})</span></span>
-                              <span className="text-xs text-muted-foreground truncate">রোল: {s.rollNumber || "—"} • {s.mobile}</span>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
-      {loadingDetail && (
-        <Card className="border-none shadow-sm"><CardContent className="py-8"><Skeleton className="h-32 w-full" /></CardContent></Card>
-      )}
-
-      {!loadingDetail && detail && (
+      {!loadingTop && topStudents.length > 0 && (
         <Card className="border-none shadow-sm">
-          <CardHeader className="flex flex-row items-start justify-between gap-3 flex-wrap print:hidden">
-            <div>
-              <CardTitle className="text-base">{detail.student.name}</CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
-                আইডি: {detail.student.registrationId} • রোল: {detail.student.rollNumber || "—"} • কোর্স: {detail.student.course || "—"} • ব্যাচ: {detail.student.batchName || "—"} • মোবাইল: {detail.student.phone}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleExport}><FileSpreadsheet className="h-4 w-4 mr-1.5" />এক্সপোর্ট</Button>
-              <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1.5" />প্রিন্ট</Button>
-            </div>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-warning" />সেরা ১০ শিক্ষার্থী
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>বিষয়</TableHead>
-                    <TableHead>পরীক্ষা</TableHead>
-                    <TableHead>তারিখ</TableHead>
-                    <TableHead className="text-right">পূর্ণমান</TableHead>
-                    <TableHead className="w-[140px]">প্রাপ্ত নম্বর</TableHead>
+                    <TableHead className="w-[50px]">SL</TableHead>
+                    <TableHead>রোল</TableHead>
+                    <TableHead>নাম</TableHead>
+                    <TableHead>মোবাইল</TableHead>
+                    <TableHead>ব্যাচ</TableHead>
                     <TableHead className="text-right">শতকরা</TableHead>
                     <TableHead>গ্রেড</TableHead>
-                    <TableHead>ফলাফল</TableHead>
-                    <TableHead className="print:hidden">প্রকাশিত</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detail.rows.length === 0 ? (
-                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">কোনো ফলাফল পাওয়া যায়নি</TableCell></TableRow>
-                  ) : detail.rows.map((row) => (
-                    <ResultRowEditable key={row.resultId} row={row} onUpdated={handleMarkUpdated} />
+                  {topStudents.map((s, i) => (
+                    <TableRow key={s.studentId} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedStudent({ id: s.studentId, name: s.name })}>
+                      <TableCell className="text-xs font-medium">{i + 1}</TableCell>
+                      <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="text-sm">{s.phone}</TableCell>
+                      <TableCell className="text-sm">{s.batchName || "—"}</TableCell>
+                      <TableCell className="text-right font-semibold">{s.percentage}</TableCell>
+                      <TableCell>{s.grade}</TableCell>
+                    </TableRow>
                   ))}
                 </TableBody>
               </Table>
@@ -359,6 +400,85 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
           </CardContent>
         </Card>
       )}
+
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="text-base">সকল শিক্ষার্থীর ফলাফল ({meta?.total.toLocaleString("bn-BD") ?? "…"})</CardTitle></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[50px]">SL</TableHead>
+                  <TableHead>রোল</TableHead>
+                  <TableHead>নাম</TableHead>
+                  <TableHead>মোবাইল</TableHead>
+                  <TableHead>কোর্স</TableHead>
+                  <TableHead>ব্যাচ</TableHead>
+                  <TableHead className="text-right">প্রাপ্ত/পূর্ণমান</TableHead>
+                  <TableHead className="text-right">শতকরা</TableHead>
+                  <TableHead>গ্রেড</TableHead>
+                  <TableHead>ফলাফল</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingList ? (
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                ) : items.length === 0 ? (
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী পাওয়া যায়নি</TableCell></TableRow>
+                ) : items.map((s, i) => (
+                  <TableRow key={s.studentId} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedStudent({ id: s.studentId, name: s.name })}>
+                    <TableCell className="text-xs">{meta ? (meta.page - 1) * meta.limit + i + 1 : i + 1}</TableCell>
+                    <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="text-sm">{s.phone}</TableCell>
+                    <TableCell className="text-sm">{s.course || "—"}</TableCell>
+                    <TableCell className="text-sm">{s.batchName || "—"}</TableCell>
+                    <TableCell className="text-right text-sm">{s.totalObtained}/{s.totalFullMarks}</TableCell>
+                    <TableCell className="text-right">{s.percentage ?? "-"}</TableCell>
+                    <TableCell>{s.grade || "-"}</TableCell>
+                    <TableCell>{resultBadge(s.result)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {meta && meta.totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4">
+              <p className="text-sm text-muted-foreground">
+                মোট {meta.total.toLocaleString("bn-BD")} জনের মধ্যে {((meta.page - 1) * meta.limit + 1).toLocaleString("bn-BD")}–
+                {Math.min(meta.page * meta.limit, meta.total).toLocaleString("bn-BD")} জন দেখানো হচ্ছে
+              </p>
+              <Pagination className="mx-0 w-auto">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      className={meta.page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      onClick={() => meta.page > 1 && setPage(meta.page - 1)}
+                    />
+                  </PaginationItem>
+                  {Array.from({ length: meta.totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === meta.totalPages || Math.abs(p - meta.page) <= 1)
+                    .map((p, idx, arr) => (
+                      <PaginationItem key={p}>
+                        {idx > 0 && arr[idx - 1] !== p - 1 ? <span className="px-2 text-muted-foreground">…</span> : null}
+                        <PaginationLink isActive={p === meta.page} className="cursor-pointer" onClick={() => setPage(p)}>
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      className={meta.page >= meta.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      onClick={() => meta.page < meta.totalPages && setPage(meta.page + 1)}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
