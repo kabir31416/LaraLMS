@@ -21,7 +21,6 @@ import { useAttendance, ResultSmsTemplateConfig } from "@/contexts/AttendanceCon
 import type { AttendanceStatus } from "@/types/attendance";
 import { toast } from "@/hooks/use-toast";
 import { ApiClientError } from "@/lib/apiClient";
-import { studentIdentifierLabel } from "@/lib/studentDisplay";
 
 /**
  * Result Entry — the single place a Batch Director records both marks and
@@ -352,6 +351,7 @@ const DirectorResults = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>রোল</TableHead>
+                    <TableHead>Registration ID</TableHead>
                     <TableHead>নাম</TableHead>
                     <TableHead className="w-[120px]">নম্বর</TableHead>
                     <TableHead className="w-[160px] text-center">উপস্থিতি</TableHead>
@@ -359,15 +359,16 @@ const DirectorResults = () => {
                 </TableHeader>
                 <TableBody>
                   {loadingExisting ? (
-                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
                   ) : batchStudents.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
                   ) : batchStudents.map((s) => {
                     const status: AttendanceStatus = attendance[s.id] || "Absent";
                     const isPresent = status === "Present";
                     return (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono text-xs">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })}</TableCell>
+                        <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{s.studentId}</TableCell>
                         <TableCell className="font-medium">{s.name}</TableCell>
                         <TableCell>
                           <Input
@@ -416,7 +417,7 @@ const DirectorResults = () => {
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-medium truncate">{s.name}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })}</p>
+                        <p className="text-xs text-muted-foreground font-mono">রোল: {s.rollNumber || "—"} · Reg ID: {s.studentId}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs ${!isPresent ? "text-destructive font-medium" : "text-muted-foreground"}`}>অনুপস্থিত</span>

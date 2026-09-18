@@ -135,7 +135,8 @@ const FeeManagement = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>আইডি</TableHead>
+                      <TableHead>Registration ID</TableHead>
+                      <TableHead>রোল</TableHead>
                       <TableHead>নাম</TableHead>
                       <TableHead>কোর্স</TableHead>
                       <TableHead>ফি ধরন</TableHead>
@@ -147,14 +148,15 @@ const FeeManagement = () => {
                   <TableBody>
                     {dueStudents.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                           কোনো বকেয়া শিক্ষার্থী নেই
                         </TableCell>
                       </TableRow>
                     ) : (
                       dueStudents.map((s) => (
                         <TableRow key={s.id}>
-                          <TableCell className="font-mono text-xs">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })}</TableCell>
+                          <TableCell className="font-mono text-xs">{s.studentId}</TableCell>
+                          <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
                           <TableCell className="font-medium">{s.name}</TableCell>
                           <TableCell>{s.course}</TableCell>
                           <TableCell>

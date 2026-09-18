@@ -102,7 +102,7 @@ const Batches = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>আইডি</TableHead>
+                  <TableHead>Registration ID</TableHead>
                   <TableHead>রোল</TableHead>
                   <TableHead>নাম</TableHead>
                   <TableHead>মোবাইল</TableHead>

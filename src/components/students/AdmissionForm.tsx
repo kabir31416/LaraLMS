@@ -130,7 +130,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
     // record admitted before this field existed must stay editable without
     // being forced to pick one now (Phase 4 §11 backward compatibility).
     if (!form.name || !form.mobile || !form.rollNumber || !dob || !form.guardianMobile || (!isEdit && !form.courseId)) {
-      toast.error("নাম, মোবাইল নম্বর, রেজিস্ট্রেশন নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
+      toast.error("নাম, মোবাইল নম্বর, রোল নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
       return;
     }
 
@@ -205,7 +205,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.name} onChange={(e) => updateField("name", e.target.value)} placeholder="পূর্ণ নাম লিখুন" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>রেজিস্ট্রেশন নম্বর (পূর্বের রোল) *</Label>
+                  <Label>রোল নম্বর *</Label>
                   <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
                 </div>
                 <div className="space-y-1.5">

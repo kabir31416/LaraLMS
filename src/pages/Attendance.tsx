@@ -170,19 +170,21 @@ const Attendance = () => {
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>নাম</TableHead>
-                    <TableHead>আইডি</TableHead>
+                    <TableHead>রোল</TableHead>
+                    <TableHead>Registration ID</TableHead>
                     <TableHead className="text-right">%</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {topStudents.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">কোনো ডাটা নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">কোনো ডাটা নেই</TableCell></TableRow>
                   ) : topStudents.map((x, i) => {
                     const student = students.find((s) => s.id === x.studentId);
                     return (
                       <TableRow key={x.studentId}>
                         <TableCell className="font-medium">{i + 1}</TableCell>
                         <TableCell>{student?.name || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{student?.rollNumber || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">{student?.studentId || "—"}</TableCell>
                         <TableCell className="text-right">
                           <Badge className={x.pct >= 80 ? "bg-success/10 text-success border-success/20" : x.pct >= 60 ? "bg-warning/10 text-warning border-warning/20" : "bg-destructive/10 text-destructive border-destructive/20"}>

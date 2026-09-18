@@ -104,7 +104,7 @@ export default function StudentProfile() {
           <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <Field label="নাম" value={student.name} />
             <Field label="Registration ID" value={student.studentId} />
-            <Field label="রেজিস্ট্রেশন নম্বর" value={student.rollNumber} />
+            <Field label="রোল নম্বর" value={student.rollNumber} />
             <Field label="মোবাইল" value={student.mobile} />
             <Field label="জন্ম তারিখ" value={student.dob} />
             <Field label="রক্তের গ্রুপ" value={student.bloodGroup} />
