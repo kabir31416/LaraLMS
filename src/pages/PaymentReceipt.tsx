@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowLeft, Printer, Receipt as ReceiptIcon } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -20,6 +20,13 @@ import { toast } from "sonner";
  * index.css). It loads everything from the backend by paymentId alone
  * (GET /payments/:id/receipt — payment.service.ts's getReceipt), so a
  * browser refresh always works, exactly like any other page.
+ *
+ * Layout deliberately mirrors the public Marksheet print's look
+ * (marksheetExport.ts's printIndividualMarksheet) rather than a narrow
+ * "receipt slip" card — a full-width document with a bordered section
+ * heading + a two-column info grid for Student Details, and a real table
+ * (+ a totals row) for Fee/Payment Details, instead of a boxed card
+ * floating on a muted page.
  */
 
 interface ReceiptStudent {
@@ -80,6 +87,27 @@ function friendlyError(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback;
 }
 
+/** One label/value pair in the Student Details grid — blank values never render an empty row (the caller simply omits them). */
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3 py-1 border-b border-dashed">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={mono ? "font-mono font-medium text-right" : "font-medium text-right"}>{value}</span>
+    </div>
+  );
+}
+
+/** One figure in the totals row beneath the fee table — same "big number + small label underneath" shape as the Marksheet print's own `.overall` summary row. */
+function SummaryStat({ label, value, tone }: { label: string; value: string; tone?: "destructive" | "success" }) {
+  const color = tone === "destructive" ? "text-destructive" : tone === "success" ? "text-success" : "text-foreground";
+  return (
+    <div>
+      <p className={`text-lg font-bold ${color}`}>{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 export default function PaymentReceipt() {
   const { paymentId } = useParams<{ paymentId: string }>();
   const navigate = useNavigate();
@@ -110,7 +138,7 @@ export default function PaymentReceipt() {
   if (loading) {
     return (
       <div className="min-h-screen bg-muted/30 p-4 sm:p-8">
-        <div className="max-w-md mx-auto space-y-3">
+        <div className="max-w-3xl mx-auto space-y-3">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
         </div>
       </div>
@@ -131,20 +159,19 @@ export default function PaymentReceipt() {
   const { payment, student, batchName, currentDue, institution } = data;
   const showLogo = institution.print.showLogoOnDocuments !== false && !!institution.logoUrl;
 
-  // Historical (as-of-this-payment) figures — same arithmetic the old
-  // ReceiptDialog used, derived from this payment's own stored snapshot
-  // (previousDue) plus the student's totalFee, never from the student's
-  // *live* due/paid (which would drift for an old receipt once later
-  // payments are recorded). Payment Transactions remain the sole source of
-  // truth — this is pure arithmetic over already-stored fields.
+  // Historical (as-of-this-payment) figures — derived from this payment's
+  // own stored snapshot (previousDue) plus the student's totalFee, never
+  // from the student's *live* due/paid (which would drift for an old
+  // receipt once later payments are recorded). Payment Transactions remain
+  // the sole source of truth — this is pure arithmetic over already-stored
+  // fields, never an independent recalculation.
   const totalFee = student.totalFee;
-  const previousPaid = totalFee !== undefined && payment.previousDue !== undefined ? totalFee - payment.previousDue : undefined;
   const totalPaidToDate = totalFee !== undefined && currentDue !== undefined ? totalFee - currentDue : undefined;
   const courseFeeLabel = student.feeType === "মাসিক" ? "মাসিক ফি" : "কোর্স ফি";
   const courseFeeValue = student.feeType === "মাসিক" ? student.monthlyFee : student.totalCourseFee;
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-muted/30 print:bg-white">
       <div className="no-print sticky top-0 z-10 border-b bg-background px-4 py-3 flex items-center justify-between">
         <Button variant="ghost" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4 mr-2" /> ফিরে যান
@@ -154,173 +181,138 @@ export default function PaymentReceipt() {
         </Button>
       </div>
 
-      <div className="max-w-md mx-auto p-4 sm:p-8">
-        <div id="receipt-print" className="bg-background rounded-lg border p-5 space-y-4">
-          <div className="text-center border-b border-dashed pb-3 space-y-1">
-            {showLogo && <img src={institution.logoUrl} alt="" className="h-12 mx-auto object-contain" />}
-            <h2 className="font-bold text-lg">{institution.name || "কোচিং সেন্টার"}</h2>
-            {institution.address && <p className="text-xs text-muted-foreground">{institution.address}</p>}
-            <p className="text-xs text-muted-foreground">{[institution.phone, institution.email].filter(Boolean).join(" • ")}</p>
-            {institution.website && <p className="text-xs text-muted-foreground">{institution.website}</p>}
+      {/* A generous, full-width document rather than a narrow receipt-slip
+          card — matches the public Marksheet print's own layout language
+          (see this file's top comment). The muted page background around it
+          is purely an on-screen affordance (so the document reads as a
+          "sheet of paper"); print:bg-white + print:shadow-none/border-none
+          neutralize it so the printed page is a plain white document. */}
+      <div className="max-w-3xl mx-auto p-4 sm:p-8 print:p-0 print:max-w-none">
+        <div id="receipt-print" className="bg-background border rounded-lg p-6 sm:p-10 print:border-none print:rounded-none print:p-0">
+          <div className="text-center border-b pb-4 mb-6 space-y-1">
+            {showLogo && <img src={institution.logoUrl} alt="" className="h-14 mx-auto object-contain mb-1" />}
+            <h1 className="text-xl font-bold">{institution.name || "কোচিং সেন্টার"}</h1>
+            {institution.address && <p className="text-sm text-muted-foreground">{institution.address}</p>}
+            <p className="text-sm text-muted-foreground">{[institution.phone, institution.email].filter(Boolean).join(" • ")}</p>
+            {institution.website && <p className="text-sm text-muted-foreground">{institution.website}</p>}
           </div>
 
-          <div className="text-center">
-            <p className="text-sm font-semibold flex items-center justify-center gap-1.5">
-              <ReceiptIcon className="h-4 w-4" /> পেমেন্ট রসিদ
+          <div className="text-center mb-6">
+            <h2 className="text-lg font-semibold flex items-center justify-center gap-2">
+              <ReceiptIcon className="h-5 w-5" /> পেমেন্ট রসিদ
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              রসিদ নং: <span className="font-mono font-semibold text-foreground">{payment.receiptNo}</span>
+              <span className="mx-2">•</span>
+              তারিখ: {payment.date}
             </p>
           </div>
 
-          <div className="bg-primary/5 rounded-lg p-3 text-center">
-            <p className="text-xs text-muted-foreground">রসিদ নম্বর</p>
-            <p className="text-lg font-bold font-mono text-primary">{payment.receiptNo}</p>
-          </div>
+          <section className="mb-6">
+            <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">শিক্ষার্থীর তথ্য</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 text-sm">
+              <InfoRow label="নাম" value={student.name} />
+              {/* System ID is ALWAYS shown — the one identifier guaranteed to exist even when Roll is empty (Coaching Reg No / Roll vs System ID spec §14/§21). */}
+              <InfoRow label="সিস্টেম আইডি" value={student.registrationId} mono />
+              {student.currentRollNumber && <InfoRow label="রোল" value={student.currentRollNumber} mono />}
+              {student.course && <InfoRow label="কোর্স" value={student.course} />}
+              {batchName && <InfoRow label="ব্যাচ" value={batchName} />}
+              <InfoRow label="মোবাইল" value={student.phone} />
+              {student.guardianName && <InfoRow label="অভিভাবকের নাম" value={student.guardianName} />}
+              {student.guardianMobile && <InfoRow label="অভিভাবকের মোবাইল" value={student.guardianMobile} />}
+            </div>
+          </section>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">শিক্ষার্থীর নাম:</span>
-              <span className="font-medium text-right">{student.name}</span>
-            </div>
-            {/* System ID is ALWAYS shown — the one identifier guaranteed to exist even when Roll is empty (Coaching Reg No / Roll vs System ID spec §14/§21). */}
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">সিস্টেম আইডি:</span>
-              <span className="font-mono text-xs">{student.registrationId}</span>
-            </div>
-            {student.currentRollNumber && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">রোল:</span>
-                <span className="font-mono text-xs">{student.currentRollNumber}</span>
-              </div>
-            )}
-            {student.course && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">কোর্স:</span>
-                <span className="text-right">{student.course}</span>
-              </div>
-            )}
-            {batchName && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">ব্যাচ:</span>
-                <span className="text-right">{batchName}</span>
-              </div>
-            )}
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">মোবাইল:</span>
-              <span className="text-right">{student.phone}</span>
-            </div>
-            {student.guardianName && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">অভিভাবকের নাম:</span>
-                <span className="text-right">{student.guardianName}</span>
-              </div>
-            )}
-            {student.guardianMobile && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">অভিভাবকের মোবাইল:</span>
-                <span className="text-right">{student.guardianMobile}</span>
-              </div>
-            )}
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">তারিখ:</span>
-              <span>{payment.date}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">ফি ধরন:</span>
-              <Badge variant="outline">{payment.feeType}</Badge>
-            </div>
-            {payment.month && (
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">মাস:</span>
-                <span>{payment.month}</span>
-              </div>
-            )}
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground shrink-0">পেমেন্ট পদ্ধতি:</span>
-              <span>{payment.method}</span>
-            </div>
-          </div>
+          <section className="mb-6">
+            <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">ফি ও পেমেন্ট বিবরণ</h3>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>বিবরণ</TableHead>
+                  <TableHead className="text-right">পরিমাণ (৳)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {courseFeeValue !== undefined && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">{courseFeeLabel}</TableCell>
+                    <TableCell className="text-right">{courseFeeValue.toLocaleString()}</TableCell>
+                  </TableRow>
+                )}
+                {student.admissionFee !== undefined && student.admissionFee > 0 && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">ভর্তি ফি</TableCell>
+                    <TableCell className="text-right">{student.admissionFee.toLocaleString()}</TableCell>
+                  </TableRow>
+                )}
+                <TableRow>
+                  <TableCell className="text-muted-foreground">এই পেমেন্টের পরিমাণ</TableCell>
+                  <TableCell className="text-right">{payment.amount.toLocaleString()}</TableCell>
+                </TableRow>
+                {payment.discount > 0 && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">ডিসকাউন্ট</TableCell>
+                    <TableCell className="text-right text-success">- {payment.discount.toLocaleString()}</TableCell>
+                  </TableRow>
+                )}
+                {payment.fine > 0 && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">জরিমানা</TableCell>
+                    <TableCell className="text-right text-warning">+ {payment.fine.toLocaleString()}</TableCell>
+                  </TableRow>
+                )}
+                {payment.previousDue !== undefined && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">পূর্ববর্তী বকেয়া</TableCell>
+                    <TableCell className="text-right">{payment.previousDue.toLocaleString()}</TableCell>
+                  </TableRow>
+                )}
+                <TableRow>
+                  <TableCell className="text-muted-foreground">ফি ধরন</TableCell>
+                  <TableCell className="text-right">{payment.feeType}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground">পেমেন্ট পদ্ধতি</TableCell>
+                  <TableCell className="text-right">{payment.method}</TableCell>
+                </TableRow>
+                {payment.month && (
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">মাস</TableCell>
+                    <TableCell className="text-right">{payment.month}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
 
-          <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
-            {courseFeeValue !== undefined && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{courseFeeLabel}:</span>
-                <span>৳ {courseFeeValue.toLocaleString()}</span>
-              </div>
-            )}
-            {student.admissionFee !== undefined && student.admissionFee > 0 && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>ভর্তি ফি:</span>
-                <span>৳ {student.admissionFee.toLocaleString()}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">পরিমাণ:</span>
-              <span>৳ {payment.amount.toLocaleString()}</span>
+            <div className="flex flex-wrap gap-x-8 gap-y-3 mt-4 pt-4 border-t">
+              <SummaryStat label="বর্তমান পেমেন্ট" value={`৳ ${payment.paidAmount.toLocaleString()}`} />
+              {totalFee !== undefined && <SummaryStat label="সর্বমোট পরিশোধযোগ্য" value={`৳ ${totalFee.toLocaleString()}`} />}
+              {totalPaidToDate !== undefined && <SummaryStat label="সর্বমোট পরিশোধিত" value={`৳ ${totalPaidToDate.toLocaleString()}`} />}
+              {currentDue !== undefined && (
+                <SummaryStat
+                  label="বর্তমান বকেয়া"
+                  value={`৳ ${currentDue.toLocaleString()}`}
+                  tone={currentDue > 0 ? "destructive" : "success"}
+                />
+              )}
             </div>
-            {payment.discount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">ডিসকাউন্ট:</span>
-                <span className="text-success">- ৳ {payment.discount.toLocaleString()}</span>
-              </div>
-            )}
-            {payment.fine > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">জরিমানা:</span>
-                <span className="text-warning">+ ৳ {payment.fine.toLocaleString()}</span>
-              </div>
-            )}
-            <div className="flex justify-between border-t pt-2 mt-2">
-              <span className="font-semibold">বর্তমান পেমেন্ট:</span>
-              <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
-            </div>
-            {previousPaid !== undefined && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>পূর্বে পরিশোধিত:</span>
-                <span>৳ {previousPaid.toLocaleString()}</span>
-              </div>
-            )}
-            {totalPaidToDate !== undefined && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>সর্বমোট পরিশোধিত:</span>
-                <span>৳ {totalPaidToDate.toLocaleString()}</span>
-              </div>
-            )}
-            {totalFee !== undefined && (
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>সর্বমোট পরিশোধযোগ্য:</span>
-                <span>৳ {totalFee.toLocaleString()}</span>
-              </div>
-            )}
-            {payment.previousDue !== undefined && (
-              <div className="flex justify-between text-xs text-muted-foreground pt-1">
-                <span>পূর্ববর্তী বকেয়া:</span>
-                <span>৳ {payment.previousDue.toLocaleString()}</span>
-              </div>
-            )}
-            {currentDue !== undefined && (
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">বর্তমান বকেয়া:</span>
-                <span className={currentDue > 0 ? "text-destructive font-medium" : "text-success font-medium"}>
-                  ৳ {currentDue.toLocaleString()}
-                </span>
-              </div>
-            )}
-          </div>
+          </section>
 
           {payment.note && (
-            <div className="text-xs text-muted-foreground border-t border-dashed pt-2">
-              <span className="font-medium">নোট: </span>{payment.note}
+            <div className="text-sm text-muted-foreground border-t pt-3 mb-6">
+              <span className="font-medium text-foreground">নোট: </span>{payment.note}
             </div>
           )}
 
-          <div className="pt-6 flex justify-end">
+          <div className="pt-8 flex justify-end">
             <div className="text-center text-xs">
-              <div className="border-t border-foreground/40 pt-1 w-32">
+              <div className="border-t border-foreground/40 pt-1 w-36">
                 {institution.print.signatureLabel || "অনুমোদিতকারী"}
               </div>
             </div>
           </div>
 
-          <div className="text-center text-xs text-muted-foreground pt-2 border-t border-dashed">
+          <div className="text-center text-xs text-muted-foreground pt-4 mt-4 border-t">
             ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
           </div>
         </div>
