@@ -67,6 +67,7 @@ export interface StudentResultDetail {
 
 export interface StudentResultSummaryRow {
   studentId: string;
+  registrationId: string;
   name: string;
   rollNumber?: string;
   phone: string;
@@ -112,7 +113,7 @@ async function computeOverallTotals(studentIds: string[]): Promise<Map<string, {
 }
 
 function summarize(
-  student: { _id: unknown; name: string; currentRollNumber?: string; phone: string; course?: string; currentBatchId?: unknown },
+  student: { _id: unknown; name: string; registrationId: string; currentRollNumber?: string; phone: string; course?: string; currentBatchId?: unknown },
   totals: { obtained: number; full: number } | undefined,
   batchNameById: Map<string, string>,
   gradeScale: { minPercent: number; grade: string }[],
@@ -121,6 +122,7 @@ function summarize(
   const percentage = totals && totals.full > 0 ? Math.round((totals.obtained / totals.full) * 10000) / 100 : null;
   return {
     studentId: String(student._id),
+    registrationId: student.registrationId,
     name: student.name,
     rollNumber: student.currentRollNumber,
     phone: student.phone,
@@ -158,7 +160,7 @@ export async function listStudentResults(
   const skip = (page - 1) * limit;
 
   const [students, total] = await Promise.all([
-    Student.find(filter).select("name currentRollNumber phone course currentBatchId").sort({ currentRollNumber: 1, name: 1 }).skip(skip).limit(limit),
+    Student.find(filter).select("name registrationId currentRollNumber phone course currentBatchId").sort({ currentRollNumber: 1, name: 1 }).skip(skip).limit(limit),
     Student.countDocuments(filter),
   ]);
 
@@ -184,7 +186,7 @@ export async function getTopStudents(req: Request, params: { batchId?: string; l
   const filter = await resolveStudentScopeFilter(req, params.batchId);
   const limit = Math.min(50, Math.max(1, params.limit ?? 10));
 
-  const students = await Student.find(filter).select("name currentRollNumber phone course currentBatchId");
+  const students = await Student.find(filter).select("name registrationId currentRollNumber phone course currentBatchId");
   if (students.length === 0) return [];
 
   const [totalsByStudent, settings] = await Promise.all([

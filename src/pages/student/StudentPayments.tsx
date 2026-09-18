@@ -1,13 +1,16 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Receipt as ReceiptIcon } from "lucide-react";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useStudentSelf } from "./useStudentSelf";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 
 export default function StudentPayments() {
   const { user, student } = useStudentSelf();
   const { getPayments } = usePayments();
+  const navigate = useNavigate();
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
   const payments = getPayments(student.id);
@@ -24,14 +27,19 @@ export default function StudentPayments() {
         <Card><CardHeader><CardTitle className="text-base">পেমেন্ট ইতিহাস</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>রসিদ নং</TableHead><TableHead>তারিখ</TableHead><TableHead>পরিমাণ</TableHead><TableHead>পদ্ধতি</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>রসিদ নং</TableHead><TableHead>তারিখ</TableHead><TableHead>পরিমাণ</TableHead><TableHead>পদ্ধতি</TableHead><TableHead className="text-right">রসিদ</TableHead></TableRow></TableHeader>
               <TableBody>
-                {payments.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">কোনো পেমেন্ট নেই</TableCell></TableRow> :
+                {payments.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">কোনো পেমেন্ট নেই</TableCell></TableRow> :
                   payments.map((p) => <TableRow key={p.id}>
                     <TableCell className="font-mono text-xs">{p.receiptNo}</TableCell>
                     <TableCell>{p.date}</TableCell>
                     <TableCell className="font-semibold">৳ {p.paidAmount.toLocaleString()}</TableCell>
                     <TableCell>{p.method}</TableCell>
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost" onClick={() => navigate(`/payments/${p.id}/receipt`)}>
+                        <ReceiptIcon className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>)}
               </TableBody>
             </Table>

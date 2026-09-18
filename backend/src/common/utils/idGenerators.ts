@@ -49,10 +49,21 @@ async function nextSeq(key: string): Promise<number> {
   }
 }
 
-/** LMS-01247 style, continuing the existing frontend format/counter start. */
+/**
+ * LMS-01247 style by default, continuing the existing frontend format/
+ * counter start — the prefix comes from Settings.studentIdPrefix (Coaching
+ * Reg No / Roll vs System ID spec §7-§10) rather than being hard-coded, so
+ * an admin changing it only affects *future* students; every already-issued
+ * registrationId is immutable (student.model.ts) and is never touched by
+ * this. The numeric sequence lives in its own prefix-independent counter
+ * key, so changing the prefix can never reset or duplicate the sequence.
+ */
 export async function generateRegistrationId(): Promise<string> {
+  const { getSettings } = await import("../../modules/settings/settings.service");
+  const settings = await getSettings();
+  const prefix = settings.studentIdPrefix || "LMS";
   const seq = await nextSeq("student_registration_id");
-  return `LMS-${String(1246 + seq).padStart(5, "0")}`;
+  return `${prefix}-${String(1246 + seq).padStart(5, "0")}`;
 }
 
 /**

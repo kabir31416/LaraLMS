@@ -279,7 +279,7 @@ export default function StudentImportPreview() {
                                   className="flex items-center gap-1 text-xs text-primary hover:underline"
                                   onClick={() => navigate(`/students/${createdRef._id}`)}
                                 >
-                                  {createdRef.registrationId || createdRef.currentRollNumber || "প্রোফাইল"} <ExternalLink className="h-3 w-3" />
+                                  {createdRef.currentRollNumber || createdRef.registrationId || "প্রোফাইল"} <ExternalLink className="h-3 w-3" />
                                 </button>
                               )}
                               {row.importStatus === "FAILED" && row.failureReason && (

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { studentIdentifierLabel } from "@/lib/studentDisplay";
 
 export interface PickedStudent {
   id: string;
@@ -77,7 +78,7 @@ export function MaterialStudentPicker({ open, onOpenChange, onSelect }: Props) {
                   className="w-full text-left px-3 py-2 rounded-md hover:bg-muted/60 transition-colors flex items-center justify-between"
                 >
                   <span className="font-medium">{s.name}</span>
-                  <span className="text-xs text-muted-foreground">{s.currentRollNumber || "—"} • {s.phone}</span>
+                  <span className="text-xs text-muted-foreground">{studentIdentifierLabel({ rollNumber: s.currentRollNumber, systemId: s.registrationId || "—" })} • {s.phone}</span>
                 </button>
               ))
             )}

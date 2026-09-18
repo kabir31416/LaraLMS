@@ -9,6 +9,7 @@ import { useBatches } from "@/contexts/BatchContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { matchesStudentQuery, studentIdentifierLabel } from "@/lib/studentDisplay";
 
 interface Props {
   open: boolean;
@@ -28,10 +29,9 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
   // Only students with no current batch can be enrolled here — a student
   // already in another batch needs Transfer instead (Phase 1 §14).
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
     return students.filter((s) => {
       if (s.batchId) return false;
-      return !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q);
+      return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
     });
   }, [students, search]);
 
@@ -68,7 +68,7 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
         <div className="space-y-3 pt-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="নাম, আইডি বা মোবাইল..." className="pl-9" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="নাম, রোল, আইডি বা মোবাইল..." className="pl-9" />
           </div>
           <ScrollArea className="h-[400px] border rounded-lg">
             <div className="p-2 space-y-1">
@@ -80,7 +80,7 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
                     <Checkbox checked={picked.includes(s.id)} onCheckedChange={() => toggle(s.id)} />
                     <div className="flex-1">
                       <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{s.studentId} · {s.mobile}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })} · {s.mobile}</p>
                     </div>
                   </label>
                 ))

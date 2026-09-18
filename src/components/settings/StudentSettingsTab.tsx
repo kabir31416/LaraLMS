@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { toast } from "sonner";
@@ -15,6 +18,8 @@ import { ApiClientError } from "@/contexts/AuthContext";
  */
 export function StudentSettingsTab() {
   const { settings, updateSettings } = useAcademic();
+  const [prefixInput, setPrefixInput] = useState(settings.studentIdPrefix);
+  const [savingPrefix, setSavingPrefix] = useState(false);
 
   const save = async (rollNumberScope: "batch" | "course" | "global") => {
     try {
@@ -25,8 +30,38 @@ export function StudentSettingsTab() {
     }
   };
 
+  const savePrefix = async () => {
+    const trimmed = prefixInput.trim();
+    if (!trimmed) { toast.error("প্রিফিক্স খালি রাখা যাবে না।"); return; }
+    setSavingPrefix(true);
+    try {
+      await updateSettings({ studentIdPrefix: trimmed });
+      toast.success("সংরক্ষিত হয়েছে");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+    } finally {
+      setSavingPrefix(false);
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-2xl">
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="text-base">সিস্টেম আইডি</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <Label>সিস্টেম আইডি প্রিফিক্স</Label>
+          <div className="flex gap-2 max-w-xs">
+            <Input value={prefixInput} onChange={(e) => setPrefixInput(e.target.value)} maxLength={12} placeholder="LMS" />
+            <Button onClick={savePrefix} disabled={savingPrefix || prefixInput.trim() === settings.studentIdPrefix}>
+              {savingPrefix ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground pt-1">
+            নতুন তৈরি হওয়া শিক্ষার্থীর সিস্টেম আইডি এই প্রিফিক্স দিয়ে শুরু হবে (যেমন: {prefixInput.trim() || "LMS"}-00001)। এই প্রিফিক্স শুধুমাত্র নতুন সিস্টেম আইডির জন্য ব্যবহৃত হয় — বিদ্যমান শিক্ষার্থীদের সিস্টেম আইডি পরিবর্তন হবে না।
+          </p>
+        </CardContent>
+      </Card>
+
       <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="text-base">রোল নম্বর নিয়ম</CardTitle></CardHeader>
         <CardContent className="space-y-2">

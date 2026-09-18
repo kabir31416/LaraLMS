@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { isBirthdayToday } from "@/lib/date";
+import { matchesStudentQuery } from "@/lib/studentDisplay";
 
 const DirectorStudents = () => {
   const { user } = useAuth();
@@ -29,12 +30,11 @@ const DirectorStudents = () => {
   const myBatchIds = useMemo(() => new Set(myBatches.map((b) => b.id)), [myBatches]);
 
   const list = useMemo(() => {
-    const q = search.toLowerCase();
     return students
       .filter((s) => s.batchId && myBatchIds.has(s.batchId))
       .filter((s) => batchFilter === "all" || s.batchId === batchFilter)
       .filter((s) => !birthdayOnly || isBirthdayToday(s.dob))
-      .filter((s) => !q || s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q));
+      .filter((s) => matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }));
   }, [students, myBatchIds, search, batchFilter, birthdayOnly]);
 
   if (!user || user.role !== "Batch Director") {

@@ -148,6 +148,28 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * The Student List's free-text search box must find a student by name,
+ * roll, System ID, or mobile (all plain Student fields — buildSearchFilter
+ * handles those directly), and ALSO by guardian mobile (Coaching Reg No /
+ * Roll vs System ID spec §6) — guardianMobile lives on the separate
+ * Guardian collection (Phase 1 §17), not on Student, so it can't join the
+ * same single-collection $or the way the others do. Resolved as one extra
+ * OR-branch (`_id: {$in: ...}`) rather than merged into `buildSearchFilter`
+ * itself, so that helper stays a generic single-collection utility other
+ * modules can keep using unchanged.
+ */
+async function buildSearchFilterWithGuardian(search: unknown): Promise<Record<string, unknown>> {
+  const base = buildSearchFilter(search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]);
+  if (typeof search !== "string" || !search.trim()) return base;
+  const { Guardian } = await import("../guardians/guardian.model");
+  const regex = new RegExp(escapeRegex(search.trim()), "i");
+  const guardianStudentIds = await Guardian.find({ phone: regex }).distinct("studentId");
+  if (guardianStudentIds.length === 0) return base;
+  const existingOr = (base.$or as Record<string, unknown>[] | undefined) ?? [];
+  return { $or: [...existingOr, { _id: { $in: guardianStudentIds } }] };
+}
+
 async function buildStudentFilter(req: Request): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};
   if (req.query.course) filter.course = req.query.course;
@@ -221,7 +243,7 @@ export async function list(req: Request) {
   if (req.query.admissionRollStatus === "added") filter.admissionRoll = { $exists: true, $ne: "" };
   else if (req.query.admissionRollStatus === "missing") filter.admissionRoll = { $in: [null, ""] };
 
-  Object.assign(filter, buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]));
+  Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
   const [docs, total] = await Promise.all([
     Student.find(filter).sort(sort).skip(skip).limit(limit),
@@ -245,7 +267,7 @@ const EXPORT_MAX_ROWS = 2000;
 
 export async function exportList(req: Request): Promise<Record<string, unknown>[]> {
   const filter = await buildStudentFilter(req);
-  Object.assign(filter, buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]));
+  Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
   const docs = await Student.find(filter).sort({ name: 1 }).limit(EXPORT_MAX_ROWS);
   const withG = await withGuardians(docs);

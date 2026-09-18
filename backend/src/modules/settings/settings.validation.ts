@@ -12,6 +12,7 @@ export const updateSettingsSchema = z.object({
       gradeScale: z.array(z.object({ minPercent: z.number().min(0).max(100), grade: z.string().min(1) })).optional(),
       rollNumberScope: z.enum(["batch", "course", "global"]).optional(),
       admissionFeeBdt: z.number().min(0).optional(),
+      studentIdPrefix: z.string().trim().min(1).max(12).optional(),
     })
     .strict(),
 });

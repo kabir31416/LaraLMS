@@ -3,6 +3,7 @@ import { format, isToday, parseISO, startOfMonth, endOfMonth, isWithinInterval }
 import { bn } from "date-fns/locale";
 import { CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { formatStudentLabel } from "@/lib/studentDisplay";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -322,7 +323,7 @@ function IncomeDialog({ open, onOpenChange, editing }: { open: boolean; onOpenCh
               <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">কেউ নয়</SelectItem>
-                {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.studentId})</SelectItem>)}
+                {students.map((s) => <SelectItem key={s.id} value={s.id}>{formatStudentLabel({ name: s.name, rollNumber: s.rollNumber, systemId: s.studentId })}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>

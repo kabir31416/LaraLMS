@@ -25,6 +25,7 @@ import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { api } from "@/lib/apiClient";
+import { studentIdentifierLabel } from "@/lib/studentDisplay";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { printReport, exportExcel } from "@/lib/exporters";
 import { toast } from "@/hooks/use-toast";
@@ -40,6 +41,7 @@ import { toast } from "@/hooks/use-toast";
 
 interface StudentResultSummaryRow {
   studentId: string;
+  registrationId: string;
   name: string;
   rollNumber?: string;
   phone: string;
@@ -386,7 +388,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
                   {topStudents.map((s, i) => (
                     <TableRow key={s.studentId} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedStudent({ id: s.studentId, name: s.name })}>
                       <TableCell className="text-xs font-medium">{i + 1}</TableCell>
-                      <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.registrationId })}</TableCell>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell className="text-sm">{s.phone}</TableCell>
                       <TableCell className="text-sm">{s.batchName || "—"}</TableCell>
@@ -428,7 +430,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
                 ) : items.map((s, i) => (
                   <TableRow key={s.studentId} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedStudent({ id: s.studentId, name: s.name })}>
                     <TableCell className="text-xs">{meta ? (meta.page - 1) * meta.limit + i + 1 : i + 1}</TableCell>
-                    <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.registrationId })}</TableCell>
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell className="text-sm">{s.phone}</TableCell>
                     <TableCell className="text-sm">{s.course || "—"}</TableCell>

@@ -22,6 +22,12 @@ router.get(
   validate(idParamSchema),
   controller.getById,
 );
+router.get(
+  "/:id/receipt",
+  requirePermission(PERMISSIONS.PAYMENTS_READ, PERMISSIONS.PAYMENTS_READ_OWN),
+  validate(idParamSchema),
+  controller.getReceipt,
+);
 router.post("/", requirePermission(PERMISSIONS.PAYMENTS_CREATE), validate(createPaymentSchema), controller.create);
 
 export default router;

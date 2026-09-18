@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS: AcademicSettings = {
   gradeScale: [],
   rollNumberScope: "batch",
   admissionFeeBdt: 200,
+  studentIdPrefix: "LMS",
 };
 
 /** Backend documents come back as { _id, ... }; every existing page reads `.id`. */

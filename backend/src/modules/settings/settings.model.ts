@@ -24,6 +24,18 @@ export interface SettingsDoc extends Document {
    */
   admissionFeeBdt: number;
   /**
+   * Student System ID prefix (Coaching Reg No / Roll vs System ID
+   * clarification spec §7-§10) — generateRegistrationId() (idGenerators.ts)
+   * reads this at creation time only. Changing it never touches an
+   * already-issued Student.registrationId (Mongoose `immutable: true` on
+   * that field already forbids it structurally); it only changes what
+   * prefix the NEXT newly-created student gets. The numeric sequence itself
+   * lives in a separate, prefix-independent Counter document
+   * ("student_registration_id"), so changing this can never reset or
+   * duplicate the sequence.
+   */
+  studentIdPrefix: string;
+  /**
    * The fallback Result SMS template (Result Entry's "Send Result") used
    * whenever a Batch Director hasn't configured their own (Staff.
    * resultSmsTemplate) — see exam.service.ts's resolveResultSmsTemplate.
@@ -60,6 +72,7 @@ const settingsSchema = new Schema<SettingsDoc>(
     },
     rollNumberScope: { type: String, enum: ["batch", "course", "global"], default: "batch" },
     admissionFeeBdt: { type: Number, default: 200, min: 0 },
+    studentIdPrefix: { type: String, trim: true, default: "LMS" },
     resultSmsTemplate: { type: String, trim: true, default: DEFAULT_RESULT_SMS_TEMPLATE },
   },
   { timestamps: true },

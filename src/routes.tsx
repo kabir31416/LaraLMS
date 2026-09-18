@@ -12,6 +12,7 @@ import Students from "./pages/Students";
 import Admission from "./pages/Admission";
 import StudentProfile from "./pages/StudentProfile";
 import FeeManagement from "./pages/FeeManagement";
+import PaymentReceipt from "./pages/PaymentReceipt";
 import Books from "./pages/Books";
 import Accounts from "./pages/Accounts";
 import StaffPage from "./pages/Staff";
@@ -87,6 +88,12 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
         <Route path="/exams" element={<Exams />} />
         <Route path="/videos" element={<VideoClasses />} />
+        {/* Dedicated print-ready Payment Receipt (Coaching Reg No / Roll vs
+            System ID spec §11/§18/§20) — not wrapped in DashboardLayout, so
+            no sidebar/navbar ever renders on this route at all. Reachable by
+            Admin (Fee Management) and a Student viewing their own payment
+            (backend enforces the ownership check either way). */}
+        <Route path="/payments/:paymentId/receipt" element={<PaymentReceipt />} />
       </Route>
 
       {/* Director */}

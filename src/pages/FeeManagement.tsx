@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { formatStudentLabel, matchesStudentQuery, studentIdentifierLabel } from "@/lib/studentDisplay";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
@@ -41,7 +43,6 @@ import { bn } from "date-fns/locale";
 import { toast } from "sonner";
 import { FEE_TYPES } from "@/types/student";
 import type { Student, Payment } from "@/types/student";
-import type { InstitutionSettings } from "@/types/academic";
 import { StatCard } from "@/components/StatCard";
 import { api } from "@/lib/apiClient";
 import {
@@ -54,21 +55,12 @@ import {
 } from "@/components/ui/command";
 
 const FeeManagement = () => {
+  const navigate = useNavigate();
   const { students, refreshStudents } = useStudents();
   const { payments, addPayment } = usePayments();
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
   const [search, setSearch] = useState("");
   const [filterFeeType, setFilterFeeType] = useState("all");
-
-  // Fetched once here (not duplicated per-dialog-open) and handed to
-  // ReceiptDialog — the same central Institution Settings the Settings
-  // page itself edits (GET /settings/institution), so a receipt always
-  // reflects whatever is currently configured there.
-  const [institution, setInstitution] = useState<InstitutionSettings | null>(null);
-  useEffect(() => {
-    api.get<InstitutionSettings>("/settings/institution").then(setInstitution).catch(() => {});
-  }, []);
 
   // Stats
   const totalDue = students.reduce((sum, s) => sum + s.due, 0);
@@ -83,10 +75,7 @@ const FeeManagement = () => {
     .filter((s) => s.due > 0)
     .filter((s) => {
       if (filterFeeType !== "all" && s.feeType !== filterFeeType) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q) || s.mobile.includes(q);
-      }
+      if (search) return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
       return true;
     });
 
@@ -124,7 +113,7 @@ const FeeManagement = () => {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="নাম, আইডি বা মোবাইল দিয়ে খুঁজুন..."
+                      placeholder="নাম, রোল, আইডি বা মোবাইল দিয়ে খুঁজুন..."
                       className="pl-9"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
@@ -165,7 +154,7 @@ const FeeManagement = () => {
                     ) : (
                       dueStudents.map((s) => (
                         <TableRow key={s.id}>
-                          <TableCell className="font-mono text-xs">{s.studentId}</TableCell>
+                          <TableCell className="font-mono text-xs">{studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })}</TableCell>
                           <TableCell className="font-medium">{s.name}</TableCell>
                           <TableCell>{s.course}</TableCell>
                           <TableCell>
@@ -216,7 +205,9 @@ const FeeManagement = () => {
                           <TableRow key={p.id}>
                             <TableCell className="font-mono text-xs">{p.receiptNo}</TableCell>
                             <TableCell>{p.date}</TableCell>
-                            <TableCell className="font-medium">{student?.name || "—"}</TableCell>
+                            <TableCell className="font-medium">
+                              {student ? formatStudentLabel({ name: student.name, rollNumber: student.rollNumber, systemId: student.studentId }) : "—"}
+                            </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs">{p.feeType}</Badge>
                             </TableCell>
@@ -227,7 +218,7 @@ const FeeManagement = () => {
                             <TableCell>{p.method}</TableCell>
                             <TableCell className="text-muted-foreground text-xs">{p.note || "—"}</TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="ghost" onClick={() => setReceiptPayment(p)}>
+                              <Button size="sm" variant="ghost" onClick={() => navigate(`/payments/${p.id}/receipt`)}>
                                 <ReceiptIcon className="h-4 w-4" />
                               </Button>
                             </TableCell>
@@ -247,13 +238,7 @@ const FeeManagement = () => {
           onOpenChange={setPaymentOpen}
           students={students}
           addPayment={addPayment}
-          onSuccess={(p) => { setReceiptPayment(p); refreshStudents(); }}
-        />
-        <ReceiptDialog
-          payment={receiptPayment}
-          students={students}
-          institution={institution}
-          onOpenChange={(open) => !open && setReceiptPayment(null)}
+          onSuccess={(p) => { refreshStudents(); navigate(`/payments/${p.id}/receipt`); }}
         />
       </div>
     </DashboardLayout>
@@ -371,7 +356,7 @@ function PaymentDialog({
                 >
                   <span className="truncate">
                     {selectedStudent
-                      ? `${selectedStudent.name} (${selectedStudent.studentId})`
+                      ? formatStudentLabel({ name: selectedStudent.name, rollNumber: selectedStudent.rollNumber, systemId: selectedStudent.studentId })
                       : "শিক্ষার্থী খুঁজুন বা নির্বাচন করুন"}
                   </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -382,12 +367,10 @@ function PaymentDialog({
                   filter={(value, search) => {
                     const s = students.find((st) => st.id === value);
                     if (!s) return 0;
-                    const q = search.toLowerCase();
-                    const hay = `${s.name} ${s.studentId} ${s.mobile}`.toLowerCase();
-                    return hay.includes(q) ? 1 : 0;
+                    return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }) ? 1 : 0;
                   }}
                 >
-                  <CommandInput placeholder="আইডি, নাম বা মোবাইল দিয়ে খুঁজুন..." />
+                  <CommandInput placeholder="আইডি, রোল, নাম বা মোবাইল দিয়ে খুঁজুন..." />
                   <CommandList className="max-h-[40vh]">
                     <CommandEmpty>কোনো শিক্ষার্থী পাওয়া যায়নি</CommandEmpty>
                     <CommandGroup>
@@ -404,7 +387,7 @@ function PaymentDialog({
                         >
                           <Check className={cn("mr-2 h-4 w-4 shrink-0", studentId === s.id ? "opacity-100" : "opacity-0")} />
                           <div className="flex flex-col min-w-0">
-                            <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({s.studentId})</span></span>
+                            <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })})</span></span>
                             <span className="text-xs text-muted-foreground truncate">{s.mobile} • বকেয়া: ৳{s.due.toLocaleString()}</span>
                           </div>
                         </CommandItem>
@@ -528,251 +511,6 @@ function PaymentDialog({
         <div className="shrink-0 border-t px-4 py-3 sm:px-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>বাতিল</Button>
           <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "সংরক্ষণ হচ্ছে..." : "পেমেন্ট সম্পন্ন"}</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Creates (once) or reuses a single <style> tag carrying the @page rule for the receipt's print job — kept in sync with Institution Settings' own print.paperSize rather than a hard-coded page size. */
-function applyReceiptPageSize(paperSize: "A4" | "Letter") {
-  const styleId = "receipt-print-page-size";
-  let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
-  if (!styleEl) {
-    styleEl = document.createElement("style");
-    styleEl.id = styleId;
-    document.head.appendChild(styleEl);
-  }
-  const margin = paperSize === "A4" ? "12mm" : "0.5in";
-  styleEl.textContent = `@page { size: ${paperSize}; margin: ${margin}; }`;
-}
-
-function ReceiptDialog({
-  payment,
-  students,
-  institution,
-  onOpenChange,
-}: {
-  payment: Payment | null;
-  students: Student[];
-  institution: InstitutionSettings | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { batches } = useBatches();
-  if (!payment) return null;
-  const student = students.find((s) => s.id === payment.studentId);
-  const batch = student ? batches.find((b) => b.id === student.batchId) : undefined;
-
-  const showLogo = institution?.print.showLogoOnDocuments !== false && !!institution?.logoUrl;
-
-  // Historical (as-of-this-payment) figures, derived from this payment's own
-  // stored snapshot (previousDue) plus the student's totalFee — never from
-  // the student's *live* due/paid, which would silently drift for an old
-  // receipt once later payments are recorded. totalFee itself only changes
-  // if the student's billing plan (fee/discount) is edited, so treating it
-  // as stable across a payment's own history matches how payment.service.ts's
-  // create() already recomputes and re-saves it on every payment. Payment
-  // Transactions remain the sole source of truth — this is pure arithmetic
-  // over already-stored fields, never an independent recalculation.
-  const totalFee = student?.totalFee;
-  const currentDue = payment.previousDue !== undefined ? payment.previousDue - payment.paidAmount : undefined;
-  const previousPaid = totalFee !== undefined && payment.previousDue !== undefined ? totalFee - payment.previousDue : undefined;
-  const totalPaidToDate = totalFee !== undefined && currentDue !== undefined ? totalFee - currentDue : undefined;
-  const courseFeeLabel = student?.feeType === "মাসিক" ? "মাসিক ফি" : "কোর্স ফি";
-  const courseFeeValue = student?.feeType === "মাসিক" ? student?.monthlyFee : student?.totalCourseFee;
-
-  const handlePrint = () => {
-    applyReceiptPageSize(institution?.print.paperSize || "A4");
-    window.print();
-  };
-
-  return (
-    <Dialog open={!!payment} onOpenChange={onOpenChange}>
-      <DialogContent id="receipt-dialog-content" className="max-w-md p-0 flex flex-col overflow-hidden print:shadow-none print:max-w-full">
-        <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4 print:hidden">
-          <DialogTitle className="flex items-center gap-2">
-            <ReceiptIcon className="h-5 w-5 text-primary" />
-            পেমেন্ট রসিদ
-          </DialogTitle>
-        </DialogHeader>
-
-        <div id="receipt-scroll-wrapper" className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          {/* Everything the printed receipt should contain lives inside this
-              one element — index.css's @media print rule hides every other
-              element on the page (dialog chrome included) and shows only
-              this subtree, so what's on screen here is exactly what prints.
-              The dialog itself (id="receipt-dialog-content") and this
-              scroll wrapper are both height-clamped/overflow-clipped for
-              on-screen display — print must neutralize both, or only
-              whatever happened to be scrolled into view at print time
-              (usually just the header) ends up on the page. */}
-          <div id="receipt-print" className="space-y-4">
-            <div className="text-center border-b border-dashed pb-3 space-y-1">
-              {showLogo && (
-                <img src={institution!.logoUrl} alt="" className="h-12 mx-auto object-contain" />
-              )}
-              <h2 className="font-bold text-lg">{institution?.name || "কোচিং সেন্টার"}</h2>
-              {institution?.address && <p className="text-xs text-muted-foreground">{institution.address}</p>}
-              <p className="text-xs text-muted-foreground">
-                {[institution?.phone, institution?.email].filter(Boolean).join(" • ")}
-              </p>
-              {institution?.website && <p className="text-xs text-muted-foreground">{institution.website}</p>}
-            </div>
-
-            <div className="bg-primary/5 rounded-lg p-3 text-center">
-              <p className="text-xs text-muted-foreground">রসিদ নম্বর</p>
-              <p className="text-lg font-bold font-mono text-primary">{payment.receiptNo}</p>
-            </div>
-
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">শিক্ষার্থীর নাম:</span>
-                <span className="font-medium text-right">{student?.name || "—"}</span>
-              </div>
-              {student && (
-                <>
-                  <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground shrink-0">রেজিস্ট্রেশন আইডি:</span>
-                    <span className="font-mono text-xs">{student.studentId}</span>
-                  </div>
-                  {student.rollNumber && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground shrink-0">রোল:</span>
-                      <span className="font-mono text-xs">{student.rollNumber}</span>
-                    </div>
-                  )}
-                  {student.course && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground shrink-0">কোর্স:</span>
-                      <span className="text-right">{student.course}</span>
-                    </div>
-                  )}
-                  {batch && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground shrink-0">ব্যাচ:</span>
-                      <span className="text-right">{batch.name}</span>
-                    </div>
-                  )}
-                  {student.guardianName && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground shrink-0">অভিভাবকের নাম:</span>
-                      <span className="text-right">{student.guardianName}</span>
-                    </div>
-                  )}
-                </>
-              )}
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">তারিখ:</span>
-                <span>{payment.date}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">ফি ধরন:</span>
-                <Badge variant="outline">{payment.feeType}</Badge>
-              </div>
-              {payment.month && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground shrink-0">মাস:</span>
-                  <span>{payment.month}</span>
-                </div>
-              )}
-              <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground shrink-0">পেমেন্ট পদ্ধতি:</span>
-                <span>{payment.method}</span>
-              </div>
-            </div>
-
-            <div className="border-t border-dashed pt-3 space-y-1.5 text-sm">
-              {student && courseFeeValue !== undefined && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{courseFeeLabel}:</span>
-                  <span>৳ {courseFeeValue.toLocaleString()}</span>
-                </div>
-              )}
-              {student?.admissionFee !== undefined && student.admissionFee > 0 && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>ভর্তি ফি:</span>
-                  <span>৳ {student.admissionFee.toLocaleString()}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">পরিমাণ:</span>
-                <span>৳ {payment.amount.toLocaleString()}</span>
-              </div>
-              {payment.discount > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ডিসকাউন্ট:</span>
-                  <span className="text-success">- ৳ {payment.discount.toLocaleString()}</span>
-                </div>
-              )}
-              {payment.fine > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">জরিমানা:</span>
-                  <span className="text-warning">+ ৳ {payment.fine.toLocaleString()}</span>
-                </div>
-              )}
-              <div className="flex justify-between border-t pt-2 mt-2">
-                <span className="font-semibold">বর্তমান পেমেন্ট:</span>
-                <span className="font-bold text-lg text-primary">৳ {payment.paidAmount.toLocaleString()}</span>
-              </div>
-              {previousPaid !== undefined && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>পূর্বে পরিশোধিত:</span>
-                  <span>৳ {previousPaid.toLocaleString()}</span>
-                </div>
-              )}
-              {totalPaidToDate !== undefined && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>সর্বমোট পরিশোধিত:</span>
-                  <span>৳ {totalPaidToDate.toLocaleString()}</span>
-                </div>
-              )}
-              {totalFee !== undefined && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>সর্বমোট পরিশোধযোগ্য:</span>
-                  <span>৳ {totalFee.toLocaleString()}</span>
-                </div>
-              )}
-              {payment.previousDue !== undefined && (
-                <div className="flex justify-between text-xs text-muted-foreground pt-1">
-                  <span>পূর্ববর্তী বকেয়া:</span>
-                  <span>৳ {payment.previousDue.toLocaleString()}</span>
-                </div>
-              )}
-              {currentDue !== undefined && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">বর্তমান বকেয়া:</span>
-                  <span className={currentDue > 0 ? "text-destructive font-medium" : "text-success font-medium"}>
-                    ৳ {currentDue.toLocaleString()}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {payment.note && (
-              <div className="text-xs text-muted-foreground border-t border-dashed pt-2">
-                <span className="font-medium">নোট: </span>{payment.note}
-              </div>
-            )}
-
-            <div className="pt-6 flex justify-end">
-              <div className="text-center text-xs">
-                <div className="border-t border-foreground/40 pt-1 w-32">
-                  {institution?.print.signatureLabel || "অনুমোদিতকারী"}
-                </div>
-              </div>
-            </div>
-
-            <div className="text-center text-xs text-muted-foreground pt-2 border-t border-dashed">
-              ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
-            </div>
-          </div>
-        </div>
-
-        <div className="shrink-0 border-t px-4 py-3 sm:px-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 print:hidden">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>বন্ধ</Button>
-          <Button onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> প্রিন্ট
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -96,6 +96,8 @@ export interface AcademicSettings {
   rollNumberScope: "batch" | "course" | "global";
   /** The fixed one-time Admission Fee — configurable in Settings, snapshotted onto each Student at admission time (never retroactive). */
   admissionFeeBdt: number;
+  /** Prefix for newly-generated Student System IDs (e.g. "LMS" -> LMS-01247). Changing it never affects already-issued IDs. */
+  studentIdPrefix: string;
 }
 
 export interface InstitutionSettings {

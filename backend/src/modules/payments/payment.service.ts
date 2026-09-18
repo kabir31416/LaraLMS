@@ -40,6 +40,45 @@ export async function getById(id: string): Promise<PaymentDoc> {
 }
 
 /**
+ * Backs the dedicated print-ready Payment Receipt page (Coaching Reg No /
+ * Roll vs System ID spec §20) — everything the receipt needs (student,
+ * batch name, institution branding, and the due figures immediately
+ * resulting from THIS payment) bundled into one response so the page works
+ * from just a paymentId, including after a browser refresh. Reuses
+ * student.service.ts's getById() (the same guardian-flattening read every
+ * other Student read uses) and institution.service.ts's singleton settings
+ * — no parallel student/institution-fetching logic is introduced here.
+ */
+export async function getReceipt(payment: PaymentDoc): Promise<Record<string, unknown>> {
+  const studentService = await import("../students/student.service");
+  const student = await studentService.getById(String(payment.studentId));
+
+  let batchName: string | undefined;
+  const batchId = (student as { currentBatchId?: unknown }).currentBatchId;
+  if (batchId) {
+    const { Batch } = await import("../batches/batch.model");
+    const batch = await Batch.findById(batchId).select("name");
+    batchName = batch?.name;
+  }
+
+  const institutionService = await import("../settings/institution.service");
+  const institution = await institutionService.getInstitutionSettings();
+
+  // The due figure immediately AFTER this specific payment — never the
+  // student's live/current due, which would silently drift for an old
+  // receipt once later payments are recorded (previousDue is this payment's
+  // own immutable snapshot). A material payment never touches tuition due
+  // at all (payment.service.ts's create()), so its "due" is simply
+  // unchanged from the snapshot.
+  const isMaterialPayment = payment.source === "material";
+  const currentDue = typeof payment.previousDue === "number"
+    ? (isMaterialPayment ? payment.previousDue : payment.previousDue - payment.paidAmount)
+    : undefined;
+
+  return { payment, student, batchName, currentDue, institution };
+}
+
+/**
  * A payment is a financial event, not an editable record — Phase 1 §6's fee
  * module review — so there is deliberately no update/delete here, only
  * create + read. A correction is its own new payment (e.g. a negative
