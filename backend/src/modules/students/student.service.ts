@@ -464,36 +464,28 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
     paid: 0, // the admission-time payment (if any) is applied below through payment.service, never baked in directly
   });
 
-  // Bulk import (studentImport.service.ts) pre-supplies a registrationId
-  // straight from the Excel "Coaching Reg No" column when present — the
-  // normal Admission form never sends this field, so it always falls back
-  // to the usual auto-generated one (Excel Student Information Import §11).
-  const providedRegistrationId = typeof body.registrationId === "string" ? body.registrationId.trim() : "";
-  const registrationId = providedRegistrationId || (await generateRegistrationId());
-  const { paid: _paid, paymentMethod, registrationId: _registrationId, ...rest } = body as Record<string, unknown>;
+  // registrationId is ALWAYS system-generated — a Student's permanent ID is
+  // never taken from Excel or any other caller-supplied value, for admission
+  // and bulk import alike. What Excel calls "Coaching Reg No" is the
+  // coaching center's own roll/registration value and is stored as
+  // currentRollNumber below instead (see body.rollNumber).
+  const registrationId = await generateRegistrationId();
+  const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
   await syncHscInstitution(rest);
-  let doc: StudentDoc;
-  try {
-    doc = await Student.create({
-      ...rest,
-      registrationId,
-      courseId: course._id,
-      course: course.name,
-      currentRollNumber: body.rollNumber || undefined,
-      admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
-      feeType,
-      discount,
-      totalCourseFee,
-      admissionFee,
-      ...fees,
-      paid: 0,
-    });
-  } catch (err) {
-    if (providedRegistrationId && err && typeof err === "object" && "code" in err && (err as { code?: number }).code === 11000) {
-      throw ApiError.conflict(`রেজিস্ট্রেশন নম্বর "${providedRegistrationId}" ইতোমধ্যে ব্যবহৃত হয়েছে।`);
-    }
-    throw err;
-  }
+  const doc = await Student.create({
+    ...rest,
+    registrationId,
+    courseId: course._id,
+    course: course.name,
+    currentRollNumber: body.rollNumber || undefined,
+    admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
+    feeType,
+    discount,
+    totalCourseFee,
+    admissionFee,
+    ...fees,
+    paid: 0,
+  });
 
   await guardianService.upsertPrimaryFromInlineFields(req, String(doc._id), body);
   await refreshProfileCompletion(doc);

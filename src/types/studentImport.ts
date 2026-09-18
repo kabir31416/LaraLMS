@@ -22,13 +22,12 @@ export type RowImportStatus = (typeof ROW_IMPORT_STATUS)[number];
  * Management, never during import.
  */
 export interface ParsedStudentRow {
-  registrationNumber?: string;
   name?: string;
   dob?: string;
   phone?: string;
   gender?: string;
 
-  /** Legacy-only (pre-existing bulk import format) — the old "previous roll", kept separate from registrationNumber above. */
+  /** "Coaching Reg No" (new format) or "রেজিস্ট্রেশন/পূর্বের রোল" (old format) -> Student.currentRollNumber. The system's own permanent registration ID is always auto-generated, never taken from Excel. */
   rollNumber?: string;
 
   religion?: string;

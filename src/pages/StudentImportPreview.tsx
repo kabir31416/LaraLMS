@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { StatCard } from "@/components/StatCard";
 import { ArrowLeft, CheckCircle2, ExternalLink, RotateCcw, Users, FileCheck2, AlertTriangle, Clock, XCircle, Ban } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
+import { useStudents } from "@/contexts/StudentContext";
 import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 import type { PopulatedStudentRef, StudentImportListMeta, StudentImportRow, StudentImportSession } from "@/types/studentImport";
@@ -55,6 +56,7 @@ function refName(ref?: string | PopulatedStudentRef): PopulatedStudentRef | unde
 export default function StudentImportPreview() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user } = useAuth();
+  const { refreshStudents } = useStudents();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<StudentImportSession | null>(null);
@@ -121,6 +123,12 @@ export default function StudentImportPreview() {
       replaceRow(updated);
       if (updated.importStatus === "APPROVED") {
         toast.success("শিক্ষার্থী সফলভাবে যুক্ত করা হয়েছে।");
+        // Bulk import creates the Student through its own backend endpoint,
+        // never through StudentContext's addStudent/upsertLocal — without
+        // this, the newly-created student would be invisible everywhere
+        // else that reads the shared StudentContext cache (Student Profile,
+        // Batch Assignment, Fee Management) until a full page reload.
+        refreshStudents().catch(() => {});
       } else {
         toast.error(updated.failureReason || "অনুমোদন ব্যর্থ হয়েছে।");
       }
@@ -220,7 +228,7 @@ export default function StudentImportPreview() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>সারি</TableHead>
-                      <TableHead>রেজিস্ট্রেশন</TableHead>
+                      <TableHead>রোল/রেজিস্ট্রেশন</TableHead>
                       <TableHead>নাম</TableHead>
                       <TableHead>জন্ম তারিখ</TableHead>
                       <TableHead>মোবাইল</TableHead>
@@ -242,7 +250,7 @@ export default function StudentImportPreview() {
                       return (
                         <TableRow key={row._id}>
                           <TableCell className="text-sm">{row.rowNumber}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.registrationNumber || p.rollNumber || "—"}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{p.rollNumber || "—"}</TableCell>
                           <TableCell className="text-sm font-medium whitespace-nowrap">{p.name || "—"}</TableCell>
                           <TableCell className="text-sm whitespace-nowrap">{p.dob || "—"}</TableCell>
                           <TableCell className="text-sm whitespace-nowrap">{p.phone || "—"}</TableCell>

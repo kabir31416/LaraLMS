@@ -194,7 +194,6 @@ export async function listHistory(req: Request) {
  */
 function buildStudentCreateBody(parsed: ParsedStudentRow, courseId: string): Record<string, unknown> {
   return {
-    registrationId: parsed.registrationNumber || undefined,
     name: parsed.name,
     phone: parsed.phone,
     dob: parsed.dob,

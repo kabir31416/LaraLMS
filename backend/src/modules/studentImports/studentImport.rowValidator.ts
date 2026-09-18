@@ -61,19 +61,6 @@ export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise
     for (const m of matches) existingByPhone.set(m.phone, String(m._id));
   }
 
-  // registrationNumber (new-format "Coaching Reg No") becomes Student.registrationId
-  // directly (studentImport.service.ts's buildStudentCreateBody) — must be
-  // checked for uniqueness against existing students the same way phone is,
-  // never left to fail only as a raw Mongo duplicate-key error at approval time.
-  const registrationNumbers = Array.from(
-    new Set(parsedRows.map((r) => r.parsed.registrationNumber).filter((n): n is string => !!n)),
-  );
-  const existingByRegistrationNumber = new Map<string, string>();
-  if (registrationNumbers.length > 0) {
-    const matches = await Student.find({ registrationId: { $in: registrationNumbers } }).select("registrationId");
-    for (const m of matches) existingByRegistrationNumber.set(m.registrationId, String(m._id));
-  }
-
   let existingByRoll = new Map<string, string>();
   if (settings.rollNumberScope === "global") {
     const rolls = Array.from(new Set(parsedRows.map((r) => r.parsed.rollNumber).filter((r): r is string => !!r)));
@@ -85,11 +72,9 @@ export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise
 
   const phoneRowCount = new Map<string, number>();
   const rollRowCount = new Map<string, number>();
-  const registrationNumberRowCount = new Map<string, number>();
   for (const r of parsedRows) {
     if (r.parsed.phone) phoneRowCount.set(r.parsed.phone, (phoneRowCount.get(r.parsed.phone) || 0) + 1);
     if (r.parsed.rollNumber) rollRowCount.set(r.parsed.rollNumber, (rollRowCount.get(r.parsed.rollNumber) || 0) + 1);
-    if (r.parsed.registrationNumber) registrationNumberRowCount.set(r.parsed.registrationNumber, (registrationNumberRowCount.get(r.parsed.registrationNumber) || 0) + 1);
   }
 
   return parsedRows.map((row) => {
@@ -111,20 +96,6 @@ export async function validateParsedRows(parsedRows: ParsedRowResult[]): Promise
       if (existingId) {
         matchesExistingStudentId = existingId;
         messages.push(`"${row.parsed.phone}" মোবাইল নম্বরের একজন শিক্ষার্থী ইতোমধ্যে বিদ্যমান।`);
-        hasError = true;
-      }
-    }
-
-    if (row.parsed.registrationNumber) {
-      if ((registrationNumberRowCount.get(row.parsed.registrationNumber) || 0) > 1) {
-        duplicateInFile = true;
-        messages.push(`রেজিস্ট্রেশন নম্বর "${row.parsed.registrationNumber}" এই ফাইলের মধ্যেই একাধিকবার আছে।`);
-        hasError = true;
-      }
-      const existingRegId = existingByRegistrationNumber.get(row.parsed.registrationNumber);
-      if (existingRegId && existingRegId !== matchesExistingStudentId) {
-        matchesExistingStudentId = matchesExistingStudentId || existingRegId;
-        messages.push(`রেজিস্ট্রেশন নম্বর "${row.parsed.registrationNumber}" ইতোমধ্যে ব্যবহৃত হয়েছে।`);
         hasError = true;
       }
     }
@@ -185,11 +156,6 @@ export async function revalidateRowForApproval(parsed: ParsedStudentRow, courseI
 
   const existingPhone = await Student.exists({ phone: parsed.phone });
   if (existingPhone) return `"${parsed.phone}" মোবাইল নম্বরের একজন শিক্ষার্থী ইতোমধ্যে বিদ্যমান।`;
-
-  if (parsed.registrationNumber) {
-    const existingRegistration = await Student.exists({ registrationId: parsed.registrationNumber });
-    if (existingRegistration) return `রেজিস্ট্রেশন নম্বর "${parsed.registrationNumber}" ইতোমধ্যে ব্যবহৃত হয়েছে।`;
-  }
 
   const settings = await getSettings();
   if (settings.rollNumberScope === "global" && parsed.rollNumber) {
