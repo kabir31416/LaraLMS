@@ -11,6 +11,7 @@ import { Search, Cake } from "lucide-react";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { api } from "@/lib/apiClient";
+import { GENDERS } from "@/types/student";
 
 export type DueStatus = "all" | "has" | "none";
 
@@ -28,6 +29,14 @@ interface StudentFiltersProps {
   onBatchIdChange: (value: string) => void;
   hscInstitution: string;
   onHscInstitutionChange: (value: string) => void;
+  division: string;
+  onDivisionChange: (value: string) => void;
+  district: string;
+  onDistrictChange: (value: string) => void;
+  guardianMobile: string;
+  onGuardianMobileChange: (value: string) => void;
+  gender: string;
+  onGenderChange: (value: string) => void;
   dueStatus: DueStatus;
   onDueStatusChange: (value: DueStatus) => void;
   birthdayToday: boolean;
@@ -43,6 +52,14 @@ export function StudentFilters({
   onBatchIdChange,
   hscInstitution,
   onHscInstitutionChange,
+  division,
+  onDivisionChange,
+  district,
+  onDistrictChange,
+  guardianMobile,
+  onGuardianMobileChange,
+  gender,
+  onGenderChange,
   dueStatus,
   onDueStatusChange,
   birthdayToday,
@@ -125,6 +142,35 @@ export function StudentFilters({
           ))}
         </SelectContent>
       </Select>
+      <Select value={gender} onValueChange={onGenderChange}>
+        <SelectTrigger className="w-[130px]">
+          <SelectValue placeholder="লিঙ্গ" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">সকল লিঙ্গ</SelectItem>
+          {GENDERS.map((g) => (
+            <SelectItem key={g} value={g}>{g}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        value={division}
+        onChange={(e) => onDivisionChange(e.target.value)}
+        placeholder="বিভাগ"
+        className="w-[130px]"
+      />
+      <Input
+        value={district}
+        onChange={(e) => onDistrictChange(e.target.value)}
+        placeholder="জেলা"
+        className="w-[130px]"
+      />
+      <Input
+        value={guardianMobile}
+        onChange={(e) => onGuardianMobileChange(e.target.value)}
+        placeholder="অভিভাবকের মোবাইল"
+        className="w-[170px]"
+      />
       <Select value={dueStatus} onValueChange={(v) => onDueStatusChange(v as DueStatus)}>
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="বকেয়া" />

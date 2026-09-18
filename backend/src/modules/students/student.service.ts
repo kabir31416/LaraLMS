@@ -169,6 +169,32 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
     filter.hscInstitution = new RegExp(`^${escapeRegex(req.query.hscInstitution.trim())}$`, "i");
   }
 
+  // division/district are free text (Excel Student Information Import §5 —
+  // no separate master-data collection for Bangladesh's address hierarchy),
+  // so a case-insensitive substring match tolerates minor spelling/spacing
+  // variance the way an exact dropdown match couldn't.
+  if (typeof req.query.division === "string" && req.query.division.trim()) {
+    filter.division = new RegExp(escapeRegex(req.query.division.trim()), "i");
+  }
+  if (typeof req.query.district === "string" && req.query.district.trim()) {
+    filter.district = new RegExp(escapeRegex(req.query.district.trim()), "i");
+  }
+
+  if (typeof req.query.gender === "string" && req.query.gender.trim()) {
+    filter.gender = req.query.gender;
+  }
+
+  // guardianMobile lives on the separate Guardian collection, not on
+  // Student itself (Phase 1 §17) — resolve it to a set of studentIds first,
+  // the same cross-collection pattern directorId below already uses via
+  // Batch. An empty match set still filters correctly: Mongo's $in: []
+  // simply returns zero documents.
+  if (typeof req.query.guardianMobile === "string" && req.query.guardianMobile.trim()) {
+    const { Guardian } = await import("../guardians/guardian.model");
+    const studentIds = await Guardian.find({ phone: new RegExp(escapeRegex(req.query.guardianMobile.trim()), "i") }).distinct("studentId");
+    filter._id = { $in: studentIds };
+  }
+
   // Same day-and-month as today, any birth year — dob is stored as a plain
   // "yyyy-mm-dd" string (student.model.ts), so this is a simple suffix
   // match, not a date-arithmetic query.

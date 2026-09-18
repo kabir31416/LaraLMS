@@ -71,6 +71,13 @@ const Students = () => {
   const [courseId, setCourseId] = useState("all");
   const [batchId, setBatchId] = useState("all");
   const [hscInstitution, setHscInstitution] = useState("all");
+  const [division, setDivision] = useState("");
+  const debouncedDivision = useDebouncedValue(division, 350);
+  const [district, setDistrict] = useState("");
+  const debouncedDistrict = useDebouncedValue(district, 350);
+  const [guardianMobile, setGuardianMobile] = useState("");
+  const debouncedGuardianMobile = useDebouncedValue(guardianMobile, 350);
+  const [gender, setGender] = useState("all");
   const [dueStatus, setDueStatus] = useState<DueStatus>("all");
   const [birthdayToday, setBirthdayToday] = useState(false);
   const [page, setPage] = useState(1);
@@ -91,10 +98,14 @@ const Students = () => {
     if (courseName) qs.set("course", courseName);
     if (batchId !== "all") qs.set("batchId", batchId);
     if (hscInstitution !== "all") qs.set("hscInstitution", hscInstitution);
+    if (debouncedDivision.trim()) qs.set("division", debouncedDivision.trim());
+    if (debouncedDistrict.trim()) qs.set("district", debouncedDistrict.trim());
+    if (debouncedGuardianMobile.trim()) qs.set("guardianMobile", debouncedGuardianMobile.trim());
+    if (gender !== "all") qs.set("gender", gender);
     if (dueStatus !== "all") qs.set("dueStatus", dueStatus);
     if (birthdayToday) qs.set("birthdayToday", "true");
     return qs;
-  }, [debouncedSearch, courseName, batchId, hscInstitution, dueStatus, birthdayToday]);
+  }, [debouncedSearch, courseName, batchId, hscInstitution, debouncedDivision, debouncedDistrict, debouncedGuardianMobile, gender, dueStatus, birthdayToday]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -116,7 +127,7 @@ const Students = () => {
   // Any filter change (other than page itself) starts back at page 1 — a
   // stale page number from a previous, larger result set could otherwise
   // land past the end of a newly-narrowed one.
-  useEffect(() => { setPage(1); }, [debouncedSearch, courseName, batchId, hscInstitution, dueStatus, birthdayToday]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, courseName, batchId, hscInstitution, debouncedDivision, debouncedDistrict, debouncedGuardianMobile, gender, dueStatus, birthdayToday]);
 
   const handleEdit = (student: Student) => {
     setEditStudent(student);
@@ -210,6 +221,14 @@ const Students = () => {
           onBatchIdChange={setBatchId}
           hscInstitution={hscInstitution}
           onHscInstitutionChange={setHscInstitution}
+          division={division}
+          onDivisionChange={setDivision}
+          district={district}
+          onDistrictChange={setDistrict}
+          guardianMobile={guardianMobile}
+          onGuardianMobileChange={setGuardianMobile}
+          gender={gender}
+          onGenderChange={setGender}
           dueStatus={dueStatus}
           onDueStatusChange={setDueStatus}
           birthdayToday={birthdayToday}
