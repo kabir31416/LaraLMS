@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Search, GraduationCap } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -127,31 +129,57 @@ export default function PublicInfo() {
           <Card><CardContent className="py-10 text-center text-muted-foreground">কোনো তথ্য পাওয়া যায়নি</CardContent></Card>
         )}
 
-        {results?.map((r, i) => (
-          <Card key={i}>
-            <CardHeader className="flex flex-row items-center gap-3">
-              {r.photo && <img src={r.photo} alt={r.name || ""} className="w-12 h-12 rounded-full object-cover" />}
-              {r.name && <CardTitle className="text-base">{r.name}</CardTitle>}
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              {r.registrationId && <Field label="রেজিস্ট্রেশন আইডি" value={r.registrationId} />}
-              {r.rollNumber && <Field label="রোল নম্বর" value={r.rollNumber} />}
-              {r.course && <Field label="কোর্স" value={r.course} />}
-              {r.currentBatch && <Field label="বর্তমান ব্যাচ" value={r.currentBatch} />}
-              {r.batchDirector && <Field label="ব্যাচ ডিরেক্টর" value={r.batchDirector} />}
-              {r.admissionStatus && <Field label="ভর্তির অবস্থা" value={r.admissionStatus} />}
-              {r.attendanceSummary && (
-                <Field label="উপস্থিতির হার" value={r.attendanceSummary.percent != null ? `${r.attendanceSummary.percent}%` : "তথ্য নেই"} />
-              )}
-              {r.resultSummary && (
-                <Field
-                  label="ফলাফল সারাংশ"
-                  value={r.resultSummary.averagePercent != null ? `গড় ${r.resultSummary.averagePercent}% (${r.resultSummary.examsTaken}টি পরীক্ষা)` : "তথ্য নেই"}
-                />
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {results?.map((r, i) => {
+          // Roll and Registration ID are both independently optional here
+          // (admin-configurable PublicInfoSettings.visibleFields) — shown
+          // together as one compact identity line under the name instead of
+          // two separate grid cells, so the card reads well whichever subset
+          // the admin has enabled.
+          const identityParts = [
+            r.rollNumber ? `রোল: ${r.rollNumber}` : null,
+            r.registrationId ? `আইডি: ${r.registrationId}` : null,
+          ].filter((p): p is string => !!p);
+
+          return (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center gap-4">
+                {/* Smart avatar: shows the student's photo when one is configured
+                    and loads successfully; otherwise (no photo link, or a broken
+                    one) Radix's Avatar automatically falls back to this initial/
+                    icon placeholder instead of a missing-image icon or empty gap. */}
+                <Avatar className="h-14 w-14 border">
+                  {r.photo && <AvatarImage src={r.photo} alt={r.name || ""} className="object-cover" />}
+                  <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                    {r.name ? r.name.charAt(0) : <GraduationCap className="h-6 w-6" />}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  {r.name && <CardTitle className="text-base truncate">{r.name}</CardTitle>}
+                  {identityParts.length > 0 && (
+                    <p className="text-xs text-muted-foreground font-mono truncate">{identityParts.join(" • ")}</p>
+                  )}
+                  {r.admissionStatus && (
+                    <Badge variant="outline" className="mt-1 text-xs">{r.admissionStatus}</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                {r.course && <Field label="কোর্স" value={r.course} />}
+                {r.currentBatch && <Field label="বর্তমান ব্যাচ" value={r.currentBatch} />}
+                {r.batchDirector && <Field label="ব্যাচ ডিরেক্টর" value={r.batchDirector} />}
+                {r.attendanceSummary && (
+                  <Field label="উপস্থিতির হার" value={r.attendanceSummary.percent != null ? `${r.attendanceSummary.percent}%` : "তথ্য নেই"} />
+                )}
+                {r.resultSummary && (
+                  <Field
+                    label="ফলাফল সারাংশ"
+                    value={r.resultSummary.averagePercent != null ? `গড় ${r.resultSummary.averagePercent}% (${r.resultSummary.examsTaken}টি পরীক্ষা)` : "তথ্য নেই"}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
 
         <div className="text-center">
           <Link to="/login" className="text-sm text-primary hover:underline">লগইন পেইজে ফিরে যান</Link>
