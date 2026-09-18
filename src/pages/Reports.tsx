@@ -1,5 +1,6 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FileBarChart, UserPlus, Wallet, AlertCircle, CalendarCheck, GraduationCap, Package, Users, Building2 } from "lucide-react";
 import AdmissionReport from "@/components/reports/AdmissionReport";
 import FeeCollectionReport from "@/components/reports/FeeCollectionReport";
 import DueReport from "@/components/reports/DueReport";
@@ -9,26 +10,44 @@ import MaterialDistributionReport from "@/components/reports/MaterialDistributio
 import StaffReport from "@/components/reports/StaffReport";
 import BranchLedgerReport from "@/components/reports/BranchLedgerReport";
 
+const TABS = [
+  { value: "admission", label: "ভর্তি", icon: UserPlus },
+  { value: "fees", label: "ফি কালেকশন", icon: Wallet },
+  { value: "due", label: "বকেয়া", icon: AlertCircle },
+  { value: "attendance", label: "উপস্থিতি", icon: CalendarCheck },
+  { value: "result", label: "ফলাফল", icon: GraduationCap },
+  { value: "book", label: "ম্যাটেরিয়াল বিতরণ", icon: Package },
+  { value: "staff", label: "স্টাফ", icon: Users },
+  { value: "branch", label: "ব্রাঞ্চ লেজার", icon: Building2 },
+] as const;
+
 export default function Reports() {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">রিপোর্ট সেন্টার</h1>
-          <p className="text-sm text-muted-foreground">সব ধরনের রিপোর্ট দেখুন, প্রিন্ট করুন এবং এক্সপোর্ট করুন</p>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <FileBarChart className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">রিপোর্ট সেন্টার</h1>
+            <p className="text-sm text-muted-foreground">সব ধরনের রিপোর্ট দেখুন, প্রিন্ট করুন এবং এক্সপোর্ট করুন</p>
+          </div>
         </div>
 
         <Tabs defaultValue="admission">
-          <TabsList className="flex flex-wrap h-auto">
-            <TabsTrigger value="admission">ভর্তি</TabsTrigger>
-            <TabsTrigger value="fees">ফি কালেকশন</TabsTrigger>
-            <TabsTrigger value="due">বকেয়া</TabsTrigger>
-            <TabsTrigger value="attendance">উপস্থিতি</TabsTrigger>
-            <TabsTrigger value="result">ফলাফল</TabsTrigger>
-            <TabsTrigger value="book">ম্যাটেরিয়াল বিতরণ</TabsTrigger>
-            <TabsTrigger value="staff">স্টাফ</TabsTrigger>
-            <TabsTrigger value="branch">ব্রাঞ্চ লেজার</TabsTrigger>
-          </TabsList>
+          {/* A horizontally-scrolling single row reads cleaner on a phone than
+              wrapping 8 tabs across several lines, and needs no extra state —
+              the browser handles the scroll natively. */}
+          <div className="overflow-x-auto pb-1 -mx-1 px-1">
+            <TabsList className="inline-flex w-max h-auto gap-1 bg-card border p-1">
+              {TABS.map(({ value, label, icon: Icon }) => (
+                <TabsTrigger key={value} value={value} className="gap-1.5 whitespace-nowrap">
+                  <Icon className="h-4 w-4" /> {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
           <TabsContent value="admission" className="pt-4"><AdmissionReport /></TabsContent>
           <TabsContent value="fees" className="pt-4"><FeeCollectionReport /></TabsContent>
           <TabsContent value="due" className="pt-4"><DueReport /></TabsContent>

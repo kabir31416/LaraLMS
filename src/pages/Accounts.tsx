@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { format, isToday, parseISO, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { bn } from "date-fns/locale";
-import { CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator } from "lucide-react";
+import {
+  CalendarIcon, Plus, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, Calculator,
+  LayoutDashboard, ArrowDownCircle, ArrowUpCircle, BookOpen, Tags, FileBarChart,
+} from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatStudentLabel } from "@/lib/studentDisplay";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,12 +47,25 @@ import { api } from "@/lib/apiClient";
 const fmtBDT = (n: number) => `৳${n.toLocaleString("bn-BD")}`;
 const fmtDate = (iso: string) => format(parseISO(iso), "dd MMM yyyy", { locale: bn });
 
+const ACCOUNTS_TABS = [
+  { value: "summary", label: "সারসংক্ষেপ", icon: LayoutDashboard },
+  { value: "income", label: "আয়", icon: ArrowDownCircle },
+  { value: "expense", label: "ব্যয়", icon: ArrowUpCircle },
+  { value: "branch-ledger", label: "শাখা হিসাব", icon: Building2 },
+  { value: "cashbook", label: "ক্যাশবুক", icon: BookOpen },
+  { value: "categories", label: "ক্যাটাগরি", icon: Tags },
+  { value: "reports", label: "রিপোর্ট", icon: FileBarChart },
+] as const;
+
 export default function Accounts() {
   const [tab, setTab] = useState("summary");
 
   return (
     <DashboardLayout>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="hidden sm:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <Wallet className="h-5 w-5 text-primary" />
+        </div>
         <div>
           <h1 className="text-2xl font-bold">হিসাব ব্যবস্থাপনা</h1>
           <p className="text-sm text-muted-foreground">আয়, ব্যয়, ক্যাশবুক এবং রিপোর্ট</p>
@@ -57,15 +73,18 @@ export default function Accounts() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="grid grid-cols-4 md:grid-cols-7 h-auto">
-          <TabsTrigger value="summary">সারসংক্ষেপ</TabsTrigger>
-          <TabsTrigger value="income">আয়</TabsTrigger>
-          <TabsTrigger value="expense">ব্যয়</TabsTrigger>
-          <TabsTrigger value="branch-ledger">শাখা হিসাব</TabsTrigger>
-          <TabsTrigger value="cashbook">ক্যাশবুক</TabsTrigger>
-          <TabsTrigger value="categories">ক্যাটাগরি</TabsTrigger>
-          <TabsTrigger value="reports">রিপোর্ট</TabsTrigger>
-        </TabsList>
+        {/* Horizontally-scrolling single row (see Reports.tsx's own tab list
+            for the same pattern) reads cleaner on a phone than squeezing 7
+            tabs into a 4-column grid. */}
+        <div className="overflow-x-auto pb-1 -mx-1 px-1">
+          <TabsList className="inline-flex w-max h-auto gap-1 bg-card border p-1">
+            {ACCOUNTS_TABS.map(({ value, label, icon: Icon }) => (
+              <TabsTrigger key={value} value={value} className="gap-1.5 whitespace-nowrap">
+                <Icon className="h-4 w-4" /> {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         <TabsContent value="summary" className="mt-6"><SummaryTab /></TabsContent>
         <TabsContent value="income" className="mt-6"><IncomeTab /></TabsContent>
@@ -101,7 +120,7 @@ function SummaryTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
         <StatCard title="মোট আয়" value={fmtBDT(totalIncome)} icon={TrendingUp} variant="success" />
         <StatCard title="মোট ব্যয়" value={fmtBDT(totalExpense)} icon={TrendingDown} variant="warning" />
         <StatCard title="বর্তমান ব্যালেন্স" value={fmtBDT(balance)} icon={Wallet} variant="primary" />
@@ -110,7 +129,7 @@ function SummaryTab() {
 
       <Card>
         <CardHeader><CardTitle>দৈনিক ক্লোজিং</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
           <Stat label="ওপেনিং ব্যালেন্স" value={fmtBDT(opening)} />
           <Stat label="আজকের আয়" value={fmtBDT(todayIncome)} tone="income" />
           <Stat label="আজকের ব্যয়" value={fmtBDT(todayExpense)} tone="expense" />
@@ -186,7 +205,7 @@ function IncomeTab() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <CardTitle>আয়ের তালিকা</CardTitle>
         <div className="flex gap-2 flex-wrap">
           <Select value={branchFilter} onValueChange={setBranchFilter}>
@@ -362,7 +381,7 @@ function ExpenseTab() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <CardTitle>ব্যয়ের তালিকা</CardTitle>
         <div className="flex gap-2 flex-wrap">
           <Select value={branchFilter} onValueChange={setBranchFilter}>
@@ -622,7 +641,7 @@ function ReportsTab() {
     <div className="space-y-6">
       <Card>
         <CardHeader><CardTitle>রিপোর্ট ফিল্টার</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-5">
+        <CardContent className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
           <Field label="রিপোর্ট ধরন">
             <Select value={reportType} onValueChange={(v) => setReportType(v as typeof reportType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -658,7 +677,7 @@ function ReportsTab() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard title="মোট আয়" value={fmtBDT(totalI)} icon={TrendingUp} variant="success" />
         <StatCard title="মোট ব্যয়" value={fmtBDT(totalE)} icon={TrendingDown} variant="warning" />
         <StatCard title="নিট লাভ" value={fmtBDT(totalI - totalE)} icon={Wallet} variant="primary" />
@@ -782,7 +801,7 @@ function BranchLedgerTab() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
             <CardTitle>শাখা হিসাব (লেজার)</CardTitle>
             <Select value={branchFilter} onValueChange={setBranchFilter}>
@@ -797,7 +816,7 @@ function BranchLedgerTab() {
               <Button variant="ghost" size="sm" onClick={() => setDateFilter(undefined)}>তারিখ মুছুন</Button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button onClick={() => openAdd("income")} variant="outline">
               <Plus className="h-4 w-4" /> আয় যোগ
             </Button>

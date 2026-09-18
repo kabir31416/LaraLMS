@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { Filter, Users, UserPlus, RotateCcw } from "lucide-react";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
@@ -38,33 +40,38 @@ export default function AdmissionReport() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div><Label className="text-xs">সেশন</Label>
-          <Select value={sessionId} onValueChange={setSessionId}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="all">সব</SelectItem>{sessions.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div><Label className="text-xs">কোর্স</Label>
-          <Select value={course} onValueChange={setCourse}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div><Label className="text-xs">ব্যাচ</Label>
-          <Select value={batch} onValueChange={setBatch}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div><Label className="text-xs">তারিখ থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-        <div><Label className="text-xs">তারিখ পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground"><Filter className="h-4 w-4" /> ফিল্টার</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          <div><Label className="text-xs">সেশন</Label>
+            <Select value={sessionId} onValueChange={setSessionId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">সব</SelectItem>{sessions.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div><Label className="text-xs">কোর্স</Label>
+            <Select value={course} onValueChange={setCourse}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div><Label className="text-xs">ব্যাচ</Label>
+            <Select value={batch} onValueChange={setBatch}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div><Label className="text-xs">তারিখ থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Label className="text-xs">তারিখ পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">মোট ভর্তি</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{filtered.length}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">নতুন শিক্ষার্থী</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{newCount}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">পুরাতন শিক্ষার্থী</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{filtered.length - newCount}</CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard title="মোট ভর্তি" value={filtered.length.toLocaleString("bn-BD")} icon={Users} variant="primary" />
+        <StatCard title="নতুন শিক্ষার্থী" value={newCount.toLocaleString("bn-BD")} icon={UserPlus} variant="success" />
+        <StatCard title="পুরাতন শিক্ষার্থী" value={(filtered.length - newCount).toLocaleString("bn-BD")} icon={RotateCcw} variant="info" />
       </div>
 
       <div className="flex justify-end">

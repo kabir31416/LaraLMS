@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { Filter, Wallet, Receipt, Hash } from "lucide-react";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
@@ -40,21 +42,26 @@ export default function FeeCollectionReport() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div><Label className="text-xs">তারিখ থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-        <div><Label className="text-xs">তারিখ পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-        <div><Label className="text-xs">কোর্স</Label>
-          <Select value={course} onValueChange={setCourse}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent></Select>
-        </div>
-        <div><Label className="text-xs">ব্যাচ</Label>
-          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
-        </div>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground"><Filter className="h-4 w-4" /> ফিল্টার</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div><Label className="text-xs">তারিখ থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div><Label className="text-xs">তারিখ পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div><Label className="text-xs">কোর্স</Label>
+            <Select value={course} onValueChange={setCourse}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div><Label className="text-xs">ব্যাচ</Label>
+            <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">মোট আদায়</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">৳ {total.toLocaleString()}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">পেমেন্ট সংখ্যা</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{filtered.length}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">রসিদ সংখ্যা</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{new Set(filtered.map((p) => p.receiptNo)).size}</CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard title="মোট আদায়" value={`৳ ${total.toLocaleString()}`} icon={Wallet} variant="success" />
+        <StatCard title="পেমেন্ট সংখ্যা" value={filtered.length.toLocaleString("bn-BD")} icon={Receipt} variant="primary" />
+        <StatCard title="রসিদ সংখ্যা" value={new Set(filtered.map((p) => p.receiptNo)).size.toLocaleString("bn-BD")} icon={Hash} variant="info" />
       </div>
 
       <div className="flex justify-end"><ReportToolbar data={{ filename: "fee-collection", title: "ফি কালেকশন রিপোর্ট", headers, rows }} /></div>

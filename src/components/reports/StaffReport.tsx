@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { Users, GraduationCap } from "lucide-react";
 import { useStaff } from "@/contexts/StaffContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { STAFF_TYPE_LABELS } from "@/types/staff";
@@ -32,9 +34,14 @@ export default function StaffReport() {
 
   const headers = ["নাম", "ধরন", "মোবাইল", "বেতন", "ব্যাচ উপস্থিতি (৩০দিন)"];
   const rows = staff.map((s) => [s.name, STAFF_TYPE_LABELS[s.staffType], s.mobile, s.salary, pctByStaffId[s.id] ?? "—"]);
+  const directorCount = staff.filter((s) => s.staffType === "Batch Director").length;
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <StatCard title="মোট স্টাফ" value={staff.length.toLocaleString("bn-BD")} icon={Users} variant="primary" />
+        <StatCard title="ব্যাচ ডিরেক্টর" value={directorCount.toLocaleString("bn-BD")} icon={GraduationCap} variant="info" />
+      </div>
       <div className="flex justify-end"><ReportToolbar data={{ filename: "staff-report", title: "স্টাফ রিপোর্ট", headers, rows }} /></div>
       <Card><CardContent className="p-0">
         <Table>
