@@ -24,12 +24,24 @@ export interface StudentDoc extends Document {
   class?: string;
   /** Admin-controlled (Phase 4). */
   bloodGroup?: string;
+  /** Free text, no enum — Excel Student Information Import (§5). */
+  religion?: string;
+  /** Distinct from the Guardian sub-collection's "primary guardian" contact (which may be neither parent) — Excel Student Information Import §5. */
+  fatherName?: string;
+  motherName?: string;
 
   /** Legacy single field — kept for backward compatibility, no longer part of the admission/self-edit flow (superseded by present/permanentAddress below). */
   address?: string;
   /** Student-editable (Phase 4). */
   presentAddress?: string;
   permanentAddress?: string;
+  /** Bangladesh administrative address hierarchy — Excel Student Information Import §5, all free text (no separate master-data collection). */
+  division?: string;
+  district?: string;
+  upazila?: string;
+  postOffice?: string;
+  postcode?: string;
+  village?: string;
 
   /** Student-editable HSC info (Phase 4). */
   hscInstitution?: string;
@@ -37,6 +49,9 @@ export interface StudentDoc extends Document {
   hscPassingYear?: string;
   hscGroup?: string;
   hscGpa?: string;
+  /** Excel Student Information Import §5 — kept as plain strings (identifiers), never numbers, so a leading zero is never lost. */
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
 
   /** Student-editable SSC info (Phase 4). */
   sscInstitution?: string;
@@ -44,6 +59,8 @@ export interface StudentDoc extends Document {
   sscPassingYear?: string;
   sscGroup?: string;
   sscGpa?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
 
   /** Real Course reference — admission's source of truth for Course Fee (Phase 4). `course` (free text) is kept in sync for existing UI/reports that read it as a string. */
   courseId?: Types.ObjectId;
@@ -107,22 +124,35 @@ const studentSchema = new Schema<StudentDoc>(
     institution: { type: String, trim: true },
     class: { type: String, trim: true },
     bloodGroup: { type: String, trim: true },
+    religion: { type: String, trim: true },
+    fatherName: { type: String, trim: true },
+    motherName: { type: String, trim: true },
 
     address: { type: String, trim: true },
     presentAddress: { type: String, trim: true },
     permanentAddress: { type: String, trim: true },
+    division: { type: String, trim: true },
+    district: { type: String, trim: true },
+    upazila: { type: String, trim: true },
+    postOffice: { type: String, trim: true },
+    postcode: { type: String, trim: true },
+    village: { type: String, trim: true },
 
     hscInstitution: { type: String, trim: true },
     hscBoard: { type: String, trim: true },
     hscPassingYear: { type: String, trim: true },
     hscGroup: { type: String, trim: true },
     hscGpa: { type: String, trim: true },
+    hscRoll: { type: String, trim: true },
+    hscRegistrationNumber: { type: String, trim: true },
 
     sscInstitution: { type: String, trim: true },
     sscBoard: { type: String, trim: true },
     sscPassingYear: { type: String, trim: true },
     sscGroup: { type: String, trim: true },
     sscGpa: { type: String, trim: true },
+    sscRoll: { type: String, trim: true },
+    sscRegistrationNumber: { type: String, trim: true },
 
     courseId: { type: Schema.Types.ObjectId, ref: "Course" },
     course: { type: String, trim: true },

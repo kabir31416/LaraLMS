@@ -14,33 +14,57 @@ export type RowValidationStatus = (typeof ROW_VALIDATION_STATUS)[number];
 export const ROW_IMPORT_STATUS = ["PENDING", "PROCESSING", "APPROVED", "REJECTED", "FAILED"] as const;
 export type RowImportStatus = (typeof ROW_IMPORT_STATUS)[number];
 
+/**
+ * FINAL BUSINESS RULE: EXCEL IMPORT = STUDENT INFORMATION ONLY — there is no
+ * courseName/courseId here (it lives once on StudentImportSession below,
+ * the admin's UI selection, never per row), no batch field, and no
+ * discount/paid/paymentMethod — fee/payment is added later via Fee
+ * Management, never during import.
+ */
 export interface ParsedStudentRow {
+  registrationNumber?: string;
   name?: string;
-  phone?: string;
   dob?: string;
+  phone?: string;
+  gender?: string;
+
+  /** Legacy-only (pre-existing bulk import format) — the old "previous roll", kept separate from registrationNumber above. */
   rollNumber?: string;
-  courseName?: string;
-  courseId?: string;
-  guardianMobile?: string;
+
+  religion?: string;
+  bloodGroup?: string;
+
+  fatherName?: string;
+  motherName?: string;
   guardianName?: string;
+  guardianMobile?: string;
   guardianRelation?: string;
   guardianOccupation?: string;
-  bloodGroup?: string;
+
+  division?: string;
+  district?: string;
+  upazila?: string;
+  postOffice?: string;
+  postcode?: string;
+  village?: string;
   presentAddress?: string;
   permanentAddress?: string;
-  hscInstitution?: string;
-  hscBoard?: string;
-  hscPassingYear?: string;
-  hscGroup?: string;
-  hscGpa?: string;
+
   sscInstitution?: string;
   sscBoard?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
+  sscGpa?: string;
   sscPassingYear?: string;
   sscGroup?: string;
-  sscGpa?: string;
-  discount?: number;
-  paid?: number;
-  paymentMethod?: string;
+
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
+  hscGpa?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
 }
 
 export interface StudentImportSession {
@@ -48,6 +72,11 @@ export interface StudentImportSession {
   originalFileName: string;
   uploadedBy: string | { _id: string; identifier: string };
   uploadedAt: string;
+  /** Admin-selected before upload — applied to every row in this session (structurally guarantees no course/batch mismatch). */
+  courseId: string;
+  courseName: string;
+  /** Informational only — e.g. an old file's Course/Batch/Fee columns were found and ignored. Never blocks the import. */
+  headerWarnings: string[];
   totalRows: number;
   validRows: number;
   errorRows: number;
@@ -83,7 +112,6 @@ export interface StudentImportRow {
   approvedBy?: string;
   approvedAt?: string;
   createdStudentId?: string | PopulatedStudentRef;
-  createdPaymentId?: string;
   rejectedBy?: string;
   rejectedAt?: string;
   rejectionReason?: string;

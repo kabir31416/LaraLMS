@@ -26,6 +26,19 @@ export interface StudentImportSessionDoc extends Document {
   uploadedBy: Types.ObjectId; // -> User
   uploadedAt: Date;
 
+  /**
+   * Admin-selected BEFORE upload (Excel Student Information Import §2/§8) —
+   * stored here once, at the session level, rather than per row, so every
+   * row in this import is structurally guaranteed to get the same course.
+   * There is no Course column in the Excel file at all; this is the only
+   * source of course assignment for every row approveRow() creates.
+   */
+  courseId: Types.ObjectId; // -> Course
+  courseName: string; // denormalized snapshot for display, same pattern as Student.course
+
+  /** Informational only (§26) — e.g. an old file's Course/Batch/Fee columns were found and ignored. Never blocks the import. */
+  headerWarnings: string[];
+
   totalRows: number;
   validRows: number; // VALID + WARNING at upload time (approvable)
   errorRows: number; // ERROR at upload time (not approvable until fixed — this MVP has no in-place row edit, so an ERROR row must be rejected and the corrected student re-uploaded in a future import)
@@ -46,6 +59,10 @@ const studentImportSessionSchema = new Schema<StudentImportSessionDoc>(
     originalFileName: { type: String, required: true, trim: true },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     uploadedAt: { type: Date, default: Date.now },
+
+    courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true },
+    courseName: { type: String, required: true, trim: true },
+    headerWarnings: { type: [String], default: [] },
 
     totalRows: { type: Number, default: 0 },
     validRows: { type: Number, default: 0 },

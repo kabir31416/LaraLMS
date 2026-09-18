@@ -6,7 +6,12 @@ import * as service from "./studentImport.service";
 
 export const upload = asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) throw ApiError.badRequest("এক্সেল ফাইল আবশ্যক।");
-  sendSuccess(res, await service.uploadAndPreview(req, req.file), 201);
+  // Course is mandatory and selected via the UI BEFORE upload (Excel Student
+  // Information Import §2) — enforced here, not just on the frontend, since
+  // the Excel file itself deliberately carries no Course column at all.
+  const courseId = typeof req.body.courseId === "string" ? req.body.courseId.trim() : "";
+  if (!courseId) throw ApiError.badRequest("আমদানি করার আগে একটি কোর্স নির্বাচন করুন।");
+  sendSuccess(res, await service.uploadAndPreview(req, req.file, courseId), 201);
 });
 
 export const downloadTemplate = asyncHandler(async (_req: Request, res: Response) => {

@@ -4,71 +4,116 @@ export const ROW_VALIDATION_STATUS = ["VALID", "WARNING", "ERROR"] as const;
 export const ROW_IMPORT_STATUS = ["PENDING", "PROCESSING", "APPROVED", "REJECTED", "FAILED"] as const;
 
 /**
- * The exact subset of student.validation.ts's createStudentSchema fields a
- * spreadsheet can populate — deliberately a fixed, named allow-list (never
- * "whatever columns were in the file") so nothing an Excel file contains can
- * ever reach a protected field (password/role/isAdmin/system id — §19 of
- * the spec). `courseName` is the raw text from the sheet; `courseId` is
- * only ever filled in by server-side resolution against real Course master
- * data, never trusted from the file itself.
+ * The exact subset of student information a spreadsheet can populate —
+ * deliberately a fixed, named allow-list (never "whatever columns were in
+ * the file") so nothing an Excel file contains can ever reach a protected
+ * field (password/role/isAdmin/system id, or Course/Batch/Fee — Excel
+ * Student Information Import §5/§19).
+ *
+ * FINAL BUSINESS RULE: EXCEL IMPORT = STUDENT INFORMATION ONLY. There is no
+ * courseName/courseId here (the admin-selected course lives once on the
+ * session — studentImportSession.model.ts — never per row), no batch field
+ * at all, and no discount/paid/paymentMethod — fee/payment is added later
+ * through the existing Fee Management screens, never during import.
  */
 export interface ParsedStudentRow {
+  // Identity
+  registrationNumber?: string; // new-format "Coaching Reg No" -> becomes Student.registrationId directly when present (never auto-generated in that case)
   name?: string;
-  phone?: string;
   dob?: string; // yyyy-MM-dd, normalized
-  rollNumber?: string; // -> Student.currentRollNumber (the "previous registration/roll", NOT the system Registration ID)
-  courseName?: string; // raw text from the sheet
-  courseId?: string; // resolved server-side against Course master data — never from the file
-  guardianMobile?: string;
+  phone?: string;
+  gender?: string;
+
+  // Legacy-only (pre-existing bulk import format) — the old "previous roll",
+  // kept entirely separate from registrationNumber above so an old file's
+  // roll value never becomes the new permanent registration ID.
+  rollNumber?: string; // -> Student.currentRollNumber
+
+  // Personal
+  religion?: string;
+  bloodGroup?: string;
+
+  // Guardian
+  fatherName?: string;
+  motherName?: string;
   guardianName?: string;
+  guardianMobile?: string;
   guardianRelation?: string;
   guardianOccupation?: string;
-  bloodGroup?: string;
+
+  // Address
+  division?: string;
+  district?: string;
+  upazila?: string;
+  postOffice?: string;
+  postcode?: string;
+  village?: string;
   presentAddress?: string;
   permanentAddress?: string;
-  hscInstitution?: string;
-  hscBoard?: string;
-  hscPassingYear?: string;
-  hscGroup?: string;
-  hscGpa?: string;
+
+  // SSC
   sscInstitution?: string;
   sscBoard?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
+  sscGpa?: string;
   sscPassingYear?: string;
   sscGroup?: string;
-  sscGpa?: string;
-  discount?: number;
-  paid?: number;
-  paymentMethod?: string;
+
+  // HSC
+  hscInstitution?: string;
+  hscBoard?: string;
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
+  hscGpa?: string;
+  hscPassingYear?: string;
+  hscGroup?: string;
 }
 
 const parsedStudentRowSchema = new Schema<ParsedStudentRow>(
   {
+    registrationNumber: String,
     name: String,
-    phone: String,
     dob: String,
+    phone: String,
+    gender: String,
+
     rollNumber: String,
-    courseName: String,
-    courseId: { type: Schema.Types.ObjectId, ref: "Course" },
-    guardianMobile: String,
+
+    religion: String,
+    bloodGroup: String,
+
+    fatherName: String,
+    motherName: String,
     guardianName: String,
+    guardianMobile: String,
     guardianRelation: String,
     guardianOccupation: String,
-    bloodGroup: String,
+
+    division: String,
+    district: String,
+    upazila: String,
+    postOffice: String,
+    postcode: String,
+    village: String,
     presentAddress: String,
     permanentAddress: String,
-    hscInstitution: String,
-    hscBoard: String,
-    hscPassingYear: String,
-    hscGroup: String,
-    hscGpa: String,
+
     sscInstitution: String,
     sscBoard: String,
+    sscRoll: String,
+    sscRegistrationNumber: String,
+    sscGpa: String,
     sscPassingYear: String,
     sscGroup: String,
-    sscGpa: String,
-    discount: Number,
-    paid: Number,
-    paymentMethod: String,
+
+    hscInstitution: String,
+    hscBoard: String,
+    hscRoll: String,
+    hscRegistrationNumber: String,
+    hscGpa: String,
+    hscPassingYear: String,
+    hscGroup: String,
   },
   { _id: false },
 );
@@ -91,7 +136,6 @@ export interface StudentImportRowDoc extends Document {
   approvedBy?: Types.ObjectId;
   approvedAt?: Date;
   createdStudentId?: Types.ObjectId;
-  createdPaymentId?: Types.ObjectId;
 
   rejectedBy?: Types.ObjectId;
   rejectedAt?: Date;
@@ -121,7 +165,6 @@ const studentImportRowSchema = new Schema<StudentImportRowDoc>(
     approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date },
     createdStudentId: { type: Schema.Types.ObjectId, ref: "Student" },
-    createdPaymentId: { type: Schema.Types.ObjectId, ref: "Payment" },
 
     rejectedBy: { type: Schema.Types.ObjectId, ref: "User" },
     rejectedAt: { type: Date },

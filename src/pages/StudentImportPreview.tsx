@@ -166,9 +166,18 @@ export default function StudentImportPreview() {
           </Button>
           <div className="min-w-0">
             <h1 className="text-2xl font-bold truncate">{session?.originalFileName || "প্রিভিউ"}</h1>
-            <p className="text-sm text-muted-foreground">প্রতিটি সারি যাচাই করে একে একে অনুমোদন দিন — অনুমোদনের আগ পর্যন্ত কোনো শিক্ষার্থী তৈরি হবে না।</p>
+            <p className="text-sm text-muted-foreground">
+              প্রতিটি সারি যাচাই করে একে একে অনুমোদন দিন — অনুমোদনের আগ পর্যন্ত কোনো শিক্ষার্থী তৈরি হবে না।
+              {session && <> নির্বাচিত কোর্স: <span className="font-medium text-foreground">{session.courseName}</span> — প্রতিটি অনুমোদিত শিক্ষার্থী এই কোর্সেই ভর্তি হবে। ব্যাচ ও ফি/পেমেন্ট পরে যোগ করতে হবে।</>}
+            </p>
           </div>
         </div>
+
+        {session && session.headerWarnings.length > 0 && (
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+            {session.headerWarnings.join(" ")}
+          </div>
+        )}
 
         {sessionLoading || !session ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -211,13 +220,12 @@ export default function StudentImportPreview() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>সারি</TableHead>
+                      <TableHead>রেজিস্ট্রেশন</TableHead>
                       <TableHead>নাম</TableHead>
-                      <TableHead>পূর্বের রেজিস্ট্রেশন/রোল</TableHead>
-                      <TableHead>মোবাইল</TableHead>
-                      <TableHead>অভিভাবকের মোবাইল</TableHead>
                       <TableHead>জন্ম তারিখ</TableHead>
-                      <TableHead>কোর্স</TableHead>
-                      <TableHead>পেমেন্ট</TableHead>
+                      <TableHead>মোবাইল</TableHead>
+                      <TableHead>লিঙ্গ</TableHead>
+                      <TableHead>অভিভাবক</TableHead>
                       <TableHead>যাচাই স্ট্যাটাস</TableHead>
                       <TableHead>অনুমোদন স্ট্যাটাস</TableHead>
                       <TableHead className="text-right">অ্যাকশন</TableHead>
@@ -234,13 +242,19 @@ export default function StudentImportPreview() {
                       return (
                         <TableRow key={row._id}>
                           <TableCell className="text-sm">{row.rowNumber}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{p.registrationNumber || p.rollNumber || "—"}</TableCell>
                           <TableCell className="text-sm font-medium whitespace-nowrap">{p.name || "—"}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.rollNumber || "—"}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.phone || "—"}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.guardianMobile || "—"}</TableCell>
                           <TableCell className="text-sm whitespace-nowrap">{p.dob || "—"}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.courseName || "—"}</TableCell>
-                          <TableCell className="text-sm whitespace-nowrap">{p.paid ? `৳${p.paid.toLocaleString("bn-BD")}` : "—"}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{p.phone || "—"}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{p.gender || "—"}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">
+                            {p.guardianName || p.guardianMobile ? (
+                              <>
+                                {p.guardianName || "—"}
+                                {p.guardianMobile && <span className="text-muted-foreground"> ({p.guardianMobile})</span>}
+                              </>
+                            ) : "—"}
+                          </TableCell>
                           <TableCell>
                             <div className="space-y-1">
                               <Badge variant="outline" className={vMeta.className}>{vMeta.label}</Badge>
@@ -306,8 +320,7 @@ export default function StudentImportPreview() {
           <AlertDialogHeader>
             <AlertDialogTitle>আপনি কি এই শিক্ষার্থীকে যুক্ত করতে চান?</AlertDialogTitle>
             <AlertDialogDescription>
-              {approveTarget?.parsed.name} ({approveTarget?.parsed.phone}) — কোর্স: {approveTarget?.parsed.courseName || "—"}। অনুমোদনের সাথে সাথেই সিস্টেমে একজন স্থায়ী শিক্ষার্থী তৈরি হবে।
-              {approveTarget?.parsed.paid ? ` পেমেন্ট: ৳${approveTarget.parsed.paid.toLocaleString("bn-BD")}` : ""}
+              {approveTarget?.parsed.name} ({approveTarget?.parsed.phone}) — কোর্স: {session?.courseName || "—"}। অনুমোদনের সাথে সাথেই সিস্টেমে একজন স্থায়ী শিক্ষার্থী তৈরি হবে (ব্যাচ ও ফি/পেমেন্ট পরে যোগ করতে হবে)।
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

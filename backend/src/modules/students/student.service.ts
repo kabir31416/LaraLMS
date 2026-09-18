@@ -438,23 +438,36 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
     paid: 0, // the admission-time payment (if any) is applied below through payment.service, never baked in directly
   });
 
-  const registrationId = await generateRegistrationId();
-  const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
+  // Bulk import (studentImport.service.ts) pre-supplies a registrationId
+  // straight from the Excel "Coaching Reg No" column when present — the
+  // normal Admission form never sends this field, so it always falls back
+  // to the usual auto-generated one (Excel Student Information Import §11).
+  const providedRegistrationId = typeof body.registrationId === "string" ? body.registrationId.trim() : "";
+  const registrationId = providedRegistrationId || (await generateRegistrationId());
+  const { paid: _paid, paymentMethod, registrationId: _registrationId, ...rest } = body as Record<string, unknown>;
   await syncHscInstitution(rest);
-  const doc = await Student.create({
-    ...rest,
-    registrationId,
-    courseId: course._id,
-    course: course.name,
-    currentRollNumber: body.rollNumber || undefined,
-    admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
-    feeType,
-    discount,
-    totalCourseFee,
-    admissionFee,
-    ...fees,
-    paid: 0,
-  });
+  let doc: StudentDoc;
+  try {
+    doc = await Student.create({
+      ...rest,
+      registrationId,
+      courseId: course._id,
+      course: course.name,
+      currentRollNumber: body.rollNumber || undefined,
+      admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
+      feeType,
+      discount,
+      totalCourseFee,
+      admissionFee,
+      ...fees,
+      paid: 0,
+    });
+  } catch (err) {
+    if (providedRegistrationId && err && typeof err === "object" && "code" in err && (err as { code?: number }).code === 11000) {
+      throw ApiError.conflict(`রেজিস্ট্রেশন নম্বর "${providedRegistrationId}" ইতোমধ্যে ব্যবহৃত হয়েছে।`);
+    }
+    throw err;
+  }
 
   await guardianService.upsertPrimaryFromInlineFields(req, String(doc._id), body);
   await refreshProfileCompletion(doc);

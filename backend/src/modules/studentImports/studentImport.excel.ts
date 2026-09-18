@@ -1,60 +1,123 @@
 import * as XLSX from "xlsx";
-import { RELATIONS } from "../students/student.constants";
+import { RELATIONS, GENDERS } from "../students/student.constants";
 import { toAsciiDigits } from "../../common/utils/digits";
 import type { ParsedStudentRow } from "./studentImportRow.model";
 
 /**
- * Bulk Student Upload — Excel parsing (§2/§18/§24 of the spec).
+ * Bulk Student Upload — Excel parsing (Excel Student Information Import
+ * spec §5/§14/§15/§16/§24).
  *
- * Column mapping is by HEADER TEXT, never column position/order (§24) — a
- * reordered or partially-filled sheet still parses correctly as long as the
- * header row uses these exact labels (the generated template is the only
- * source of these headers, so "download the template, don't retype the
- * headers" is the expected workflow).
+ * EXCEL IMPORT = STUDENT INFORMATION ONLY. There is no Course, Batch, or
+ * Fee/Payment column anywhere in this file's column definitions — Course is
+ * selected once via the UI before upload (studentImport.service.ts's
+ * uploadAndPreview takes a courseId and stores it on the session, applied
+ * to every row), Batch is never touched by import at all, and Fee/Payment
+ * is added later through the existing Fee Management screens.
+ *
+ * Column mapping is by HEADER TEXT against a fixed, explicit alias list per
+ * field (§24 "controlled map, NOT fuzzy matching") — never column
+ * position/order, and never a similarity/edit-distance guess. Each
+ * ColumnDef's `headers[0]` is the canonical label written into the
+ * generated template; every other entry is an accepted alias so an older
+ * upload (Bengali headers from the pre-existing bulk-import format, or a
+ * plain "Name"/"Mobile" style header) still parses without the admin
+ * needing to retype anything (§26 backward compatibility).
  *
  * Reuses the same `xlsx` (SheetJS) package this app's frontend already uses
- * for Excel *export* (`src/lib/exporters.ts`) — `exceljs` is also a backend
- * dependency but has never been used anywhere in this codebase and cannot
- * read the legacy binary `.xls` format the spec asks to support, so `xlsx`
- * is the correct existing-library choice here, not exceljs.
+ * for Excel *export* (`src/lib/exporters.ts`).
  */
 
 export interface ColumnDef {
-  header: string;
+  /** headers[0] is canonical (used for the generated template); the rest are accepted aliases — an explicit whitelist, never fuzzy-matched. */
+  headers: string[];
   field: keyof ParsedStudentRow;
   required: boolean;
-  kind: "text" | "phone" | "date" | "number" | "relation";
+  kind: "text" | "phone" | "date" | "relation" | "gender";
+  /**
+   * Also forces the Excel "Text" cell format on this column in the
+   * generated template, same as every "phone" column already gets — for
+   * identifier-like fields (roll/registration/postcode numbers) where a
+   * plain numeric cell would silently drop a leading zero before this
+   * parser ever sees it (§15), and there is no way to recover it after the
+   * fact the way normalizePhone can for a 10-digit mobile number.
+   */
+  forceTextFormat?: boolean;
 }
 
 export const COLUMN_DEFINITIONS: ColumnDef[] = [
-  { header: "নাম", field: "name", required: true, kind: "text" },
-  { header: "মোবাইল", field: "phone", required: true, kind: "phone" },
-  { header: "জন্ম তারিখ (yyyy-mm-dd)", field: "dob", required: true, kind: "date" },
-  { header: "রেজিস্ট্রেশন/পূর্বের রোল", field: "rollNumber", required: true, kind: "text" },
-  { header: "কোর্স", field: "courseName", required: true, kind: "text" },
-  { header: "অভিভাবকের মোবাইল", field: "guardianMobile", required: true, kind: "phone" },
-  { header: "অভিভাবকের নাম", field: "guardianName", required: false, kind: "text" },
-  { header: "অভিভাবকের সম্পর্ক", field: "guardianRelation", required: false, kind: "relation" },
-  { header: "অভিভাবকের পেশা", field: "guardianOccupation", required: false, kind: "text" },
-  { header: "রক্তের গ্রুপ", field: "bloodGroup", required: false, kind: "text" },
-  { header: "বর্তমান ঠিকানা", field: "presentAddress", required: false, kind: "text" },
-  { header: "স্থায়ী ঠিকানা", field: "permanentAddress", required: false, kind: "text" },
-  { header: "HSC প্রতিষ্ঠান", field: "hscInstitution", required: false, kind: "text" },
-  { header: "HSC বোর্ড", field: "hscBoard", required: false, kind: "text" },
-  { header: "HSC পাসের বছর", field: "hscPassingYear", required: false, kind: "text" },
-  { header: "HSC গ্রুপ", field: "hscGroup", required: false, kind: "text" },
-  { header: "HSC জিপিএ", field: "hscGpa", required: false, kind: "text" },
-  { header: "SSC প্রতিষ্ঠান", field: "sscInstitution", required: false, kind: "text" },
-  { header: "SSC বোর্ড", field: "sscBoard", required: false, kind: "text" },
-  { header: "SSC পাসের বছর", field: "sscPassingYear", required: false, kind: "text" },
-  { header: "SSC গ্রুপ", field: "sscGroup", required: false, kind: "text" },
-  { header: "SSC জিপিএ", field: "sscGpa", required: false, kind: "text" },
-  { header: "ভর্তির সময় প্রদান (৳)", field: "paid", required: false, kind: "number" },
-  { header: "ছাড় (৳)", field: "discount", required: false, kind: "number" },
-  { header: "পেমেন্ট মাধ্যম", field: "paymentMethod", required: false, kind: "text" },
+  // ---- Identity ----
+  { headers: ["Coaching Reg No", "Registration Number", "Reg No"], field: "registrationNumber", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["Name (En)", "Name", "Student Name", "নাম"], field: "name", required: true, kind: "text" },
+  { headers: ["DOB", "Date of Birth", "জন্ম তারিখ (yyyy-mm-dd)"], field: "dob", required: false, kind: "date" },
+  { headers: ["Phone", "Mobile", "Phone Number", "মোবাইল"], field: "phone", required: true, kind: "phone" },
+  { headers: ["Gender"], field: "gender", required: false, kind: "gender" },
+
+  // ---- Personal ----
+  { headers: ["Religion"], field: "religion", required: false, kind: "text" },
+  { headers: ["Blood Group", "রক্তের গ্রুপ"], field: "bloodGroup", required: false, kind: "text" },
+
+  // ---- Guardian ----
+  { headers: ["Father Name"], field: "fatherName", required: false, kind: "text" },
+  { headers: ["Mother Name"], field: "motherName", required: false, kind: "text" },
+  { headers: ["Guardian Name", "অভিভাবকের নাম"], field: "guardianName", required: false, kind: "text" },
+  { headers: ["Guardian Phone", "Guardian Mobile", "অভিভাবকের মোবাইল"], field: "guardianMobile", required: false, kind: "phone" },
+  { headers: ["Guardian Relation", "অভিভাবকের সম্পর্ক"], field: "guardianRelation", required: false, kind: "relation" },
+  { headers: ["Guardian Occupation", "অভিভাবকের পেশা"], field: "guardianOccupation", required: false, kind: "text" },
+
+  // ---- Address ----
+  { headers: ["Division"], field: "division", required: false, kind: "text" },
+  { headers: ["District"], field: "district", required: false, kind: "text" },
+  { headers: ["Upazila"], field: "upazila", required: false, kind: "text" },
+  { headers: ["Post Office"], field: "postOffice", required: false, kind: "text" },
+  { headers: ["Postcode"], field: "postcode", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["Village"], field: "village", required: false, kind: "text" },
+  { headers: ["Current Address", "বর্তমান ঠিকানা"], field: "presentAddress", required: false, kind: "text" },
+  { headers: ["Permanent Address", "স্থায়ী ঠিকানা"], field: "permanentAddress", required: false, kind: "text" },
+
+  // ---- SSC ----
+  { headers: ["SSC Board", "SSC বোর্ড"], field: "sscBoard", required: false, kind: "text" },
+  { headers: ["SSC Roll"], field: "sscRoll", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["SSC Registration"], field: "sscRegistrationNumber", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["SSC GPA", "SSC জিপিএ"], field: "sscGpa", required: false, kind: "text" },
+  { headers: ["SSC Year", "SSC পাসের বছর"], field: "sscPassingYear", required: false, kind: "text" },
+  { headers: ["SSC Group", "SSC গ্রুপ"], field: "sscGroup", required: false, kind: "text" },
+  { headers: ["SSC School", "SSC প্রতিষ্ঠান"], field: "sscInstitution", required: false, kind: "text" },
+
+  // ---- HSC ----
+  { headers: ["HSC Board", "HSC বোর্ড"], field: "hscBoard", required: false, kind: "text" },
+  { headers: ["HSC Roll"], field: "hscRoll", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["HSC Registration"], field: "hscRegistrationNumber", required: false, kind: "text", forceTextFormat: true },
+  { headers: ["HSC GPA", "HSC জিপিএ"], field: "hscGpa", required: false, kind: "text" },
+  { headers: ["HSC Year", "HSC পাসের বছর"], field: "hscPassingYear", required: false, kind: "text" },
+  { headers: ["HSC Group", "HSC গ্রুপ"], field: "hscGroup", required: false, kind: "text" },
+  { headers: ["HSC College", "HSC প্রতিষ্ঠান"], field: "hscInstitution", required: false, kind: "text" },
+
+  // ---- Legacy-only (pre-existing bulk import format §26) ----
+  // "রেজিস্ট্রেশন/পূর্বের রোল" is deliberately its OWN field (rollNumber ->
+  // Student.currentRollNumber), never merged with registrationNumber above
+  // (-> Student.registrationId) — an old-format file's previous-roll value
+  // must never silently become the new permanent registration ID.
+  { headers: ["রেজিস্ট্রেশন/পূর্বের রোল"], field: "rollNumber", required: false, kind: "text", forceTextFormat: true },
+];
+
+/**
+ * Old bulk-import headers for Course/Batch/Fee/Payment — none of these map
+ * to any field any more (§2/§8/§14 FINAL BUSINESS RULE). An old-format file
+ * that still has them must not fail the whole import; the column is simply
+ * ignored and one informational warning is surfaced instead (§26).
+ */
+const LEGACY_IGNORED_HEADERS = [
+  "কোর্স", "Course", "Course Name",
+  "ব্যাচ", "Batch", "Batch Name",
+  "ভর্তির সময় প্রদান (৳)", "পেমেন্ট মাধ্যম", "ছাড় (৳)",
+  "Admission Fee", "Course Fee", "Payment", "Payment Amount", "Payment Method", "Discount", "Paid", "Due", "Invoice", "Receipt",
 ];
 
 export const MAX_IMPORT_ROWS = 1000;
+
+function normalizeHeader(raw: string): string {
+  return raw.trim().replace(/\s*\*$/, "").replace(/\s+/g, " ").toLowerCase();
+}
 
 function normalizeText(v: unknown): string | undefined {
   if (v === null || v === undefined) return undefined;
@@ -64,7 +127,7 @@ function normalizeText(v: unknown): string | undefined {
 
 /**
  * Excel silently drops a phone number's leading zero when the cell is
- * stored as a number rather than text (§18) — "01712345678" becomes
+ * stored as a number rather than text (§15) — "01712345678" becomes
  * 1712345678. If a 10-digit number comes through, it's almost certainly
  * this exact case for a Bangladeshi mobile number, so it's restored with a
  * warning rather than silently accepted as-is or hard-rejected outright.
@@ -86,7 +149,7 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** Accepts a JS Date (Excel date-formatted cell) or a handful of common typed-string formats — never guesses beyond these. */
+/** Accepts a JS Date (Excel date-formatted cell, cellDates:true below) or a handful of common typed-string formats — never guesses beyond these. */
 function normalizeDob(v: unknown): { value?: string; error?: string } {
   if (v === null || v === undefined || v === "") return {};
   if (v instanceof Date && !isNaN(v.getTime())) {
@@ -101,19 +164,31 @@ function normalizeDob(v: unknown): { value?: string; error?: string } {
   return { error: `"জন্ম তারিখ" সঠিক ফরম্যাটে নেই (yyyy-mm-dd দিন): "${raw}"` };
 }
 
-function normalizeNumber(v: unknown): { value?: number; error?: string } {
-  if (v === null || v === undefined || v === "") return {};
-  const n = typeof v === "number" ? v : Number(toAsciiDigits(String(v)).trim());
-  if (Number.isNaN(n)) return { error: `সংখ্যা প্রত্যাশিত ছিল, পাওয়া গেছে: "${String(v)}"` };
-  return { value: n };
-}
-
 function normalizeRelation(v: unknown): { value?: string; warning?: string } {
   const raw = normalizeText(v);
   if (!raw) return {};
   const match = RELATIONS.find((r) => r === raw);
   if (match) return { value: match };
   return { value: raw, warning: `"অভিভাবকের সম্পর্ক" এর মান "${raw}" পরিচিত তালিকায় নেই (${RELATIONS.join(", ")}) — "অন্যান্য" হিসেবে গণ্য হবে` };
+}
+
+/**
+ * English (new 2026 format) and Bengali (existing enum) values both accepted
+ * — case-insensitive. An unrecognized value is left UNSET with a warning
+ * rather than coerced, since Student.gender is a Mongoose enum
+ * (student.model.ts) and passing through an arbitrary string would fail at
+ * Student.create() time instead of failing softly here at parse time.
+ */
+function normalizeGender(v: unknown): { value?: (typeof GENDERS)[number]; warning?: string } {
+  const raw = normalizeText(v);
+  if (!raw) return {};
+  const bengaliMatch = GENDERS.find((g) => g === raw);
+  if (bengaliMatch) return { value: bengaliMatch };
+  const lower = raw.toLowerCase();
+  if (lower === "male" || lower === "m") return { value: "পুরুষ" };
+  if (lower === "female" || lower === "f") return { value: "মহিলা" };
+  if (lower === "other" || lower === "others") return { value: "অন্যান্য" };
+  return { warning: `"Gender" এর মান "${raw}" পরিচিত তালিকায় নেই (Male/Female/Other) — খালি রাখা হয়েছে।` };
 }
 
 export interface ParsedRowResult {
@@ -127,33 +202,58 @@ export interface ParsedRowResult {
 export interface ParseWorkbookResult {
   rows: ParsedRowResult[];
   headerErrors: string[];
+  /** Informational only — never blocks the import (§26), e.g. "an old Course/Batch/Fee column was found and ignored". */
+  headerWarnings: string[];
 }
 
 /** Reads the uploaded buffer once, fully in memory — nothing is written to disk (see studentImportSession.model.ts's file-level comment for why). */
 export function parseStudentWorkbook(buffer: Buffer): ParseWorkbookResult {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return { rows: [], headerErrors: ["এক্সেল ফাইলে কোনো শিট পাওয়া যায়নি।"] };
+  if (!sheetName) return { rows: [], headerErrors: ["এক্সেল ফাইলে কোনো শিট পাওয়া যায়নি।"], headerWarnings: [] };
   const sheet = workbook.Sheets[sheetName];
   const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
 
-  if (records.length === 0) return { rows: [], headerErrors: ["এক্সেল ফাইলে কোনো ডেটা পাওয়া যায়নি।"] };
+  if (records.length === 0) return { rows: [], headerErrors: ["এক্সেল ফাইলে কোনো ডেটা পাওয়া যায়নি।"], headerWarnings: [] };
 
-  // The generated template suffixes required headers with " *" as a visual marker (buildImportTemplateBuffer
-  // below) — that suffix must be stripped before matching against COLUMN_DEFINITIONS' bare header strings,
-  // both for presence-checking and for reading each cell's value out of the parsed record.
-  const headerLookup = new Map<string, string>(); // COLUMN_DEFINITIONS.header -> actual key in `record`
+  // headerLookup: normalized alias text -> actual key present in the parsed record (case/whitespace-insensitive, " *" template suffix stripped).
+  const actualKeysByNormalized = new Map<string, string>();
   for (const key of Object.keys(records[0])) {
-    const bare = key.trim().replace(/\s*\*$/, "");
-    headerLookup.set(bare, key);
+    actualKeysByNormalized.set(normalizeHeader(key), key);
   }
+
+  const headerLookup = new Map<string, string>(); // ColumnDef -> actual key in `record`, keyed by field name
   const headerErrors: string[] = [];
+  const consumedNormalizedHeaders = new Set<string>();
   for (const col of COLUMN_DEFINITIONS) {
-    if (col.required && !headerLookup.has(col.header)) {
-      headerErrors.push(`আবশ্যক কলাম পাওয়া যায়নি: "${col.header}" — টেমপ্লেট ডাউনলোড করে সঠিক কলাম হেডার ব্যবহার করুন।`);
+    let matchedActualKey: string | undefined;
+    for (const alias of col.headers) {
+      const normalized = normalizeHeader(alias);
+      const actualKey = actualKeysByNormalized.get(normalized);
+      if (actualKey !== undefined) {
+        matchedActualKey = actualKey;
+        consumedNormalizedHeaders.add(normalized);
+        break;
+      }
     }
+    if (matchedActualKey !== undefined) headerLookup.set(col.field, matchedActualKey);
+    else if (col.required) headerErrors.push(`আবশ্যক কলাম পাওয়া যায়নি: "${col.headers[0]}" — টেমপ্লেট ডাউনলোড করে সঠিক কলাম হেডার ব্যবহার করুন।`);
   }
-  if (headerErrors.length > 0) return { rows: [], headerErrors };
+  if (headerErrors.length > 0) return { rows: [], headerErrors, headerWarnings: [] };
+
+  const headerWarnings: string[] = [];
+  const ignoredHeadersFound = new Set<string>();
+  for (const key of Object.keys(records[0])) {
+    const normalized = normalizeHeader(key);
+    if (consumedNormalizedHeaders.has(normalized)) continue;
+    const legacyMatch = LEGACY_IGNORED_HEADERS.find((h) => normalizeHeader(h) === normalized);
+    if (legacyMatch) ignoredHeadersFound.add(key.trim());
+  }
+  if (ignoredHeadersFound.size > 0) {
+    headerWarnings.push(
+      `"${Array.from(ignoredHeadersFound).join('", "')}" কলাম(গুলো) উপেক্ষা করা হয়েছে — কোর্স নির্বাচিত কোর্স থেকে, এবং ব্যাচ/ফি পরে যোগ করা হয়।`,
+    );
+  }
 
   const rows: ParsedRowResult[] = records.map((record, idx) => {
     const parsed: ParsedStudentRow = {};
@@ -162,9 +262,9 @@ export function parseStudentWorkbook(buffer: Buffer): ParseWorkbookResult {
     const parseWarnings: string[] = [];
 
     for (const col of COLUMN_DEFINITIONS) {
-      const actualKey = headerLookup.get(col.header);
+      const actualKey = headerLookup.get(col.field);
       const cell = actualKey === undefined ? undefined : record[actualKey];
-      raw[col.header] = cell === null || cell === undefined ? "" : String(cell instanceof Date ? cell.toISOString() : cell);
+      raw[col.headers[0]] = cell === null || cell === undefined ? "" : String(cell instanceof Date ? cell.toISOString() : cell);
 
       let fieldHadError = false;
       if (col.kind === "phone") {
@@ -175,12 +275,12 @@ export function parseStudentWorkbook(buffer: Buffer): ParseWorkbookResult {
         const { value, error } = normalizeDob(cell);
         if (value) (parsed[col.field] as string) = value;
         if (error) { parseErrors.push(error); fieldHadError = true; }
-      } else if (col.kind === "number") {
-        const { value, error } = normalizeNumber(cell);
-        if (value !== undefined) (parsed[col.field] as number) = value;
-        if (error) { parseErrors.push(`"${col.header}": ${error}`); fieldHadError = true; }
       } else if (col.kind === "relation") {
         const { value, warning } = normalizeRelation(cell);
+        if (value) (parsed[col.field] as string) = value;
+        if (warning) parseWarnings.push(warning);
+      } else if (col.kind === "gender") {
+        const { value, warning } = normalizeGender(cell);
         if (value) (parsed[col.field] as string) = value;
         if (warning) parseWarnings.push(warning);
       } else {
@@ -189,31 +289,58 @@ export function parseStudentWorkbook(buffer: Buffer): ParseWorkbookResult {
       }
 
       if (col.required && !parsed[col.field] && !fieldHadError) {
-        parseErrors.push(`"${col.header}" আবশ্যক — খালি রাখা যাবে না।`);
+        parseErrors.push(`"${col.headers[0]}" আবশ্যক — খালি রাখা যাবে না।`);
       }
     }
 
     return { rowNumber: idx + 2, raw, parsed, parseErrors, parseWarnings }; // +2: header is row 1, data starts at row 2
   });
 
-  return { rows, headerErrors: [] };
+  return { rows, headerErrors: [], headerWarnings };
 }
 
-/** Builds the downloadable .xlsx template — header row (required columns marked) plus one example row. Phone columns are pre-formatted as Text so a future re-upload can't lose a leading zero the way a fresh, unformatted cell can (§18). */
+/**
+ * Builds the downloadable .xlsx template — header row (required columns
+ * marked) plus one example row. Contains ONLY the 35 student-information
+ * columns (§16) — no Course/Batch/Fee/Payment/Discount/Receipt column
+ * exists anywhere in this template, since Course is chosen in the UI before
+ * upload and Batch/Fee are never part of import at all.
+ */
 export function buildImportTemplateBuffer(): Buffer {
-  const headers = COLUMN_DEFINITIONS.map((c) => (c.required ? `${c.header} *` : c.header));
-  const example = [
-    "রহিম উদ্দিন", "01712345678", "2005-01-15", "১২", "BSc Nursing", "01898765432",
-    "করিম উদ্দিন", "পিতা", "ব্যবসায়ী", "B+", "ঢাকা", "ঢাকা",
-    "", "", "", "", "", "", "", "", "", "",
-    "1000", "0", "নগদ",
-  ];
+  const headers = COLUMN_DEFINITIONS.filter((c) => c.field !== "rollNumber").map((c) => (c.required ? `${c.headers[0]} *` : c.headers[0]));
+  const columns = COLUMN_DEFINITIONS.filter((c) => c.field !== "rollNumber");
+  const example = columns.map((c) => {
+    switch (c.field) {
+      case "registrationNumber": return "COACH-0001";
+      case "name": return "রহিম উদ্দিন";
+      case "dob": return "2005-01-15";
+      case "phone": return "01712345678";
+      case "gender": return "Male";
+      case "religion": return "Islam";
+      case "bloodGroup": return "B+";
+      case "fatherName": return "করিম উদ্দিন";
+      case "motherName": return "ফাতেমা বেগম";
+      case "guardianName": return "করিম উদ্দিন";
+      case "guardianMobile": return "01898765432";
+      case "guardianRelation": return "পিতা";
+      case "guardianOccupation": return "ব্যবসায়ী";
+      case "division": return "ঢাকা";
+      case "district": return "ঢাকা";
+      case "upazila": return "সাভার";
+      case "postOffice": return "সাভার";
+      case "postcode": return "1340";
+      case "village": return "";
+      case "presentAddress": return "ঢাকা";
+      case "permanentAddress": return "ঢাকা";
+      default: return "";
+    }
+  });
 
   const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-  ws["!cols"] = COLUMN_DEFINITIONS.map((c) => ({ wch: Math.max(14, c.header.length) }));
-  // Force phone columns to Text format so re-typing/pasting a number into them doesn't strip a leading zero.
-  COLUMN_DEFINITIONS.forEach((col, i) => {
-    if (col.kind !== "phone") return;
+  ws["!cols"] = columns.map((c) => ({ wch: Math.max(14, c.headers[0].length) }));
+  // Force identifier-like columns (phone numbers + roll/registration/postcode) to Text format so re-typing/pasting a number into them doesn't strip a leading zero.
+  columns.forEach((col, i) => {
+    if (col.kind !== "phone" && !col.forceTextFormat) return;
     const colLetter = XLSX.utils.encode_col(i);
     for (let r = 2; r <= 200; r++) {
       const addr = `${colLetter}${r}`;
@@ -227,12 +354,11 @@ export function buildImportTemplateBuffer(): Buffer {
 
   const notesWs = XLSX.utils.aoa_to_sheet([
     ["নির্দেশনা"],
-    ["* চিহ্নিত কলামগুলো আবশ্যক — খালি রাখা যাবে না।"],
-    ["কোর্সের নাম অবশ্যই Settings-এ বিদ্যমান কোনো কোর্সের নামের সাথে হুবহু মিলতে হবে — নতুন কোর্স স্বয়ংক্রিয়ভাবে তৈরি হবে না।"],
-    ["মোবাইল নম্বর কলামগুলো Text ফরম্যাটে রাখুন যাতে শুরুর '০' মুছে না যায়।"],
+    ["* চিহ্নিত কলামগুলো আবশ্যক — খালি রাখা যাবে না। বাকি সব কলাম ঐচ্ছিক।"],
+    ["এই ফাইলে কোনো কোর্স, ব্যাচ বা ফি/পেমেন্ট কলাম নেই — আপলোডের আগে UI থেকে কোর্স নির্বাচন করতে হবে, ব্যাচ ও ফি/পেমেন্ট পরে যোগ করা হবে।"],
+    ["মোবাইল ও রোল/রেজিস্ট্রেশন/পোস্টকোড জাতীয় কলামগুলো Text ফরম্যাটে রাখুন যাতে শুরুর '০' মুছে না যায়।"],
     ["জন্ম তারিখ yyyy-mm-dd ফরম্যাটে দিন (যেমন: 2005-01-15)।"],
-    ["কোর্স ফি ও ভর্তি ফি এক্সেল থেকে নেওয়া হয় না — সবসময় Settings-এর বর্তমান কনফিগারেশন থেকে আসে।"],
-    ["\"ভর্তির সময় প্রদান\" খালি রাখলে কোনো পেমেন্ট তৈরি হবে না।"],
+    ["Coaching Reg No খালি রাখলে সিস্টেম স্বয়ংক্রিয়ভাবে একটি রেজিস্ট্রেশন আইডি তৈরি করবে।"],
   ]);
   XLSX.utils.book_append_sheet(wb, notesWs, "নির্দেশনা");
 

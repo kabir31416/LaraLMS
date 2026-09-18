@@ -4,11 +4,14 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Download, Eye, FileSpreadsheet, UploadCloud } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
+import { useAcademic } from "@/contexts/AcademicContext";
+import { AcademicSelect } from "@/components/common/AcademicSelect";
 import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
 import type { StudentImportListMeta, StudentImportSession } from "@/types/studentImport";
@@ -39,9 +42,11 @@ const STATUS_META: Record<StudentImportSession["status"], { label: string; class
 
 export default function StudentImportUpload() {
   const { user } = useAuth();
+  const { activeCourses } = useAcademic();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [courseId, setCourseId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
@@ -82,11 +87,17 @@ export default function StudentImportUpload() {
   };
 
   const handleUpload = async () => {
+    // Course must be selected in the UI BEFORE upload — the Excel file
+    // itself carries no Course column at all (Excel Student Information
+    // Import §2). This is a real blocker, not just a nicety: the backend
+    // rejects an upload without a courseId the same way.
+    if (!courseId) { toast.error("আমদানি করার আগে একটি কোর্স নির্বাচন করুন।"); return; }
     if (!file) { toast.error("এক্সেল ফাইল নির্বাচন করুন।"); return; }
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("courseId", courseId);
       const session = await api.postForm<StudentImportSession>("/students/import/upload", formData);
       toast.success("ফাইল পার্স করা হয়েছে — প্রিভিউ যাচাই করে অনুমোদন দিন।");
       navigate(`/admission/import/${session._id}`);
@@ -126,10 +137,19 @@ export default function StudentImportUpload() {
               <CardContent className="space-y-4">
                 <div className="rounded-lg border border-dashed p-4 bg-muted/30 space-y-2">
                   <p className="text-sm font-medium">শুরু করার আগে টেমপ্লেট ডাউনলোড করুন</p>
-                  <p className="text-xs text-muted-foreground">টেমপ্লেটের কলাম হেডার অপরিবর্তিত রাখুন — কলামের ক্রম পরিবর্তন করা গেলেও নাম পরিবর্তন করা যাবে না। কোর্স ফি ও ভর্তি ফি এক্সেল থেকে নেওয়া হয় না, সবসময় Settings থেকে আসে।</p>
+                  <p className="text-xs text-muted-foreground">টেমপ্লেটের কলাম হেডার অপরিবর্তিত রাখুন — কলামের ক্রম পরিবর্তন করা গেলেও নাম পরিবর্তন করা যাবে না। এক্সেল ফাইলে কোনো কোর্স, ব্যাচ বা ফি/পেমেন্ট কলাম নেই — শুধু শিক্ষার্থীর তথ্য থাকে। কোর্স নিচে থেকে নির্বাচন করুন; ব্যাচ ও ফি/পেমেন্ট পরে যোগ করা যাবে।</p>
                   <Button variant="outline" size="sm" onClick={handleDownloadTemplate} disabled={downloadingTemplate}>
                     <Download className="h-4 w-4 mr-2" /> {downloadingTemplate ? "ডাউনলোড হচ্ছে..." : "টেমপ্লেট ডাউনলোড করুন"}
                   </Button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>কোর্স নির্বাচন করুন *</Label>
+                  <p className="text-xs text-muted-foreground">প্রতিটি আমদানিকৃত শিক্ষার্থী এই কোর্সেই ভর্তি হবে — এক্সেল ফাইলে আলাদা কোনো কোর্স কলামের প্রয়োজন নেই।</p>
+                  <AcademicSelect kind="course" value={courseId} onValueChange={setCourseId} placeholder="কোর্স নির্বাচন করুন" disabled={uploading} />
+                  {activeCourses.length === 0 && (
+                    <p className="text-xs text-destructive">কোনো সক্রিয় কোর্স পাওয়া যায়নি — প্রথমে Settings থেকে একটি কোর্স যোগ করুন।</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -144,7 +164,7 @@ export default function StudentImportUpload() {
                   />
                 </div>
 
-                <Button onClick={handleUpload} disabled={uploading || !file}>
+                <Button onClick={handleUpload} disabled={uploading || !file || !courseId}>
                   <UploadCloud className="h-4 w-4 mr-2" />
                   {uploading ? "আপলোড হচ্ছে..." : "আপলোড ও প্রিভিউ দেখুন"}
                 </Button>
@@ -166,6 +186,7 @@ export default function StudentImportUpload() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>ফাইল</TableHead>
+                      <TableHead>কোর্স</TableHead>
                       <TableHead>আপলোডকারী</TableHead>
                       <TableHead>আপলোডের সময়</TableHead>
                       <TableHead className="text-center">মোট</TableHead>
@@ -184,6 +205,7 @@ export default function StudentImportUpload() {
                       return (
                         <TableRow key={s._id}>
                           <TableCell className="max-w-[220px] truncate" title={s.originalFileName}>{s.originalFileName}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{s.courseName || "—"}</TableCell>
                           <TableCell className="text-sm">{uploader || "—"}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{new Date(s.uploadedAt).toLocaleString("bn-BD")}</TableCell>
                           <TableCell className="text-center text-sm">{s.totalRows}</TableCell>

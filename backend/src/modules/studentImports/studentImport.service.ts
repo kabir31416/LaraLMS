@@ -6,19 +6,32 @@ import { validateParsedRows, revalidateRowForApproval } from "./studentImport.ro
 import type { ParsedStudentRow } from "./studentImportRow.model";
 import { Student } from "../students/student.model";
 import { Guardian } from "../guardians/guardian.model";
+import { Course } from "../courses/course.model";
 import * as studentService from "../students/student.service";
-import * as paymentService from "../payments/payment.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, parsePagination } from "../../common/utils/pagination";
 
 /**
- * Bulk Student Upload orchestration (§8/§13/§27/§28 of the spec).
+ * Bulk Student Upload orchestration (Excel Student Information Import spec
+ * §2/§8/§13/§27/§28).
  *
- * The one hard rule everything here protects: uploading/previewing a file
- * NEVER creates a Student. Only approveRow() does, and it does so by
+ * FINAL BUSINESS RULE: EXCEL IMPORT = STUDENT INFORMATION ONLY.
+ *   - COURSE is selected by the admin BEFORE upload, validated exactly once
+ *     here, and stored on the session — every row inherits that same
+ *     course, never a per-row value, so a course/batch mismatch is
+ *     structurally impossible rather than merely validated.
+ *   - BATCH is never read, validated, or assigned by import at all — an
+ *     imported student simply has no batch until the existing
+ *     batch-assignment workflow (unrelated to this module) is used later.
+ *   - FEE/PAYMENT is never created by import — no admission fee, discount,
+ *     payment, invoice, or receipt logic runs here. Admin adds payment
+ *     later through the existing Fee Management screens.
+ *
+ * The one hard rule everything else here protects: uploading/previewing a
+ * file NEVER creates a Student. Only approveRow() does, and it does so by
  * calling the exact same student.service.ts `create()` every normal
- * Admission does — no parallel creation/fee/payment logic exists here.
+ * Admission does — no parallel creation path.
  *
  * This deployment has no MongoDB replica set, so `session.withTransaction`
  * is not available (same documented constraint as enrollment.service.ts's
@@ -27,13 +40,11 @@ import { buildMeta, parsePagination } from "../../common/utils/pagination";
  *   1. An atomic conditional claim (`findOneAndUpdate` with a status
  *      filter) before any work starts, so two simultaneous approval
  *      requests for the same row can never both proceed.
- *   2. A manual compensating rollback: the payment step is deliberately
- *      kept OUTSIDE student.service.ts's own create() (called with
- *      `paid: 0` so it never creates a payment itself) and issued here as
- *      an explicit second step — if it fails, the just-created Student
- *      (and its Guardian) are deleted again before the row is marked
- *      FAILED, so a failed approval never leaves an orphaned student
- *      with no matching payment.
+ *   2. A manual compensating rollback: if student.service.ts's create()
+ *      throws after partially persisting (e.g. the guardian upsert or
+ *      profile-completion refresh inside it fails), the just-created
+ *      Student (and its Guardian) are deleted again before the row is
+ *      marked FAILED, so a failed approval never leaves an orphan behind.
  */
 
 type RowStatus = (typeof ROW_IMPORT_STATUS)[number];
@@ -55,8 +66,19 @@ async function adjustCounters(sessionId: string, fromStatus: RowStatus, toStatus
 
 // -------------------- Upload + Preview (never writes to Student) --------------------
 
-export async function uploadAndPreview(req: Request, file: { buffer: Buffer; originalname: string }): Promise<StudentImportSessionDoc> {
-  const { rows: parsedRows, headerErrors } = parseStudentWorkbook(file.buffer);
+/**
+ * `courseId` is mandatory and validated here, once, against real Course
+ * master data — never trusted blindly from the client beyond "this id
+ * exists and is active" (§9/§23 "never trust an unverified client-supplied
+ * course ID" — the trust boundary is exactly this one server-side lookup,
+ * not the client's selection itself).
+ */
+export async function uploadAndPreview(req: Request, file: { buffer: Buffer; originalname: string }, courseId: string): Promise<StudentImportSessionDoc> {
+  const course = await Course.findById(courseId);
+  if (!course) throw ApiError.badRequest("নির্বাচিত কোর্সটি পাওয়া যায়নি।");
+  if (course.status !== "সক্রিয়") throw ApiError.badRequest("নির্বাচিত কোর্সটি নিষ্ক্রিয়।");
+
+  const { rows: parsedRows, headerErrors, headerWarnings } = parseStudentWorkbook(file.buffer);
   if (headerErrors.length > 0) throw ApiError.badRequest(headerErrors.join(" "));
   if (parsedRows.length === 0) throw ApiError.badRequest("এক্সেল ফাইলে কোনো শিক্ষার্থীর তথ্য পাওয়া যায়নি।");
   if (parsedRows.length > MAX_IMPORT_ROWS) {
@@ -71,6 +93,9 @@ export async function uploadAndPreview(req: Request, file: { buffer: Buffer; ori
   const session = await StudentImportSession.create({
     originalFileName: file.originalname,
     uploadedBy: req.user!.id,
+    courseId: course._id,
+    courseName: course.name,
+    headerWarnings,
     totalRows: validated.length,
     validRows,
     errorRows,
@@ -93,8 +118,8 @@ export async function uploadAndPreview(req: Request, file: { buffer: Buffer; ori
   );
   // ERROR rows start life as FAILED (not approvable) rather than PENDING —
   // "pendingRows" above only ever counted non-ERROR rows, so this doesn't
-  // double count; an admin can still fix the underlying master data
-  // (activate a course, etc.) and retry a FAILED row later (§17).
+  // double count; an admin can still fix the underlying master data and
+  // retry a FAILED row later.
   if (errorRows > 0) {
     await StudentImportSession.findByIdAndUpdate(session._id, { $set: { failedRows: errorRows } });
   }
@@ -105,7 +130,7 @@ export async function uploadAndPreview(req: Request, file: { buffer: Buffer; ori
     module: "students",
     targetCollection: "studentimportsessions",
     targetId: String(session._id),
-    after: { fileName: file.originalname, totalRows: validated.length, validRows, errorRows },
+    after: { fileName: file.originalname, courseId: String(course._id), courseName: course.name, totalRows: validated.length, validRows, errorRows },
   });
 
   return getSessionOrThrow(String(session._id));
@@ -158,43 +183,60 @@ export async function listHistory(req: Request) {
 
 // -------------------- Row-by-row approval (the only path that creates a Student) --------------------
 
-function buildStudentCreateBody(parsed: ParsedStudentRow): Record<string, unknown> {
+/**
+ * Builds the exact body student.service.ts's create() expects — student
+ * information only. `courseId`/`courseName` come from the SESSION (the
+ * admin's UI selection), never from the row, which is what makes a
+ * course/batch mismatch structurally impossible rather than merely
+ * validated. No batch field exists here at all. No discount/paid/
+ * paymentMethod either — student.service.ts's create() defaults those to 0
+ * when absent, so this never creates a payment.
+ */
+function buildStudentCreateBody(parsed: ParsedStudentRow, courseId: string): Record<string, unknown> {
   return {
+    registrationId: parsed.registrationNumber || undefined,
     name: parsed.name,
     phone: parsed.phone,
     dob: parsed.dob,
+    gender: parsed.gender,
     rollNumber: parsed.rollNumber,
-    courseId: parsed.courseId,
+    courseId,
+    religion: parsed.religion,
+    bloodGroup: parsed.bloodGroup,
+    fatherName: parsed.fatherName,
+    motherName: parsed.motherName,
     guardianMobile: parsed.guardianMobile,
     guardianName: parsed.guardianName,
     guardianRelation: parsed.guardianRelation,
     guardianOccupation: parsed.guardianOccupation,
-    bloodGroup: parsed.bloodGroup,
+    division: parsed.division,
+    district: parsed.district,
+    upazila: parsed.upazila,
+    postOffice: parsed.postOffice,
+    postcode: parsed.postcode,
+    village: parsed.village,
     presentAddress: parsed.presentAddress,
     permanentAddress: parsed.permanentAddress,
     hscInstitution: parsed.hscInstitution,
     hscBoard: parsed.hscBoard,
+    hscRoll: parsed.hscRoll,
+    hscRegistrationNumber: parsed.hscRegistrationNumber,
     hscPassingYear: parsed.hscPassingYear,
     hscGroup: parsed.hscGroup,
     hscGpa: parsed.hscGpa,
     sscInstitution: parsed.sscInstitution,
     sscBoard: parsed.sscBoard,
+    sscRoll: parsed.sscRoll,
+    sscRegistrationNumber: parsed.sscRegistrationNumber,
     sscPassingYear: parsed.sscPassingYear,
     sscGroup: parsed.sscGroup,
     sscGpa: parsed.sscGpa,
     admissionType: "নতুন",
     feeType: "এককালীন",
-    discount: parsed.discount || 0,
-    // Deliberately forced to 0 — see the module-level comment. The optional
-    // admission payment (if any) is created explicitly, as its own step,
-    // right after this call succeeds, so a payment failure can be
-    // compensated for without student.service.ts needing to know anything
-    // about bulk import.
-    paid: 0,
   };
 }
 
-/** Best-effort compensation if student.service.ts's create() (or the payment step after it) fails partway — deletes the just-created Student/Guardian so a failed row never leaves an orphan behind. Safe to call even when nothing was actually created (no-op). */
+/** Best-effort compensation if student.service.ts's create() fails partway through — deletes the just-created Student/Guardian so a failed row never leaves an orphan behind. Safe to call even when nothing was actually created (no-op). */
 async function compensateOrphanStudent(phone: string): Promise<void> {
   const orphan = await Student.findOne({ phone });
   if (!orphan) return;
@@ -221,11 +263,12 @@ async function claimRow(sessionId: string, rowId: string): Promise<StudentImport
 }
 
 export async function approveRow(req: Request, sessionId: string, rowId: string): Promise<StudentImportRowDoc> {
-  await getSessionOrThrow(sessionId);
+  const session = await getSessionOrThrow(sessionId);
+  const courseId = String(session.courseId);
   const before = await claimRow(sessionId, rowId);
   const beforeStatus = before.importStatus; // "PENDING" or "FAILED" — whichever the atomic claim matched
 
-  const validationError = await revalidateRowForApproval(before.parsed);
+  const validationError = await revalidateRowForApproval(before.parsed, courseId);
   if (validationError) {
     await StudentImportRow.updateOne({ _id: rowId }, { $set: { importStatus: "FAILED", failureReason: validationError } });
     await adjustCounters(sessionId, beforeStatus, "FAILED");
@@ -234,36 +277,9 @@ export async function approveRow(req: Request, sessionId: string, rowId: string)
   }
 
   try {
-    const body = buildStudentCreateBody(before.parsed);
+    const body = buildStudentCreateBody(before.parsed, courseId);
     const created = await studentService.create(req, body);
     const createdId = String((created as { _id: unknown })._id);
-
-    let paymentId: string | undefined;
-    const paidAmount = before.parsed.paid || 0;
-    if (paidAmount > 0) {
-      try {
-        const admissionFee = (created as { admissionFee?: number }).admissionFee;
-        const totalCourseFee = (created as { totalCourseFee?: number }).totalCourseFee;
-        const admissionDate = (created as { admissionDate?: string }).admissionDate;
-        const payment = await paymentService.create(req, {
-          studentId: createdId,
-          date: admissionDate,
-          amount: paidAmount,
-          discount: 0,
-          fine: 0,
-          method: before.parsed.paymentMethod!,
-          feeType: "এককালীন",
-          note: "ভর্তির সময় প্রদান (বাল্ক ইমপোর্ট)",
-          source: "admission",
-          admissionFeeComponent: admissionFee,
-          courseFeeComponent: totalCourseFee,
-        });
-        paymentId = String(payment._id);
-      } catch (payErr) {
-        await compensateOrphanStudent(before.parsed.phone!);
-        throw payErr;
-      }
-    }
 
     await StudentImportRow.updateOne(
       { _id: rowId },
@@ -273,18 +289,14 @@ export async function approveRow(req: Request, sessionId: string, rowId: string)
           approvedBy: req.user!.id,
           approvedAt: new Date(),
           createdStudentId: createdId,
-          createdPaymentId: paymentId,
         },
         $unset: { failureReason: "" },
       },
     );
     await adjustCounters(sessionId, beforeStatus, "APPROVED");
-    await recordAudit({ req, action: "student-import.row-approve", module: "students", targetCollection: "studentimportrows", targetId: rowId, after: { studentId: createdId, paymentId } });
+    await recordAudit({ req, action: "student-import.row-approve", module: "students", targetCollection: "studentimportrows", targetId: rowId, after: { studentId: createdId } });
     return (await findRowPopulated(rowId))!;
   } catch (err) {
-    // Defensive second check — covers the (narrow) window where create()
-    // itself throws after already persisting the Student (e.g. the
-    // guardian upsert or profile-completion refresh inside it fails).
     if (before.parsed.phone) await compensateOrphanStudent(before.parsed.phone);
     const message = err instanceof ApiError ? err.message : "শিক্ষার্থী তৈরি করা যায়নি — অজানা সমস্যা।";
     await StudentImportRow.updateOne({ _id: rowId }, { $set: { importStatus: "FAILED", failureReason: message } });
