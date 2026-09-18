@@ -90,7 +90,7 @@ function friendlyError(err: unknown, fallback: string): string {
 /** One label/value pair in the Student Details grid — blank values never render an empty row (the caller simply omits them). */
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex justify-between gap-3 py-1 border-b border-dashed">
+    <div className="flex justify-between gap-3 py-0.5 text-xs border-b border-dashed">
       <span className="text-muted-foreground">{label}</span>
       <span className={mono ? "font-mono font-medium text-right" : "font-medium text-right"}>{value}</span>
     </div>
@@ -102,11 +102,15 @@ function SummaryStat({ label, value, tone }: { label: string; value: string; ton
   const color = tone === "destructive" ? "text-destructive" : tone === "success" ? "text-success" : "text-foreground";
   return (
     <div>
-      <p className={`text-lg font-bold ${color}`}>{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-sm font-bold ${color}`}>{value}</p>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
     </div>
   );
 }
+
+/** Compact overrides for the shared Table component's fairly generous default padding (p-4 / h-12) — a receipt needs many short rows, not a data-grid's breathing room. */
+const CELL = "px-2.5 py-1 text-xs";
+const HEAD = "h-auto px-2.5 py-1 text-xs";
 
 export default function PaymentReceipt() {
   const { paymentId } = useParams<{ paymentId: string }>();
@@ -137,8 +141,8 @@ export default function PaymentReceipt() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-muted/30 p-4 sm:p-8">
-        <div className="max-w-3xl mx-auto space-y-3">
+      <div className="min-h-screen bg-muted/30 p-3 sm:p-6">
+        <div className="max-w-xl mx-auto space-y-3">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
         </div>
       </div>
@@ -187,30 +191,30 @@ export default function PaymentReceipt() {
           is purely an on-screen affordance (so the document reads as a
           "sheet of paper"); print:bg-white + print:shadow-none/border-none
           neutralize it so the printed page is a plain white document. */}
-      <div className="max-w-3xl mx-auto p-4 sm:p-8 print:p-0 print:max-w-none">
-        <div id="receipt-print" className="bg-background border rounded-lg p-6 sm:p-10 print:border-none print:rounded-none print:p-0">
-          <div className="text-center border-b pb-4 mb-6 space-y-1">
-            {showLogo && <img src={institution.logoUrl} alt="" className="h-14 mx-auto object-contain mb-1" />}
-            <h1 className="text-xl font-bold">{institution.name || "কোচিং সেন্টার"}</h1>
-            {institution.address && <p className="text-sm text-muted-foreground">{institution.address}</p>}
-            <p className="text-sm text-muted-foreground">{[institution.phone, institution.email].filter(Boolean).join(" • ")}</p>
-            {institution.website && <p className="text-sm text-muted-foreground">{institution.website}</p>}
+      <div className="max-w-xl mx-auto p-3 sm:p-6 print:p-0 print:max-w-none">
+        <div id="receipt-print" className="bg-background border rounded-lg p-4 sm:p-6 print:border-none print:rounded-none print:p-0">
+          <div className="text-center border-b pb-2 mb-3">
+            {showLogo && <img src={institution.logoUrl} alt="" className="h-8 mx-auto object-contain mb-0.5" />}
+            <h1 className="text-base font-bold">{institution.name || "কোচিং সেন্টার"}</h1>
+            {institution.address && <p className="text-[11px] text-muted-foreground leading-tight">{institution.address}</p>}
+            <p className="text-[11px] text-muted-foreground leading-tight">{[institution.phone, institution.email].filter(Boolean).join(" • ")}</p>
+            {institution.website && <p className="text-[11px] text-muted-foreground leading-tight">{institution.website}</p>}
           </div>
 
-          <div className="text-center mb-6">
-            <h2 className="text-lg font-semibold flex items-center justify-center gap-2">
-              <ReceiptIcon className="h-5 w-5" /> পেমেন্ট রসিদ
+          <div className="text-center mb-3">
+            <h2 className="text-sm font-semibold flex items-center justify-center gap-1.5">
+              <ReceiptIcon className="h-3.5 w-3.5" /> পেমেন্ট রসিদ
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground">
               রসিদ নং: <span className="font-mono font-semibold text-foreground">{payment.receiptNo}</span>
-              <span className="mx-2">•</span>
+              <span className="mx-1.5">•</span>
               তারিখ: {payment.date}
             </p>
           </div>
 
-          <section className="mb-6">
-            <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">শিক্ষার্থীর তথ্য</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 text-sm">
+          <section className="mb-3">
+            <h3 className="text-xs font-semibold border-b pb-1 mb-1.5">শিক্ষার্থীর তথ্য</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
               <InfoRow label="নাম" value={student.name} />
               {/* System ID is ALWAYS shown — the one identifier guaranteed to exist even when Roll is empty (Coaching Reg No / Roll vs System ID spec §14/§21). */}
               <InfoRow label="সিস্টেম আইডি" value={student.registrationId} mono />
@@ -223,68 +227,68 @@ export default function PaymentReceipt() {
             </div>
           </section>
 
-          <section className="mb-6">
-            <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">ফি ও পেমেন্ট বিবরণ</h3>
+          <section className="mb-3">
+            <h3 className="text-xs font-semibold border-b pb-1 mb-1.5">ফি ও পেমেন্ট বিবরণ</h3>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>বিবরণ</TableHead>
-                  <TableHead className="text-right">পরিমাণ (৳)</TableHead>
+                  <TableHead className={HEAD}>বিবরণ</TableHead>
+                  <TableHead className={`${HEAD} text-right`}>পরিমাণ (৳)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {courseFeeValue !== undefined && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">{courseFeeLabel}</TableCell>
-                    <TableCell className="text-right">{courseFeeValue.toLocaleString()}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>{courseFeeLabel}</TableCell>
+                    <TableCell className={`${CELL} text-right`}>{courseFeeValue.toLocaleString()}</TableCell>
                   </TableRow>
                 )}
                 {student.admissionFee !== undefined && student.admissionFee > 0 && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">ভর্তি ফি</TableCell>
-                    <TableCell className="text-right">{student.admissionFee.toLocaleString()}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>ভর্তি ফি</TableCell>
+                    <TableCell className={`${CELL} text-right`}>{student.admissionFee.toLocaleString()}</TableCell>
                   </TableRow>
                 )}
                 <TableRow>
-                  <TableCell className="text-muted-foreground">এই পেমেন্টের পরিমাণ</TableCell>
-                  <TableCell className="text-right">{payment.amount.toLocaleString()}</TableCell>
+                  <TableCell className={`${CELL} text-muted-foreground`}>এই পেমেন্টের পরিমাণ</TableCell>
+                  <TableCell className={`${CELL} text-right`}>{payment.amount.toLocaleString()}</TableCell>
                 </TableRow>
                 {payment.discount > 0 && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">ডিসকাউন্ট</TableCell>
-                    <TableCell className="text-right text-success">- {payment.discount.toLocaleString()}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>ডিসকাউন্ট</TableCell>
+                    <TableCell className={`${CELL} text-right text-success`}>- {payment.discount.toLocaleString()}</TableCell>
                   </TableRow>
                 )}
                 {payment.fine > 0 && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">জরিমানা</TableCell>
-                    <TableCell className="text-right text-warning">+ {payment.fine.toLocaleString()}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>জরিমানা</TableCell>
+                    <TableCell className={`${CELL} text-right text-warning`}>+ {payment.fine.toLocaleString()}</TableCell>
                   </TableRow>
                 )}
                 {payment.previousDue !== undefined && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">পূর্ববর্তী বকেয়া</TableCell>
-                    <TableCell className="text-right">{payment.previousDue.toLocaleString()}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>পূর্ববর্তী বকেয়া</TableCell>
+                    <TableCell className={`${CELL} text-right`}>{payment.previousDue.toLocaleString()}</TableCell>
                   </TableRow>
                 )}
                 <TableRow>
-                  <TableCell className="text-muted-foreground">ফি ধরন</TableCell>
-                  <TableCell className="text-right">{payment.feeType}</TableCell>
+                  <TableCell className={`${CELL} text-muted-foreground`}>ফি ধরন</TableCell>
+                  <TableCell className={`${CELL} text-right`}>{payment.feeType}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="text-muted-foreground">পেমেন্ট পদ্ধতি</TableCell>
-                  <TableCell className="text-right">{payment.method}</TableCell>
+                  <TableCell className={`${CELL} text-muted-foreground`}>পেমেন্ট পদ্ধতি</TableCell>
+                  <TableCell className={`${CELL} text-right`}>{payment.method}</TableCell>
                 </TableRow>
                 {payment.month && (
                   <TableRow>
-                    <TableCell className="text-muted-foreground">মাস</TableCell>
-                    <TableCell className="text-right">{payment.month}</TableCell>
+                    <TableCell className={`${CELL} text-muted-foreground`}>মাস</TableCell>
+                    <TableCell className={`${CELL} text-right`}>{payment.month}</TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
 
-            <div className="flex flex-wrap gap-x-8 gap-y-3 mt-4 pt-4 border-t">
+            <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-2 pt-2 border-t">
               <SummaryStat label="বর্তমান পেমেন্ট" value={`৳ ${payment.paidAmount.toLocaleString()}`} />
               {totalFee !== undefined && <SummaryStat label="সর্বমোট পরিশোধযোগ্য" value={`৳ ${totalFee.toLocaleString()}`} />}
               {totalPaidToDate !== undefined && <SummaryStat label="সর্বমোট পরিশোধিত" value={`৳ ${totalPaidToDate.toLocaleString()}`} />}
@@ -299,20 +303,20 @@ export default function PaymentReceipt() {
           </section>
 
           {payment.note && (
-            <div className="text-sm text-muted-foreground border-t pt-3 mb-6">
+            <div className="text-xs text-muted-foreground border-t pt-1.5 mb-3">
               <span className="font-medium text-foreground">নোট: </span>{payment.note}
             </div>
           )}
 
-          <div className="pt-8 flex justify-end">
-            <div className="text-center text-xs">
-              <div className="border-t border-foreground/40 pt-1 w-36">
+          <div className="pt-4 flex justify-end">
+            <div className="text-center text-[10px]">
+              <div className="border-t border-foreground/40 pt-0.5 w-28">
                 {institution.print.signatureLabel || "অনুমোদিতকারী"}
               </div>
             </div>
           </div>
 
-          <div className="text-center text-xs text-muted-foreground pt-4 mt-4 border-t">
+          <div className="text-center text-[10px] text-muted-foreground pt-1.5 mt-1.5 border-t">
             ধন্যবাদ! আপনার পেমেন্ট সফলভাবে গৃহীত হয়েছে।
           </div>
         </div>
