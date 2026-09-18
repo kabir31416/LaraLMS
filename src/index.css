@@ -76,8 +76,16 @@
  * `id="receipt-print"` and its descendants, and lift it out of the
  * dialog's centered/fixed positioning so it prints as an ordinary
  * top-of-page document instead of wherever it happened to sit on screen.
- * Other pages' printing (Reports' printReport()) opens a separate, already
- * self-contained window and never touches this rule.
+ *
+ * Hiding everything else with `visibility` (rather than `display`) keeps
+ * every ancestor's own box in the layout — including the dialog's own
+ * `max-h-[90dvh]`/`overflow-hidden` and its inner `overflow-y-auto` scroll
+ * wrapper (both needed for the dialog to fit on screen). Left alone, those
+ * two boxes still clip `#receipt-print` during print to whatever portion
+ * happened to be scrolled into view at the moment Print was clicked —
+ * usually just the header — so both are explicitly reset to an unclamped,
+ * static block here. Other pages' printing (Reports' printReport()) opens
+ * a separate, already self-contained window and never touches this rule.
  */
 @media print {
   body * {
@@ -86,6 +94,15 @@
   #receipt-print,
   #receipt-print * {
     visibility: visible;
+  }
+  #receipt-dialog-content,
+  #receipt-scroll-wrapper {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    transform: none !important;
   }
   #receipt-print {
     position: absolute;

@@ -588,7 +588,7 @@ function ReceiptDialog({
 
   return (
     <Dialog open={!!payment} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden print:shadow-none print:max-w-full">
+      <DialogContent id="receipt-dialog-content" className="max-w-md p-0 flex flex-col overflow-hidden print:shadow-none print:max-w-full">
         <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4 print:hidden">
           <DialogTitle className="flex items-center gap-2">
             <ReceiptIcon className="h-5 w-5 text-primary" />
@@ -596,11 +596,16 @@ function ReceiptDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div id="receipt-scroll-wrapper" className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           {/* Everything the printed receipt should contain lives inside this
               one element — index.css's @media print rule hides every other
               element on the page (dialog chrome included) and shows only
-              this subtree, so what's on screen here is exactly what prints. */}
+              this subtree, so what's on screen here is exactly what prints.
+              The dialog itself (id="receipt-dialog-content") and this
+              scroll wrapper are both height-clamped/overflow-clipped for
+              on-screen display — print must neutralize both, or only
+              whatever happened to be scrolled into view at print time
+              (usually just the header) ends up on the page. */}
           <div id="receipt-print" className="space-y-4">
             <div className="text-center border-b border-dashed pb-3 space-y-1">
               {showLogo && (
