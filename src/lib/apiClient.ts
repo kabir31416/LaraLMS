@@ -8,7 +8,10 @@
  *   work without ever putting a long-lived token somewhere JS can read it back.
  */
 
-export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:5000/api/v1";
+export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || "http://neuron-raj.vercel.app/api/v1";
+
+
+
 
 export class ApiClientError extends Error {
   code: string;

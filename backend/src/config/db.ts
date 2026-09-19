@@ -5,42 +5,45 @@ import { logger } from "../logger/logger";
 mongoose.set("strictQuery", true);
 
 /**
- * Mongoose never syncs a collection's real indexes to match the schema on
- * its own — a unique index created manually, or left over from an earlier
- * schema iteration, stays in the database forever until something acts on
- * it. If the `users` collection ever ended up with an extra unique index
- * (on anything besides `identifier`, which is the only field this schema
- * declares unique today), *every* new document sharing the same missing/
- * null value for that other field would collide under it — surfacing as
- * "already exists" for a brand-new, genuinely-unused identifier. Logging
- * the indexes on every startup makes that immediately visible, and
- * syncIndexes() safely aligns the database to exactly what user.model.ts
- * currently declares (dropping anything the schema no longer defines,
- * creating anything it newly needs) — it can never invent a new unique
- * constraint on its own, only enforce the one the schema already states.
+ * Serverless-safe connect (Vercel's api/index.ts calls this on every
+ * invocation): the readyState check reuses an already-open connection
+ * across warm invocations of the same function instance instead of
+ * reconnecting every time. When a connection attempt is already in flight
+ * — two invocations landing on the same warm instance back to back during
+ * a cold start — both await the SAME promise instead of one silently
+ * returning early (as a boolean "isConnecting" flag would) before the
+ * connection is actually ready.
  */
-async function auditAndSyncUserIndexes(): Promise<void> {
-  try {
-    const { User } = await import("../modules/users/user.model");
-    const before = await User.collection.indexes();
-    logger.info({ indexes: before }, "users collection indexes — before sync");
-    await User.syncIndexes();
-    const after = await User.collection.indexes();
-    logger.info({ indexes: after }, "users collection indexes — after sync (aligned to current schema)");
-  } catch (err) {
-    logger.error({ err }, "failed to audit/sync users collection indexes — continuing without blocking startup");
-  }
-}
+let connectionPromise: Promise<typeof mongoose> | null = null;
 
 export async function connectDB(): Promise<void> {
-  mongoose.connection.on("connected", () => logger.info("MongoDB connected"));
-  mongoose.connection.on("error", (err) => logger.error({ err }, "MongoDB connection error"));
-  mongoose.connection.on("disconnected", () => logger.warn("MongoDB disconnected"));
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
 
-  await mongoose.connect(env.MONGO_URI);
-  await auditAndSyncUserIndexes();
+  if (!connectionPromise) {
+    connectionPromise = mongoose
+      .connect(env.MONGO_URI, {
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+      })
+      .then((conn) => {
+        logger.info("MongoDB connected");
+        return conn;
+      })
+      .catch((err) => {
+        connectionPromise = null; // let the next invocation retry cleanly instead of staying wedged on a dead promise
+        logger.error({ err }, "MongoDB connection failed");
+        throw err;
+      });
+  }
+
+  await connectionPromise;
 }
 
 export async function disconnectDB(): Promise<void> {
-  await mongoose.disconnect();
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+  connectionPromise = null;
 }
