@@ -2,7 +2,7 @@ import { Request } from "express";
 import { User, UserDoc } from "./user.model";
 import { Role } from "../rbac/role.model";
 import { ApiError } from "../../common/utils/ApiError";
-import { hashPassword, generateTempPassword } from "../../common/utils/password";
+import { hashPassword, generateTempPassword, normalizeIdentifier } from "../../common/utils/password";
 import { recordAudit } from "../../audit/auditLog.service";
 import { parsePagination, buildMeta, buildSearchFilter } from "../../common/utils/pagination";
 import { sendSms } from "../../common/utils/sms";
@@ -122,7 +122,7 @@ export async function createUser(req: Request, input: CreateUserInput, retriesLe
   const role = await Role.findById(input.roleId);
   if (!role) throw ApiError.badRequest("Unknown roleId");
 
-  const normalizedIdentifier = input.identifier.trim().toLowerCase();
+  const normalizedIdentifier = normalizeIdentifier(input.identifier);
   const tempPassword = input.password ? undefined : generateTempPassword();
   const effectivePassword = input.password ?? tempPassword!;
   const passwordHash = await hashPassword(effectivePassword);
@@ -230,7 +230,7 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
   const before = user.toObject();
 
   if (patch.identifier) {
-    const normalized = patch.identifier.trim().toLowerCase();
+    const normalized = normalizeIdentifier(patch.identifier);
     if (normalized !== user.identifier) {
       const clash = await User.findOne({ identifier: normalized, _id: { $ne: user._id } });
       if (clash) throw ApiError.conflict("Another account already uses this identifier");

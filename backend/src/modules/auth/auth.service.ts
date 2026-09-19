@@ -6,7 +6,7 @@ import { Student } from "../students/student.model";
 import { Staff, StaffDoc } from "../staff/staff.model";
 import { RefreshToken } from "./refreshToken.model";
 import { ApiError } from "../../common/utils/ApiError";
-import { comparePassword, hashPassword } from "../../common/utils/password";
+import { comparePassword, hashPassword, normalizeIdentifier } from "../../common/utils/password";
 import { signAccessToken } from "../../common/utils/jwt";
 import { parseDurationToMs } from "../../common/utils/duration";
 import { env } from "../../config/env";
@@ -87,13 +87,11 @@ async function issueTokens(req: Request, user: UserDoc) {
 }
 
 export async function login(req: Request, identifier: string, password: string) {
-  // Must match createUser()'s own normalization (user.service.ts) exactly —
-  // that one does .trim().toLowerCase() before saving, so a login lookup
-  // that only lowercases (no trim) would silently mismatch an identifier
-  // that picked up incidental leading/trailing whitespace (e.g. pasted from
-  // a temp-password toast or an autofill), producing an "Invalid
-  // credentials" for an otherwise-correct password.
-  const user = await User.findOne({ identifier: identifier.trim().toLowerCase() }).select("+passwordHash");
+  // normalizeIdentifier() is the SAME function createUser()/resetCredentials()
+  // use before saving (common/utils/password.ts) — one shared rule so a
+  // lookup here can never silently diverge from how the value was stored
+  // (e.g. one side trimming whitespace and the other not).
+  const user = await User.findOne({ identifier: normalizeIdentifier(identifier) }).select("+passwordHash");
   // Same generic message whether the identifier doesn't exist or the password is wrong —
   // never let login responses reveal which one failed (Phase 1 §9).
   const genericError = () => ApiError.unauthorized("Invalid credentials");
