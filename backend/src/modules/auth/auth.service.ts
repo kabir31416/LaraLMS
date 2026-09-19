@@ -14,6 +14,7 @@ import { MAX_FAILED_LOGIN_ATTEMPTS } from "../../config/constants";
 import { recordAudit } from "../../audit/auditLog.service";
 import { ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS } from "../rbac/permissions";
 import { toAsciiDigits } from "../../common/utils/digits";
+import { resolveIsSuperAdmin } from "../users/user.service";
 
 const REFRESH_BYTES = 48;
 
@@ -47,6 +48,7 @@ async function resolvePermissions(user: UserDoc): Promise<{ role: { id: string; 
 
 async function issueTokens(req: Request, user: UserDoc) {
   const { role, permissions } = await resolvePermissions(user);
+  const isSuperAdmin = await resolveIsSuperAdmin(user);
 
   const accessToken = signAccessToken({
     sub: String(user._id),
@@ -55,6 +57,7 @@ async function issueTokens(req: Request, user: UserDoc) {
     permissions,
     staffId: user.linkedStaffId ? String(user.linkedStaffId) : undefined,
     studentId: user.linkedStudentId ? String(user.linkedStudentId) : undefined,
+    isSuperAdmin,
   });
 
   const rawRefresh = crypto.randomBytes(REFRESH_BYTES).toString("hex");
@@ -82,6 +85,7 @@ async function issueTokens(req: Request, user: UserDoc) {
       // Never a new source of truth: every actual enforcement decision is
       // still made server-side by requirePermission off the token.
       permissions,
+      isSuperAdmin,
     },
   };
 }

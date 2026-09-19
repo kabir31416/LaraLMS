@@ -8,6 +8,7 @@ export interface AccessTokenPayload {
   permissions: string[];
   staffId?: string;
   studentId?: string;
+  isSuperAdmin?: boolean;
 }
 
 export function signAccessToken(payload: AccessTokenPayload, expiresIn: string = env.JWT_ACCESS_EXPIRES_IN): string {

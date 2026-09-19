@@ -7,6 +7,7 @@ export interface AuthUser {
   permissions: string[];
   staffId?: string;
   studentId?: string;
+  isSuperAdmin?: boolean;
 }
 
 declare global {

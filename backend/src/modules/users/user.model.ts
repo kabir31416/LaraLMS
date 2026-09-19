@@ -19,6 +19,15 @@ export interface UserDoc extends Document {
    * Admin keeps full "*" access exactly as before this field existed.
    */
   deniedPermissions: string[];
+  /**
+   * True only for the original seeded root account (scripts/seed.ts's
+   * seedAdmin()). A regular Admin created later through the UI can create
+   * other Admins, but only this one account can edit an existing Admin's
+   * Staff record or reset/update their password — otherwise a compromised
+   * or careless regular Admin could take over another Admin's (or this
+   * very account's) login. Never set anywhere except at seed time.
+   */
+  isSuperAdmin: boolean;
   linkedStaffId?: Types.ObjectId;
   linkedStudentId?: Types.ObjectId;
   status: "active" | "locked";
@@ -36,6 +45,7 @@ const userSchema = new Schema<UserDoc>(
     roleId: { type: Schema.Types.ObjectId, ref: "Role", required: true },
     overridePermissions: { type: [String], default: [] },
     deniedPermissions: { type: [String], default: [] },
+    isSuperAdmin: { type: Boolean, default: false },
     linkedStaffId: { type: Schema.Types.ObjectId, ref: "Staff" },
     linkedStudentId: { type: Schema.Types.ObjectId, ref: "Student" },
     status: { type: String, enum: ACCOUNT_STATUS, default: "active" },

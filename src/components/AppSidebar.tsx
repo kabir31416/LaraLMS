@@ -34,14 +34,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
+import { SIDEBAR_MODULES } from "@/lib/permissions";
 
 const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
   { title: "শিক্ষার্থী", url: "/students", icon: Users },
   { title: "ভর্তি", url: "/admission", icon: UserPlus },
-  // Individually disable-able per-Admin (User.deniedPermissions) — see routes.tsx's matching permission-gated route block.
-  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks, permission: ADMISSION_RESULTS_MANAGE },
+  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks },
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "এক্সাম", url: "/exams", icon: FileText },
@@ -55,6 +54,11 @@ const adminMenu = [
   { title: "হিসাব", url: "/accounts", icon: Calculator },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
+
+/** url -> permission keys, built once from the shared SIDEBAR_MODULES catalog (src/lib/permissions.ts) — every adminMenu item not in this map (e.g. Dashboard) always shows. */
+const PERMISSIONS_BY_URL = new Map<string, string[]>(
+  SIDEBAR_MODULES.flatMap((m) => m.urls.map((url) => [url, m.permissions] as const)),
+);
 
 const directorMenu = [
   { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
@@ -87,11 +91,12 @@ export function AppSidebar() {
   const rawMenuItems = user?.role === "Batch Director" ? directorMenu
     : user?.role === "Student" ? studentMenu
     : adminMenu;
-  // Only adminMenu entries ever carry a `permission` field (e.g. Admission
-  // Result) — an item without one always shows, same as before this filter existed.
+  // Batch Director/Student menus never appear in PERMISSIONS_BY_URL (it's
+  // built only from admin sidebar modules), so this only ever filters
+  // adminMenu — every other role's items always show, same as before.
   const menuItems = rawMenuItems.filter((item) => {
-    const permission = (item as { permission?: string }).permission;
-    return !permission || hasPermission(user, permission);
+    const permissions = PERMISSIONS_BY_URL.get(item.url);
+    return !permissions || permissions.every((p) => hasPermission(user, p));
   });
 
   return (

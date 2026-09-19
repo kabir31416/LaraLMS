@@ -16,7 +16,7 @@ import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff, type StaffType } from "@/ty
 import { toast } from "sonner";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
-import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
+import { SIDEBAR_MODULES } from "@/lib/permissions";
 
 /**
  * Only "Admin" still goes through the password-based User/Role login here —
@@ -74,16 +74,22 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
     }
   }, [open]);
 
-  // Per-Admin "Admission Result" toggle (User.deniedPermissions) — only
-  // relevant for staffType "Admin", since that's the only type with a real
-  // password login at all. Defaults to allowed (true), matching the
-  // backward-compatible default every existing Admin already has.
-  const [admissionResultAllowed, setAdmissionResultAllowed] = useState(true);
+  // Per-Admin module access (User.deniedPermissions) — only relevant for
+  // staffType "Admin", since that's the only type with a real password
+  // login at all. A module's key is in this set when it's DENIED; empty
+  // set = every module allowed, matching the backward-compatible default
+  // every existing Admin already has (deniedPermissions: []).
+  const [deniedModuleKeys, setDeniedModuleKeys] = useState<Set<string>>(new Set());
   const [existingAdminUserId, setExistingAdminUserId] = useState<string | undefined>(undefined);
 
+  // A brand-new Admin always starts with every module allowed.
+  useEffect(() => {
+    if (open && !isEdit) setDeniedModuleKeys(new Set());
+  }, [open, isEdit]);
+
   // Editing an existing Admin: look up their login (if one exists) so the
-  // toggle reflects their actual current permission instead of always
-  // defaulting to "allowed".
+  // checkboxes reflect their actual current permissions instead of always
+  // defaulting to "everything allowed".
   useEffect(() => {
     if (!open || !isEdit || !editStaff || editStaff.staffType !== "Admin") return;
     let cancelled = false;
@@ -93,13 +99,22 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
         if (cancelled) return;
         const existing = users[0];
         setExistingAdminUserId(existing?._id);
-        setAdmissionResultAllowed(!existing?.deniedPermissions?.includes(ADMISSION_RESULTS_MANAGE));
+        const denied = existing?.deniedPermissions ?? [];
+        setDeniedModuleKeys(new Set(SIDEBAR_MODULES.filter((m) => m.permissions.some((p) => denied.includes(p))).map((m) => m.key)));
       } catch {
-        // No login found (or lookup failed) — leave the default (allowed, no login to edit).
+        // No login found (or lookup failed) — leave the default (everything allowed, no login to edit).
       }
     })();
     return () => { cancelled = true; };
   }, [open, isEdit, editStaff]);
+
+  const toggleModule = (key: string, allowed: boolean) => {
+    setDeniedModuleKeys((prev) => {
+      const next = new Set(prev);
+      if (allowed) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   // Only fetched when actually needed (creating a login), so a plain staff
   // add never requires Role-management permission.
@@ -141,6 +156,10 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
 
   const isNewAdmin = !isEdit && LOGIN_ELIGIBLE.includes(form.staffType);
 
+  /** Flattens the checked/unchecked module set into the actual permission keys to deny. */
+  const computeDeniedPermissions = (): string[] =>
+    SIDEBAR_MODULES.filter((m) => deniedModuleKeys.has(m.key)).flatMap((m) => m.permissions);
+
   const handleSubmit = async () => {
     if (busyRef.current) return;
     if (!form.name || !form.mobile || (!isEdit && !form.staffId.trim())) {
@@ -175,10 +194,9 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
     try {
       if (isEdit && editStaff) {
         await updateStaff(editStaff.id, data);
-        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
         if (existingAdminUserId) {
-          // Existing Admin login — only the Admission Result permission can change here (role/password reset stay untouched).
-          await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions });
+          // Existing Admin login — only module permissions can change here (role/password reset stay untouched, and only the Super Admin may reach this at all — see staff.service.ts/user.service.ts's server-side guard).
+          await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions: computeDeniedPermissions() });
         }
         toast.success("স্টাফ আপডেট হয়েছে");
         onOpenChange(false);
@@ -201,7 +219,6 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       // back so this never leaves behind an orphaned Admin with no way to
       // log in and no confusing "succeeded, then failed" toast sequence.
       try {
-        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
         const roleId = await findRoleId(form.staffType);
         if (!roleId) throw new Error("Admin রোল খুঁজে পাওয়া যায়নি — RBAC সেটিংস পরীক্ষা করুন।");
         await api.post("/users", {
@@ -209,7 +226,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
           password,
           roleId,
           linkedStaffId: staffRecord.id,
-          deniedPermissions,
+          deniedPermissions: computeDeniedPermissions(),
         });
       } catch (loginErr) {
         try {
@@ -322,13 +339,23 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
               </p>
             </>
           )}
-          {/* Per-Admin "Admission Result" permission toggle — shown while creating a new Admin login, or editing an Admin who already has one. Super Admin (the built-in admin role itself) always keeps full access; this only ever narrows one specific Admin's own login. */}
+          {/* Per-Admin module access (User.deniedPermissions) — shown while creating a new Admin login, or editing an Admin who already has one (only the Super Admin can reach the edit case at all — see staff.service.ts/user.service.ts). Every module defaults to allowed; unchecking one hides it from this Admin's sidebar and blocks its API routes for them. */}
           {(isNewAdmin || (isEdit && !!existingAdminUserId)) && (
-            <div className="space-y-1.5 md:col-span-2 flex items-center gap-2 border rounded-lg p-3">
-              <Checkbox checked={admissionResultAllowed} onCheckedChange={(v) => setAdmissionResultAllowed(!!v)} id="admission-result-allowed" />
-              <label htmlFor="admission-result-allowed" className="text-sm cursor-pointer">
-                অ্যাডমিশন রেজাল্ট ব্যবহারের অনুমতি — বন্ধ করলে এই এডমিন সাইডবারে অ্যাডমিশন রেজাল্ট দেখতে বা ব্যবহার করতে পারবেন না
-              </label>
+            <div className="space-y-2 md:col-span-2 border rounded-lg p-3">
+              <p className="text-sm font-medium">মডিউল অ্যাক্সেস</p>
+              <p className="text-xs text-muted-foreground">এই এডমিন কোন কোন মডিউল ব্যবহার করতে পারবেন তা বেছে দিন — বাদ দেওয়া মডিউল সাইডবারে দেখাবে না ও ব্যবহার করা যাবে না।</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {SIDEBAR_MODULES.map((m) => (
+                  <div key={m.key} className="flex items-center gap-2">
+                    <Checkbox
+                      checked={!deniedModuleKeys.has(m.key)}
+                      onCheckedChange={(v) => toggleModule(m.key, !!v)}
+                      id={`module-${m.key}`}
+                    />
+                    <label htmlFor={`module-${m.key}`} className="text-sm cursor-pointer">{m.label}</label>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

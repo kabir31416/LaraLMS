@@ -21,6 +21,16 @@ export interface AuthUser {
    * checked server-side regardless of what this array says.
    */
   permissions?: string[];
+  /**
+   * True only for the original seeded root Admin account (backend's
+   * User.isSuperAdmin) — surfaced purely so the Admin UI can hide/disable
+   * editing another Admin's staff record or resetting their password for
+   * anyone else. The backend enforces this regardless (staff.service.ts's
+   * update()/remove(), user.service.ts's updateUser()/resetCredentials()/
+   * deleteUser() all reject it server-side) — this is just to avoid
+   * showing an action that would 403 anyway.
+   */
+  isSuperAdmin?: boolean;
 }
 
 interface LoginResponse {
@@ -33,6 +43,7 @@ interface LoginResponse {
     staffId?: string;
     studentId?: string;
     permissions?: string[];
+    isSuperAdmin?: boolean;
   };
 }
 
@@ -100,6 +111,7 @@ function toAuthUser(u: LoginResponse["user"]): AuthUser {
     role: toDisplayRole(u.role),
     mustChangePassword: u.mustChangePassword,
     permissions: u.permissions,
+    isSuperAdmin: u.isSuperAdmin,
   };
 }
 

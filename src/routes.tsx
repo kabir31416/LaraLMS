@@ -1,6 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
+import { ADMISSION_RESULTS_MANAGE, REPORTS_READ } from "@/lib/permissions";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
 import Marksheet from "./pages/Marksheet";
@@ -68,7 +68,6 @@ export function AppRoutes() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/notices" element={<Notices />} />
-        <Route path="/reports" element={<Reports />} />
         <Route path="/result-management" element={<ResultManagement />} />
       </Route>
 
@@ -76,6 +75,14 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute roles={["Admin"]} permission={ADMISSION_RESULTS_MANAGE}><Outlet /></ProtectedRoute>}>
         <Route path="/admission-result" element={<AdmissionResult />} />
         <Route path="/chance-results" element={<ChanceResults />} />
+      </Route>
+
+      {/* Admin — Reports has no dedicated backend route of its own (it aggregates
+          other modules' own permission-gated endpoints), so REPORTS_READ only
+          controls this page/nav-item's visibility, not a real server-side
+          boundary — matching the module picker in StaffForm.tsx. */}
+      <Route element={<ProtectedRoute roles={["Admin"]} permission={REPORTS_READ}><Outlet /></ProtectedRoute>}>
+        <Route path="/reports" element={<Reports />} />
       </Route>
 
       {/* Admin or Director can view a student's full profile */}

@@ -22,6 +22,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
       permissions: payload.permissions,
       staffId: payload.staffId,
       studentId: payload.studentId,
+      isSuperAdmin: payload.isSuperAdmin,
     };
     next();
   } catch {
