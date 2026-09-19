@@ -8,7 +8,28 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateRegistrationId } from "../../common/utils/idGenerators";
 import { toAsciiDigits } from "../../common/utils/digits";
+import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import * as guardianService from "../guardians/guardian.service";
+
+/**
+ * `hscInstitution` mirrors HscInstitution master data by name, same
+ * established convention as Course/MaterialType/PaymentMethod (Bulk Student
+ * Upload spec §5-§8) — never a ref, so a later rename of the master record
+ * never rewrites an already-admitted student's history. Called from both
+ * create() and applyPatch() (used by both the normal admin edit and the
+ * student's own self-edit), so every entry point that can set this field —
+ * including bulk-import's approveRow(), which calls create() below — ends
+ * up registering/reusing the same master-data record. Mutates the body/patch
+ * in place so the canonical (first-registered) spelling is what actually
+ * gets stored on the Student, not whatever casing/spacing the caller typed.
+ */
+async function syncHscInstitution(body: Record<string, unknown>): Promise<void> {
+  if (typeof body.hscInstitution === "string" && body.hscInstitution.trim()) {
+    const hscInstitutionService = await import("../hscInstitutions/hscInstitution.service");
+    const institution = await hscInstitutionService.getOrCreateByName(body.hscInstitution);
+    body.hscInstitution = institution.name;
+  }
+}
 
 /**
  * No student-create/update path here provisions a Portal login — there is
@@ -119,6 +140,37 @@ async function withGuardians(docs: StudentDoc[]): Promise<Record<string, unknown
  * Added/Missing against the same base filter a list() call is using
  * (Admission Result feature §11).
  */
+/** yyyy-mm-dd -> "-MM-DD" (2-digit) suffix for a same-day-and-month-any-year `dob` match — see the birthdayToday filter below. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The Student List's free-text search box must find a student by name,
+ * roll, System ID, or mobile (all plain Student fields — buildSearchFilter
+ * handles those directly), and ALSO by guardian mobile (Coaching Reg No /
+ * Roll vs System ID spec §6) — guardianMobile lives on the separate
+ * Guardian collection (Phase 1 §17), not on Student, so it can't join the
+ * same single-collection $or the way the others do. Resolved as one extra
+ * OR-branch (`_id: {$in: ...}`) rather than merged into `buildSearchFilter`
+ * itself, so that helper stays a generic single-collection utility other
+ * modules can keep using unchanged.
+ */
+async function buildSearchFilterWithGuardian(search: unknown): Promise<Record<string, unknown>> {
+  const base = buildSearchFilter(search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]);
+  if (typeof search !== "string" || !search.trim()) return base;
+  const { Guardian } = await import("../guardians/guardian.model");
+  const regex = new RegExp(escapeRegex(search.trim()), "i");
+  const guardianStudentIds = await Guardian.find({ phone: regex }).distinct("studentId");
+  if (guardianStudentIds.length === 0) return base;
+  const existingOr = (base.$or as Record<string, unknown>[] | undefined) ?? [];
+  return { $or: [...existingOr, { _id: { $in: guardianStudentIds } }] };
+}
+
 async function buildStudentFilter(req: Request): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};
   if (req.query.course) filter.course = req.query.course;
@@ -126,7 +178,53 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
   if (req.query.batchId === "unassigned") filter.currentBatchId = { $exists: false };
   else if (req.query.batchId) filter.currentBatchId = req.query.batchId;
-  if (req.query.dueOnly === "true") filter.due = { $gt: 0 };
+
+  // dueStatus is the 3-state successor to the older boolean dueOnly (kept for
+  // backward compatibility — nothing in this codebase currently sends it,
+  // but it's cheap to keep honoring).
+  if (req.query.dueStatus === "has" || req.query.dueOnly === "true") filter.due = { $gt: 0 };
+  else if (req.query.dueStatus === "none") filter.due = { $lte: 0 };
+
+  // Case/whitespace-insensitive exact match against the HSC institution's
+  // canonical master-data name — covers both newly-synced records (see
+  // syncHscInstitution) and any pre-existing free-text spelling variance.
+  if (typeof req.query.hscInstitution === "string" && req.query.hscInstitution.trim()) {
+    filter.hscInstitution = new RegExp(`^${escapeRegex(req.query.hscInstitution.trim())}$`, "i");
+  }
+
+  // division/district are free text (Excel Student Information Import §5 —
+  // no separate master-data collection for Bangladesh's address hierarchy),
+  // so a case-insensitive substring match tolerates minor spelling/spacing
+  // variance the way an exact dropdown match couldn't.
+  if (typeof req.query.division === "string" && req.query.division.trim()) {
+    filter.division = new RegExp(escapeRegex(req.query.division.trim()), "i");
+  }
+  if (typeof req.query.district === "string" && req.query.district.trim()) {
+    filter.district = new RegExp(escapeRegex(req.query.district.trim()), "i");
+  }
+
+  if (typeof req.query.gender === "string" && req.query.gender.trim()) {
+    filter.gender = req.query.gender;
+  }
+
+  // guardianMobile lives on the separate Guardian collection, not on
+  // Student itself (Phase 1 §17) — resolve it to a set of studentIds first,
+  // the same cross-collection pattern directorId below already uses via
+  // Batch. An empty match set still filters correctly: Mongo's $in: []
+  // simply returns zero documents.
+  if (typeof req.query.guardianMobile === "string" && req.query.guardianMobile.trim()) {
+    const { Guardian } = await import("../guardians/guardian.model");
+    const studentIds = await Guardian.find({ phone: new RegExp(escapeRegex(req.query.guardianMobile.trim()), "i") }).distinct("studentId");
+    filter._id = { $in: studentIds };
+  }
+
+  // Same day-and-month as today, any birth year — dob is stored as a plain
+  // "yyyy-mm-dd" string (student.model.ts), so this is a simple suffix
+  // match, not a date-arithmetic query.
+  if (req.query.birthdayToday === "true") {
+    const today = new Date();
+    filter.dob = new RegExp(`-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}$`);
+  }
 
   if (req.query.directorId) {
     const { Batch } = await import("../batches/batch.model");
@@ -137,6 +235,11 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
 }
 
 export async function list(req: Request) {
+  // Default sort is Roll Number ascending (numeric-aware) — never Registration
+  // ID, never MongoDB insertion order. A caller may still explicitly ask for
+  // a different field via ?sortBy=&sortOrder=, which parsePagination handles
+  // as before; only the *default* (no sortBy given) changes here.
+  const explicitSort = typeof req.query.sortBy === "string" && req.query.sortBy.trim();
   const { page, limit, skip, sort } = parsePagination(req, { createdAt: -1 });
   const filter = await buildStudentFilter(req);
 
@@ -146,18 +249,97 @@ export async function list(req: Request) {
   if (req.query.admissionRollStatus === "added") filter.admissionRoll = { $exists: true, $ne: "" };
   else if (req.query.admissionRollStatus === "missing") filter.admissionRoll = { $in: [null, ""] };
 
-  Object.assign(filter, buildSearchFilter(req.query.search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]));
+  Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
-  const [docs, total] = await Promise.all([
-    Student.find(filter).sort(sort).skip(skip).limit(limit),
-    Student.countDocuments(filter),
-  ]);
+  let docs: StudentDoc[];
+  let total: number;
+  if (explicitSort) {
+    [docs, total] = await Promise.all([
+      Student.find(filter).sort(sort).skip(skip).limit(limit),
+      Student.countDocuments(filter),
+    ]);
+  } else {
+    const order = req.query.sortOrder === "desc" ? -1 : 1;
+    const [orderedIds, count] = await Promise.all([
+      pageIdsByRoll(Student, filter, order, skip, limit),
+      Student.countDocuments(filter),
+    ]);
+    const fetched = await Student.find({ _id: { $in: orderedIds } });
+    docs = reorderByIds(fetched, orderedIds);
+    total = count;
+  }
   const items = await withGuardians(docs);
   return { items, meta: buildMeta(page, limit, total) };
 }
 
+/**
+ * Backs the Student List's Print/Export actions — the same filter/search
+ * logic as list() (so "print/export respects every active filter" holds by
+ * construction, not by keeping two filter-building implementations in
+ * sync), but returns every matching row in one shot instead of one page, so
+ * "export exactly the 75 filtered students, not all 1000" is possible
+ * without the frontend ever fetching the full unfiltered collection itself.
+ * Capped defensively rather than truly unbounded — a print/export click is
+ * still one request/response cycle, not a background job.
+ */
+const EXPORT_MAX_ROWS = 2000;
+
+export async function exportList(req: Request): Promise<Record<string, unknown>[]> {
+  const filter = await buildStudentFilter(req);
+  Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
+
+  // Roll ascending (numeric-aware), same default as list() — a print/export
+  // must show students in the same order the on-screen list does.
+  const orderedIds = await pageIdsByRoll(Student, filter, 1, 0, EXPORT_MAX_ROWS);
+  const fetched = await Student.find({ _id: { $in: orderedIds } });
+  const docs = reorderByIds(fetched, orderedIds);
+  const withG = await withGuardians(docs);
+
+  const batchIds = [...new Set(docs.map((d) => d.currentBatchId).filter(Boolean).map((id) => String(id)))];
+  const { Batch } = await import("../batches/batch.model");
+  const batches = batchIds.length ? await Batch.find({ _id: { $in: batchIds } }).select("name") : [];
+  const batchNameById = new Map(batches.map((b) => [String(b._id), b.name]));
+
+  return withG.map((s) => {
+    const row = s as Record<string, unknown> & { currentBatchId?: unknown };
+    return {
+      id: String(row._id),
+      name: row.name,
+      rollNumber: row.currentRollNumber,
+      registrationId: row.registrationId,
+      phone: row.phone,
+      guardianMobile: row.guardianMobile,
+      dob: row.dob,
+      course: row.course,
+      batchName: row.currentBatchId ? batchNameById.get(String(row.currentBatchId)) : undefined,
+      hscInstitution: row.hscInstitution,
+      due: row.due,
+      status: row.status,
+    };
+  });
+}
+
 /** Total/Added/Missing counts for the Admission Result page's summary cards — always the full three-way breakdown of whatever batch/course/director scope is selected, independent of any admissionRollStatus filter applied to the list itself (Admission Result feature §11). */
+/**
+ * Admission Result feature is gated for Admin by its own dedicated
+ * permission (PERMISSIONS.ADMISSION_RESULTS_MANAGE) on top of the broad
+ * STUDENTS_READ/STUDENTS_UPDATE the route itself accepts — an Admin can be
+ * individually denied this one permission (User.deniedPermissions) without
+ * touching STUDENTS_READ/STUDENTS_UPDATE, which every other Student List/
+ * Profile page still needs. A Batch Director's own scoped permission
+ * (STUDENTS_READ_OWN_BATCH / STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH) is
+ * a completely separate path and is never affected by this check.
+ */
+function assertAdmissionResultAccess(req: Request, broadPermission: string): void {
+  const perms = req.user!.permissions;
+  const hasBroadAccess = perms.includes("*") || perms.includes(broadPermission);
+  if (!hasBroadAccess) return; // batch-director-scoped caller — unaffected, existing behavior
+  const hasAdmissionResultAccess = perms.includes("*") || perms.includes(PERMISSIONS.ADMISSION_RESULTS_MANAGE);
+  if (!hasAdmissionResultAccess) throw ApiError.forbidden("Admission Result access has been disabled for this account.");
+}
+
 export async function admissionRollStats(req: Request): Promise<{ total: number; added: number; missing: number }> {
+  assertAdmissionResultAccess(req, PERMISSIONS.STUDENTS_READ);
   const filter = await buildStudentFilter(req);
   const [total, added] = await Promise.all([
     Student.countDocuments(filter),
@@ -175,6 +357,7 @@ export async function admissionRollStats(req: Request): Promise<{ total: number;
  */
 export async function updateAdmissionRoll(req: Request, id: string, rawAdmissionRoll: string): Promise<Record<string, unknown>> {
   const doc = await getDocOrThrow(id);
+  assertAdmissionResultAccess(req, PERMISSIONS.STUDENTS_UPDATE);
 
   const perms = req.user!.permissions;
   const hasBroadAccess = perms.includes("*") || perms.includes(PERMISSIONS.STUDENTS_UPDATE);
@@ -326,8 +509,14 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
     paid: 0, // the admission-time payment (if any) is applied below through payment.service, never baked in directly
   });
 
+  // registrationId is ALWAYS system-generated — a Student's permanent ID is
+  // never taken from Excel or any other caller-supplied value, for admission
+  // and bulk import alike. What Excel calls "Coaching Reg No" is the
+  // coaching center's own roll/registration value and is stored as
+  // currentRollNumber below instead (see body.rollNumber).
   const registrationId = await generateRegistrationId();
   const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
+  await syncHscInstitution(rest);
   const doc = await Student.create({
     ...rest,
     registrationId,
@@ -416,6 +605,7 @@ async function applyCourseIdIfPresent(doc: StudentDoc, patch: Record<string, unk
 async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, unknown> & GuardianInline) {
   const before = doc.toObject();
 
+  await syncHscInstitution(patch);
   await applyRollNumberIfPresent(doc, patch);
   const courseChanged = await applyCourseIdIfPresent(doc, patch);
   const { rollNumber: _rollNumber, courseId: _courseId, ...rest } = patch;

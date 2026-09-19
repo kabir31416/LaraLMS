@@ -64,3 +64,19 @@
     font-family: var(--font-sans);
   }
 }
+
+/**
+ * PaymentReceipt.tsx is a dedicated, standalone route (not a Dialog, and
+ * deliberately not wrapped in DashboardLayout) — the sidebar/navbar never
+ * render on that page at all, so printing it only ever needs to hide the
+ * page's own Back/Print toolbar (`.no-print`). This replaces the old
+ * Payment Receipt Dialog's print rule (Excel Student Information Import /
+ * Coaching Reg No spec §11/§18) — printing a Radix Dialog required hiding
+ * the whole rest of the page and neutralizing the dialog's own scroll
+ * clipping, both unnecessary once the receipt is its own page.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

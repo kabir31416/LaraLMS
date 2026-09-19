@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff, type StaffType } from "@/ty
 import { toast } from "sonner";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 
 /**
  * Only "Admin" still goes through the password-based User/Role login here —
@@ -25,9 +26,18 @@ import { ApiClientError } from "@/contexts/AuthContext";
  * Portal login (auth.service.ts's staffLogin, a pure read-only lookup —
  * same design as the Student Portal). Keeping both doors open for the same
  * person was exactly what kept producing "already exists" conflicts.
+ *
+ * An Admin login is created UNCONDITIONALLY below (never behind an opt-in
+ * checkbox) — a previous version let this be skipped, which silently
+ * produced an Admin staff record with no way to ever log in, while a Batch
+ * Director always "worked" simply because it has no password step at all.
+ * The admin creating the account now types the password themself (with a
+ * confirmation field) instead of a server-generated temp password shown
+ * once in a toast and easy to lose.
  */
 const LOGIN_ELIGIBLE: StaffType[] = ["Admin"];
 const ROLE_NAME_BY_STAFF_TYPE: Partial<Record<StaffType, string>> = { Admin: "admin" };
+const MIN_PASSWORD_LENGTH = 6;
 
 interface Props {
   open: boolean;
@@ -36,7 +46,7 @@ interface Props {
 }
 
 export function StaffForm({ open, onOpenChange, editStaff }: Props) {
-  const { addStaff, updateStaff } = useStaff();
+  const { addStaff, updateStaff, deleteStaff } = useStaff();
   const isEdit = !!editStaff;
 
   const [form, setForm] = useState(() => init(editStaff));
@@ -44,7 +54,52 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
     editStaff?.joinDate ? new Date(editStaff.joinDate) : new Date(),
   );
   const [submitting, setSubmitting] = useState(false);
-  const [createLogin, setCreateLogin] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  // React's `submitting` state only disables the button from the NEXT
+  // render onward — two clicks (or an Enter-key repeat) dispatched in the
+  // same tick can both slip past it and fire two create requests before the
+  // first one even resolves. This ref is checked synchronously, so the
+  // second call is rejected immediately, before either network request.
+  const busyRef = useRef(false);
+
+  // This dialog instance stays mounted across opens (Staff.tsx never remounts
+  // it), so without this a password typed for one new Admin would still be
+  // sitting in state the next time the "new staff" dialog is opened.
+  useEffect(() => {
+    if (open) {
+      setPassword("");
+      setConfirmPassword("");
+    }
+  }, [open]);
+
+  // Per-Admin "Admission Result" toggle (User.deniedPermissions) — only
+  // relevant for staffType "Admin", since that's the only type with a real
+  // password login at all. Defaults to allowed (true), matching the
+  // backward-compatible default every existing Admin already has.
+  const [admissionResultAllowed, setAdmissionResultAllowed] = useState(true);
+  const [existingAdminUserId, setExistingAdminUserId] = useState<string | undefined>(undefined);
+
+  // Editing an existing Admin: look up their login (if one exists) so the
+  // toggle reflects their actual current permission instead of always
+  // defaulting to "allowed".
+  useEffect(() => {
+    if (!open || !isEdit || !editStaff || editStaff.staffType !== "Admin") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const users = await api.get<{ _id: string; deniedPermissions?: string[] }[]>(`/users?linkedStaffId=${editStaff.id}`);
+        if (cancelled) return;
+        const existing = users[0];
+        setExistingAdminUserId(existing?._id);
+        setAdmissionResultAllowed(!existing?.deniedPermissions?.includes(ADMISSION_RESULTS_MANAGE));
+      } catch {
+        // No login found (or lookup failed) — leave the default (allowed, no login to edit).
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, isEdit, editStaff]);
 
   // Only fetched when actually needed (creating a login), so a plain staff
   // add never requires Role-management permission.
@@ -84,10 +139,23 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
 
   const update = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: v }));
 
+  const isNewAdmin = !isEdit && LOGIN_ELIGIBLE.includes(form.staffType);
+
   const handleSubmit = async () => {
+    if (busyRef.current) return;
     if (!form.name || !form.mobile || (!isEdit && !form.staffId.trim())) {
       toast.error("নাম, মোবাইল এবং স্টাফ আইডি প্রয়োজন");
       return;
+    }
+    if (isNewAdmin) {
+      if (!password || password.length < MIN_PASSWORD_LENGTH) {
+        toast.error(`পাসওয়ার্ড কমপক্ষে ${MIN_PASSWORD_LENGTH} অক্ষরের হতে হবে`);
+        return;
+      }
+      if (password !== confirmPassword) {
+        toast.error("পাসওয়ার্ড ও নিশ্চিতকরণ পাসওয়ার্ড মিলছে না");
+        return;
+      }
     }
     const data: Omit<Staff, "id"> = {
       name: form.name,
@@ -102,38 +170,64 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       staffId: form.staffId.trim() || undefined,
     };
 
+    busyRef.current = true;
     setSubmitting(true);
     try {
-      let staffRecord: Staff;
       if (isEdit && editStaff) {
-        staffRecord = await updateStaff(editStaff.id, data);
-        toast.success("স্টাফ আপডেট হয়েছে");
-      } else {
-        staffRecord = await addStaff(data);
-        toast.success("স্টাফ যোগ হয়েছে");
-      }
-
-      if (!isEdit && createLogin) {
-        const roleId = await findRoleId(form.staffType);
-        if (roleId) {
-          const res = await api.post<{ tempPassword?: string }>("/users", {
-            identifier: form.mobile,
-            roleId,
-            linkedStaffId: staffRecord.id,
-          });
-          toast.success(
-            res.tempPassword
-              ? `লগইন তৈরি হয়েছে। সাময়িক পাসওয়ার্ড: ${res.tempPassword}`
-              : "লগইন তৈরি হয়েছে",
-            { duration: 15000 },
-          );
+        await updateStaff(editStaff.id, data);
+        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
+        if (existingAdminUserId) {
+          // Existing Admin login — only the Admission Result permission can change here (role/password reset stay untouched).
+          await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions });
         }
+        toast.success("স্টাফ আপডেট হয়েছে");
+        onOpenChange(false);
+        return;
       }
 
+      const staffRecord = await addStaff(data);
+
+      if (!isNewAdmin) {
+        toast.success("স্টাফ যোগ হয়েছে");
+        onOpenChange(false);
+        return;
+      }
+
+      // New Admin: the Staff row alone is useless without a working login,
+      // so the two are treated as one atomic operation from the operator's
+      // point of view — no "স্টাফ যোগ হয়েছে" toast until the login is
+      // ALSO confirmed. If the login step fails for any reason (including a
+      // genuine duplicate identifier), the just-created Staff row is rolled
+      // back so this never leaves behind an orphaned Admin with no way to
+      // log in and no confusing "succeeded, then failed" toast sequence.
+      try {
+        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
+        const roleId = await findRoleId(form.staffType);
+        if (!roleId) throw new Error("Admin রোল খুঁজে পাওয়া যায়নি — RBAC সেটিংস পরীক্ষা করুন।");
+        await api.post("/users", {
+          identifier: form.mobile,
+          password,
+          roleId,
+          linkedStaffId: staffRecord.id,
+          deniedPermissions,
+        });
+      } catch (loginErr) {
+        try {
+          await deleteStaff(staffRecord.id);
+        } catch {
+          // Rollback itself failed — surface the ORIGINAL error below regardless;
+          // an orphaned Staff row with no login is a lesser problem than
+          // silently swallowing the real cause.
+        }
+        throw loginErr;
+      }
+
+      toast.success("এডমিন তৈরি হয়েছে — মোবাইল ও পাসওয়ার্ড দিয়ে লগইন করা যাবে");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+      toast.error(err instanceof ApiClientError ? err.message : err instanceof Error ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
     } finally {
+      busyRef.current = false;
       setSubmitting(false);
     }
   };
@@ -156,7 +250,11 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
           <div className="space-y-1.5">
             <Label>স্টাফ আইডি *</Label>
             <Input value={form.staffId} onChange={(e) => update("staffId", e.target.value)} placeholder="যেমন: T-01" />
-            <p className="text-xs text-muted-foreground">মোবাইল নম্বর ও এই আইডি দিয়েই স্টাফ পোর্টালে লগইন করা যাবে (পাসওয়ার্ড লাগবে না)</p>
+            <p className="text-xs text-muted-foreground">
+              {form.staffType === "Admin"
+                ? "এডমিনের জন্য এই আইডি শুধু পরিচয় হিসেবে ব্যবহৃত হয় — লগইন হয় মোবাইল ও পাসওয়ার্ড দিয়ে (নিচে দেখুন)"
+                : "মোবাইল নম্বর ও এই আইডি দিয়েই স্টাফ পোর্টালে লগইন করা যাবে (পাসওয়ার্ড লাগবে না)"}
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label>ইমেইল</Label>
@@ -209,11 +307,27 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
               </SelectContent>
             </Select>
           </div>
-          {!isEdit && LOGIN_ELIGIBLE.includes(form.staffType) && (
+          {isNewAdmin && (
+            <>
+              <div className="space-y-1.5">
+                <Label>পাসওয়ার্ড *</Label>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={`কমপক্ষে ${MIN_PASSWORD_LENGTH} অক্ষর`} autoComplete="new-password" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>পাসওয়ার্ড নিশ্চিত করুন *</Label>
+                <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="পুনরায় পাসওয়ার্ড লিখুন" autoComplete="new-password" />
+              </div>
+              <p className="text-xs text-muted-foreground md:col-span-2 -mt-2">
+                মোবাইল নম্বর ও এই পাসওয়ার্ড দিয়ে এডমিন প্যানেলে লগইন করা যাবে — এডমিনের জন্য লগইন সবসময় তৈরি হয়।
+              </p>
+            </>
+          )}
+          {/* Per-Admin "Admission Result" permission toggle — shown while creating a new Admin login, or editing an Admin who already has one. Super Admin (the built-in admin role itself) always keeps full access; this only ever narrows one specific Admin's own login. */}
+          {(isNewAdmin || (isEdit && !!existingAdminUserId)) && (
             <div className="space-y-1.5 md:col-span-2 flex items-center gap-2 border rounded-lg p-3">
-              <Checkbox checked={createLogin} onCheckedChange={(v) => setCreateLogin(!!v)} id="create-login" />
-              <label htmlFor="create-login" className="text-sm cursor-pointer">
-                একই সাথে এডমিন প্যানেল লগইন (পাসওয়ার্ড সহ) তৈরি করুন — শুধু এডমিনদের জন্য, সাময়িক পাসওয়ার্ড দেখানো হবে
+              <Checkbox checked={admissionResultAllowed} onCheckedChange={(v) => setAdmissionResultAllowed(!!v)} id="admission-result-allowed" />
+              <label htmlFor="admission-result-allowed" className="text-sm cursor-pointer">
+                অ্যাডমিশন রেজাল্ট ব্যবহারের অনুমতি — বন্ধ করলে এই এডমিন সাইডবারে অ্যাডমিশন রেজাল্ট দেখতে বা ব্যবহার করতে পারবেন না
               </label>
             </div>
           )}

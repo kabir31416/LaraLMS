@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
 import Marksheet from "./pages/Marksheet";
@@ -11,7 +12,7 @@ import Students from "./pages/Students";
 import Admission from "./pages/Admission";
 import StudentProfile from "./pages/StudentProfile";
 import FeeManagement from "./pages/FeeManagement";
-import Routine from "./pages/Routine";
+import PaymentReceipt from "./pages/PaymentReceipt";
 import Books from "./pages/Books";
 import Accounts from "./pages/Accounts";
 import StaffPage from "./pages/Staff";
@@ -22,6 +23,9 @@ import Notices from "./pages/Notices";
 import Reports from "./pages/Reports";
 import AdmissionResult from "./pages/AdmissionResult";
 import ChanceResults from "./pages/ChanceResults";
+import ResultManagement from "./pages/ResultManagement";
+import StudentImportUpload from "./pages/StudentImportUpload";
+import StudentImportPreview from "./pages/StudentImportPreview";
 
 // Shared (Admin + Director)
 import Exams from "./pages/Exams";
@@ -54,10 +58,9 @@ export function AppRoutes() {
         <Route path="/" element={<Index />} />
         <Route path="/students" element={<Students />} />
         <Route path="/admission" element={<Admission />} />
-        <Route path="/admission-result" element={<AdmissionResult />} />
-        <Route path="/chance-results" element={<ChanceResults />} />
+        <Route path="/admission/import" element={<StudentImportUpload />} />
+        <Route path="/admission/import/:sessionId" element={<StudentImportPreview />} />
         <Route path="/fees" element={<FeeManagement />} />
-        <Route path="/routine" element={<Routine />} />
         <Route path="/books" element={<Books />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/staff" element={<StaffPage />} />
@@ -66,6 +69,13 @@ export function AppRoutes() {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/notices" element={<Notices />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/result-management" element={<ResultManagement />} />
+      </Route>
+
+      {/* Admin — Admission Result (upload/preview/confirm/process pipeline + its roll-bookkeeping front page) can be individually disabled per-Admin (User.deniedPermissions), so it's gated by its own dedicated permission on top of the Admin role. */}
+      <Route element={<ProtectedRoute roles={["Admin"]} permission={ADMISSION_RESULTS_MANAGE}><Outlet /></ProtectedRoute>}>
+        <Route path="/admission-result" element={<AdmissionResult />} />
+        <Route path="/chance-results" element={<ChanceResults />} />
       </Route>
 
       {/* Admin or Director can view a student's full profile */}
@@ -78,6 +88,12 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute><Outlet /></ProtectedRoute>}>
         <Route path="/exams" element={<Exams />} />
         <Route path="/videos" element={<VideoClasses />} />
+        {/* Dedicated print-ready Payment Receipt (Coaching Reg No / Roll vs
+            System ID spec §11/§18/§20) — not wrapped in DashboardLayout, so
+            no sidebar/navbar ever renders on this route at all. Reachable by
+            Admin (Fee Management) and a Student viewing their own payment
+            (backend enforces the ownership check either way). */}
+        <Route path="/payments/:paymentId/receipt" element={<PaymentReceipt />} />
       </Route>
 
       {/* Director */}
@@ -85,6 +101,7 @@ export function AppRoutes() {
         <Route path="/director" element={<DirectorDashboard />} />
         <Route path="/director/students" element={<DirectorStudents />} />
         <Route path="/director/results" element={<DirectorResults />} />
+        <Route path="/director/result-management" element={<ResultManagement />} />
         <Route path="/director/admission-result" element={<AdmissionResult />} />
         <Route path="/director/chance-results" element={<ChanceResults />} />
         {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}

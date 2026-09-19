@@ -11,6 +11,16 @@ export interface AuthUser {
   name: string;
   role: Role;
   mustChangePassword: boolean;
+  /**
+   * Only meaningfully populated for an Admin login (see toAuthUser) — the
+   * same permission-key array the backend computes for the access token
+   * (auth.service.ts's resolvePermissions), surfaced here purely so the
+   * Admin UI can conditionally show/hide something (e.g. the Admission
+   * Result nav item for an individually-restricted Admin) without decoding
+   * the JWT. Never the actual enforcement — every sensitive action is still
+   * checked server-side regardless of what this array says.
+   */
+  permissions?: string[];
 }
 
 interface LoginResponse {
@@ -22,6 +32,7 @@ interface LoginResponse {
     mustChangePassword: boolean;
     staffId?: string;
     studentId?: string;
+    permissions?: string[];
   };
 }
 
@@ -88,7 +99,14 @@ function toAuthUser(u: LoginResponse["user"]): AuthUser {
     name: u.identifier,
     role: toDisplayRole(u.role),
     mustChangePassword: u.mustChangePassword,
+    permissions: u.permissions,
   };
+}
+
+/** "*" (unrestricted) or an explicit inclusion — mirrors the backend's own requirePermission check (rbac.middleware.ts) so the frontend's "should I show/allow this" logic never drifts from what the server will actually enforce. */
+export function hasPermission(user: AuthUser | null, permission: string): boolean {
+  if (!user?.permissions) return false;
+  return user.permissions.includes("*") || user.permissions.includes(permission);
 }
 
 function studentToAuthUser(s: StudentLoginResponse["student"]): AuthUser {

@@ -12,6 +12,8 @@ export const createUserSchema = z.object({
     roleId: z.string().length(24),
     linkedStaffId: z.string().length(24).optional(),
     linkedStudentId: z.string().length(24).optional(),
+    /** Permission keys to revoke immediately on creation (e.g. Admission Result) — see user.model.ts's deniedPermissions. */
+    deniedPermissions: z.array(z.string()).optional(),
   }),
 });
 
@@ -21,6 +23,7 @@ export const updateUserSchema = z.object({
     roleId: z.string().length(24).optional(),
     status: z.enum(["active", "locked"]).optional(),
     overridePermissions: z.array(z.string()).optional(),
+    deniedPermissions: z.array(z.string()).optional(),
   }),
 });
 

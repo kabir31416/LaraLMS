@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PUBLIC_INFO_ALLOWED_FIELDS, PUBLIC_RESULTS_ALLOWED_FIELDS } from "./settings.model";
+import { DUPLICATE_DISTRIBUTION_RULES, PUBLIC_INFO_ALLOWED_FIELDS, PUBLIC_RESULTS_ALLOWED_FIELDS } from "./settings.model";
 
 export const updateSettingsSchema = z.object({
   body: z
@@ -12,6 +12,7 @@ export const updateSettingsSchema = z.object({
       gradeScale: z.array(z.object({ minPercent: z.number().min(0).max(100), grade: z.string().min(1) })).optional(),
       rollNumberScope: z.enum(["batch", "course", "global"]).optional(),
       admissionFeeBdt: z.number().min(0).optional(),
+      studentIdPrefix: z.string().trim().min(1).max(12).optional(),
     })
     .strict(),
 });
@@ -58,6 +59,15 @@ const printSchema = z.object({
   signatureLabel: z.string().trim().max(60).optional(),
   paperSize: z.enum(["A4", "Letter"]).optional(),
   showLogoOnDocuments: z.boolean().optional(),
+});
+
+export const updateMaterialSettingsSchema = z.object({
+  body: z
+    .object({
+      duplicateDistributionRule: z.enum(DUPLICATE_DISTRIBUTION_RULES).optional(),
+      defaultMinimumStock: z.number().min(0).optional(),
+    })
+    .strict(),
 });
 
 export const updateInstitutionSettingsSchema = z.object({

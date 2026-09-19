@@ -2,7 +2,7 @@ import { Request } from "express";
 import { User, UserDoc } from "./user.model";
 import { Role } from "../rbac/role.model";
 import { ApiError } from "../../common/utils/ApiError";
-import { hashPassword, generateTempPassword } from "../../common/utils/password";
+import { hashPassword, generateTempPassword, normalizeIdentifier } from "../../common/utils/password";
 import { recordAudit } from "../../audit/auditLog.service";
 import { parsePagination, buildMeta, buildSearchFilter } from "../../common/utils/pagination";
 import { sendSms } from "../../common/utils/sms";
@@ -35,6 +35,7 @@ interface CreateUserInput {
   roleId: string;
   linkedStaffId?: string;
   linkedStudentId?: string;
+  deniedPermissions?: string[];
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
@@ -42,48 +43,90 @@ function isDuplicateKeyError(err: unknown): boolean {
 }
 
 /**
- * "Create a login for this staff member" (Admin/Staff only — the Student
- * Portal no longer has a login account at all; see auth.service.ts's
- * studentLogin) needs to be safe to call more than once for the same
- * owner, since a caller's own "does one exist" pre-check can simply miss
- * (a bug that shipped here once already: the pre-check below normalized
- * case but not whitespace, so a value Mongoose's own schema-level `trim`
- * would have matched slipped past it and hit a raw duplicate-key error
- * instead of this function's own conflict handling).
- * So: if the identifier collides with an existing login already linked to
- * the *same* staff member, treat it as a reset rather than a failure —
- * and if a collision still reaches the database uncaught (a genuine race),
- * translate that into the same clean error rather than leaking Mongo's.
+ * Turns the generic "already exists" conflict into a self-diagnosing one —
+ * names exactly which existing account the identifier collides with, so an
+ * operator (who already holds USERS_MANAGE to even reach this endpoint,
+ * i.e. can already list every user) can immediately tell "this identifier
+ * is genuinely already in use by X" apart from "this looks like a bug",
+ * without needing server log access at all.
  */
-export async function createUser(req: Request, input: CreateUserInput): Promise<{ user: UserDoc; tempPassword?: string }> {
+async function describeExistingOwner(existing: UserDoc): Promise<string> {
+  if (existing.linkedStaffId) {
+    const { Staff } = await import("../staff/staff.model");
+    const staff = await Staff.findById(existing.linkedStaffId).select("name staffType");
+    if (staff) return `${staff.staffType} "${staff.name}"`;
+    return "a staff account (that staff record has since been removed)";
+  }
+  if (existing.linkedStudentId) {
+    const { Student } = await import("../students/student.model");
+    const student = await Student.findById(existing.linkedStudentId).select("name");
+    if (student) return `student "${student.name}"`;
+    return "a student account (that student record has since been removed)";
+  }
+  // No linked Staff/Student — most commonly the initial seeded Super Admin
+  // account (backend/src/scripts/seed.ts's seedAdmin(), identifier defaults
+  // to ADMIN_SEED_PHONE, "01700000000" unless overridden), a very guessable
+  // value a tester can easily retype without realizing it's already taken.
+  return "an existing Admin login not linked to any staff record (this is often the initial seeded Super Admin account)";
+}
+
+/**
+ * Resolves an identifier collision — either an idempotent reset (the
+ * existing login already belongs to the *same* staff/student, e.g. a
+ * retried request) or a real conflict (a different owner already uses this
+ * identifier), never a raw duplicate-key error.
+ */
+async function resolveIdentifierCollision(
+  req: Request,
+  existing: UserDoc,
+  input: CreateUserInput,
+  passwordHash: string,
+  effectivePassword: string,
+  tempPassword: string | undefined,
+): Promise<{ user: UserDoc; tempPassword?: string }> {
+  const sameOwner =
+    (!!input.linkedStudentId && String(existing.linkedStudentId ?? "") === input.linkedStudentId) ||
+    (!!input.linkedStaffId && String(existing.linkedStaffId ?? "") === input.linkedStaffId);
+  if (!sameOwner) {
+    const owner = await describeExistingOwner(existing);
+    throw ApiError.conflict(`A user with this identifier already exists — currently linked to ${owner}. Use a different login identifier.`);
+  }
+
+  const before = existing.toObject();
+  existing.passwordHash = passwordHash;
+  existing.roleId = input.roleId as never;
+  existing.mustChangePassword = !input.password;
+  existing.failedLoginCount = 0;
+  if (existing.status === "locked") existing.status = "active";
+  if (input.deniedPermissions) existing.deniedPermissions = input.deniedPermissions;
+  await existing.save();
+
+  await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(existing._id), before, after: { identifier: existing.identifier, roleId: existing.roleId } });
+  await notifyStudentCredential(existing.identifier, effectivePassword, input.linkedStudentId);
+  return { user: existing, tempPassword };
+}
+
+/**
+ * Creates a login for a staff member or student. The identifier's unique
+ * index is the SINGLE source of truth for "does this already exist" — this
+ * always attempts the insert directly rather than checking first and
+ * inserting second, which closes the race window a separate find-then-
+ * insert would otherwise leave open (two concurrent requests could both see
+ * "doesn't exist yet" and both try to create, one of them then hitting a
+ * raw duplicate-key error the caller never asked for). Only when the
+ * insert itself reports a collision do we look up who it belongs to — at
+ * that point the identifier is guaranteed to exist, so unlike an upfront
+ * check there is nothing left to race against.
+ */
+export async function createUser(req: Request, input: CreateUserInput, retriesLeft = 1): Promise<{ user: UserDoc; tempPassword?: string }> {
   const role = await Role.findById(input.roleId);
   if (!role) throw ApiError.badRequest("Unknown roleId");
 
-  const normalizedIdentifier = input.identifier.trim().toLowerCase();
+  const normalizedIdentifier = normalizeIdentifier(input.identifier);
   const tempPassword = input.password ? undefined : generateTempPassword();
   const effectivePassword = input.password ?? tempPassword!;
-
-  const existing = await User.findOne({ identifier: normalizedIdentifier });
-  if (existing) {
-    const sameOwner =
-      (!!input.linkedStudentId && String(existing.linkedStudentId ?? "") === input.linkedStudentId) ||
-      (!!input.linkedStaffId && String(existing.linkedStaffId ?? "") === input.linkedStaffId);
-    if (!sameOwner) throw ApiError.conflict("A user with this identifier already exists");
-
-    const before = existing.toObject();
-    existing.passwordHash = await hashPassword(effectivePassword);
-    existing.roleId = input.roleId as never;
-    existing.mustChangePassword = !input.password;
-    existing.failedLoginCount = 0;
-    if (existing.status === "locked") existing.status = "active";
-    await existing.save();
-
-    await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(existing._id), before, after: { identifier: existing.identifier, roleId: existing.roleId } });
-    await notifyStudentCredential(existing.identifier, effectivePassword, input.linkedStudentId);
-    return { user: existing, tempPassword };
-  }
-
   const passwordHash = await hashPassword(effectivePassword);
+
   let user: UserDoc;
   try {
     user = await User.create({
@@ -93,10 +136,39 @@ export async function createUser(req: Request, input: CreateUserInput): Promise<
       linkedStaffId: input.linkedStaffId,
       linkedStudentId: input.linkedStudentId,
       mustChangePassword: !input.password,
+      deniedPermissions: input.deniedPermissions ?? [],
     });
   } catch (err) {
-    if (isDuplicateKeyError(err)) throw ApiError.conflict("A user with this identifier already exists");
-    throw err;
+    if (!isDuplicateKeyError(err)) throw err;
+
+    const existing = await User.findOne({ identifier: normalizedIdentifier });
+    // Temporary diagnostic — safe fields only (never password/hash/tokens).
+    // Remove once the "false duplicate" report is confirmed resolved.
+    logger.info(
+      {
+        receivedIdentifier: input.identifier,
+        normalizedIdentifier,
+        linkedStaffId: input.linkedStaffId,
+        linkedStudentId: input.linkedStudentId,
+        existingId: existing ? String(existing._id) : undefined,
+        existingRoleId: existing ? String(existing.roleId) : undefined,
+        existingLinkedStaffId: existing?.linkedStaffId ? String(existing.linkedStaffId) : undefined,
+        existingLinkedStudentId: existing?.linkedStudentId ? String(existing.linkedStudentId) : undefined,
+        existingCreatedAt: existing?.createdAt,
+      },
+      "ADMIN CREATE DEBUG — duplicate-key collision on createUser()",
+    );
+    if (!existing) {
+      // The insert just failed BECAUSE this identifier existed, so it is
+      // not simply "not found yet" — this only happens if it was deleted in
+      // the instant between our failed insert and this lookup. Safe to
+      // treat as if our own insert race had simply not happened: retry once
+      // (retriesLeft bounds this so a persistent anomaly fails loudly
+      // instead of recursing forever).
+      if (retriesLeft <= 0) throw ApiError.conflict("A user with this identifier already exists. Use a different login identifier.");
+      return createUser(req, input, retriesLeft - 1);
+    }
+    return resolveIdentifierCollision(req, existing, input, passwordHash, effectivePassword, tempPassword);
   }
 
   await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(user._id), after: { identifier: user.identifier, roleId: user.roleId } });
@@ -127,7 +199,11 @@ export async function getUserById(id: string): Promise<UserDoc> {
   return user;
 }
 
-export async function updateUser(req: Request, id: string, patch: { roleId?: string; status?: "active" | "locked"; overridePermissions?: string[] }): Promise<UserDoc> {
+export async function updateUser(
+  req: Request,
+  id: string,
+  patch: { roleId?: string; status?: "active" | "locked"; overridePermissions?: string[]; deniedPermissions?: string[] },
+): Promise<UserDoc> {
   const user = await getUserById(id);
   const before = user.toObject();
   if (patch.roleId) user.roleId = patch.roleId as never;
@@ -136,6 +212,7 @@ export async function updateUser(req: Request, id: string, patch: { roleId?: str
     if (patch.status === "active") user.failedLoginCount = 0;
   }
   if (patch.overridePermissions) user.overridePermissions = patch.overridePermissions;
+  if (patch.deniedPermissions) user.deniedPermissions = patch.deniedPermissions;
   await user.save();
   await recordAudit({ req, action: "user.update", module: "users", targetCollection: "users", targetId: id, before, after: user.toObject() });
   return user;
@@ -153,7 +230,7 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
   const before = user.toObject();
 
   if (patch.identifier) {
-    const normalized = patch.identifier.trim().toLowerCase();
+    const normalized = normalizeIdentifier(patch.identifier);
     if (normalized !== user.identifier) {
       const clash = await User.findOne({ identifier: normalized, _id: { $ne: user._id } });
       if (clash) throw ApiError.conflict("Another account already uses this identifier");

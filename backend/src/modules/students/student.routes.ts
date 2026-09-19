@@ -40,6 +40,14 @@ router.get(
   controller.admissionRollStats,
 );
 
+// Student List's filtered Print/Export — must also precede "/:id".
+router.get(
+  "/export",
+  requirePermission(PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH),
+  validate(listStudentsQuerySchema),
+  controller.exportList,
+);
+
 router.get(
   "/:id",
   requirePermissionOrSelf([PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH], PERMISSIONS.STUDENTS_UPDATE_SELF, "id"),

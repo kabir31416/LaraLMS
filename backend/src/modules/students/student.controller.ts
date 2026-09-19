@@ -37,6 +37,12 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, items, 200, meta);
 });
 
+/** Student List's Print/Export — same server-enforced batch scope as list(), same filters, no pagination (service.ts caps the row count defensively). */
+export const exportList = asyncHandler(async (req: Request, res: Response) => {
+  scopeToOwnBatchIfNeeded(req);
+  sendSuccess(res, await service.exportList(req));
+});
+
 /** Admission Result feature's summary cards (Total/Added/Missing) — same server-enforced batch scope as list(). */
 export const admissionRollStats = asyncHandler(async (req: Request, res: Response) => {
   scopeToOwnBatchIfNeeded(req);

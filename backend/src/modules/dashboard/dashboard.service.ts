@@ -190,6 +190,90 @@ export async function getAdminSummary() {
   };
 }
 
+/**
+ * Admission dashboard summary — server-side aggregated for the same reason
+ * getAdminSummary() is: the Admission page's stat cards/charts must not be
+ * computed from StudentContext's capped 100-record list, which would
+ * silently under-count once a coaching centre passes 100 students.
+ */
+export async function getAdmissionSummary() {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthKeys = last6MonthKeys();
+  const weekAgo = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const [facet] = await Student.aggregate<{
+    totalStudents: { count: number }[];
+    todayAdmissions: { count: number }[];
+    weekAdmissions: { count: number }[];
+    monthAdmissions: { count: number }[];
+    typeBreakdown: { _id: string; count: number }[];
+    courseWise: { _id: string; count: number }[];
+    monthlyTrend: { _id: string; count: number }[];
+  }>([
+    {
+      $facet: {
+        totalStudents: [{ $count: "count" }],
+        todayAdmissions: [{ $match: { admissionDate: today } }, { $count: "count" }],
+        weekAdmissions: [{ $match: { admissionDate: { $gte: weekAgo } } }, { $count: "count" }],
+        monthAdmissions: [{ $match: { admissionDate: { $gte: `${monthKeys[5]}-01` } } }, { $count: "count" }],
+        typeBreakdown: [{ $group: { _id: "$admissionType", count: { $sum: 1 } } }],
+        courseWise: [
+          { $match: { course: { $nin: [null, ""] } } },
+          { $group: { _id: "$course", count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 8 },
+        ],
+        monthlyTrend: [
+          { $match: { admissionDate: { $gte: `${monthKeys[0]}-01` } } },
+          { $group: { _id: { $substrCP: ["$admissionDate", 0, 7] }, count: { $sum: 1 } } },
+        ],
+      },
+    },
+  ]);
+
+  const totalStudents = facet.totalStudents[0]?.count || 0;
+  const todayAdmissions = facet.todayAdmissions[0]?.count || 0;
+  const weekAdmissions = facet.weekAdmissions[0]?.count || 0;
+  const monthAdmissions = facet.monthAdmissions[0]?.count || 0;
+  const newCount = facet.typeBreakdown.find((t) => t._id === "নতুন")?.count || 0;
+  const oldCount = facet.typeBreakdown.find((t) => t._id === "পুরাতন")?.count || 0;
+
+  const courseWise = facet.courseWise.map((c) => ({ course: c._id, count: c.count }));
+
+  const trendByKey = new Map(facet.monthlyTrend.map((m) => [m._id, m.count]));
+  const monthlyTrend = monthKeys.map((key) => ({ month: key.slice(5), count: trendByKey.get(key) || 0 }));
+
+  const recentAdmissionDocs = await Student.find({})
+    .sort({ admissionDate: -1, createdAt: -1 })
+    .limit(10)
+    .select("name course admissionDate admissionType registrationId currentBatchId")
+    .populate<{ currentBatchId: { _id: Types.ObjectId; name: string } | null }>("currentBatchId", "name");
+
+  return {
+    totalStudents,
+    todayAdmissions,
+    weekAdmissions,
+    monthAdmissions,
+    newCount,
+    oldCount,
+    courseWise,
+    monthlyTrend,
+    recentAdmissions: recentAdmissionDocs.map((d) => ({
+      id: String(d._id),
+      name: d.name,
+      course: d.course,
+      batchName: d.currentBatchId?.name,
+      admissionDate: d.admissionDate,
+      admissionType: d.admissionType,
+      registrationId: d.registrationId,
+    })),
+  };
+}
+
 /** Director summary — scoped to the batches this Staff record directs. */
 export async function getDirectorSummary(staffId: string) {
   const today = new Date().toISOString().slice(0, 10);

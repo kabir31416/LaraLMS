@@ -328,10 +328,11 @@ async function buildResultFilter(req: Request, query: Record<string, unknown>): 
 
   const scope = await resolveBatchScope(req);
   if (query.batchId === "unassigned") filter.batchId = { $exists: false };
-  else if (query.batchId) filter.batchId = query.batchId;
+  else if (query.batchId && Types.ObjectId.isValid(query.batchId as string)) filter.batchId = new Types.ObjectId(query.batchId as string);
   if (scope) {
     // A Batch Director's own scope always wins over anything a manipulated request might send — never merged, always the final word.
-    filter.batchId = filter.batchId && scope.includes(String(filter.batchId)) ? filter.batchId : { $in: scope };
+    const requestedId = filter.batchId instanceof Types.ObjectId ? String(filter.batchId) : undefined;
+    filter.batchId = requestedId && scope.includes(requestedId) ? filter.batchId : { $in: scope.map((id) => new Types.ObjectId(id)) };
   }
   return filter;
 }

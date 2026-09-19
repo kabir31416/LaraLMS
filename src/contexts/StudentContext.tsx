@@ -16,7 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
  * currentBatchId <-> batchId) so every existing page keeps reading the same
  * property names it always has.
  */
-interface ApiStudent {
+export interface ApiStudent {
   _id: string;
   registrationId: string;
   currentRollNumber?: string;
@@ -31,19 +31,32 @@ interface ApiStudent {
   institution?: string;
   class?: string;
   bloodGroup?: string;
+  religion?: string;
+  fatherName?: string;
+  motherName?: string;
   address?: string;
   presentAddress?: string;
   permanentAddress?: string;
+  division?: string;
+  district?: string;
+  upazila?: string;
+  postOffice?: string;
+  postcode?: string;
+  village?: string;
   hscInstitution?: string;
   hscBoard?: string;
   hscPassingYear?: string;
   hscGroup?: string;
   hscGpa?: string;
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
   sscInstitution?: string;
   sscBoard?: string;
   sscPassingYear?: string;
   sscGroup?: string;
   sscGpa?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
   courseId?: string;
   course?: string;
   section?: string;
@@ -69,7 +82,8 @@ interface ApiStudent {
   guardianAddress?: string;
 }
 
-function fromApi(doc: ApiStudent): Student {
+/** Exported so the Student List page (Students.tsx) can map its own server-paginated/filtered fetch through the exact same field translation, without duplicating it or routing that fetch through this context's own 100-row-capped global list. */
+export function fromApi(doc: ApiStudent): Student {
   return {
     id: doc._id,
     studentId: doc.registrationId,
@@ -85,19 +99,32 @@ function fromApi(doc: ApiStudent): Student {
     institution: doc.institution,
     class: doc.class,
     bloodGroup: doc.bloodGroup,
+    religion: doc.religion,
+    fatherName: doc.fatherName,
+    motherName: doc.motherName,
     address: doc.address,
     presentAddress: doc.presentAddress,
     permanentAddress: doc.permanentAddress,
+    division: doc.division,
+    district: doc.district,
+    upazila: doc.upazila,
+    postOffice: doc.postOffice,
+    postcode: doc.postcode,
+    village: doc.village,
     hscInstitution: doc.hscInstitution,
     hscBoard: doc.hscBoard,
     hscPassingYear: doc.hscPassingYear,
     hscGroup: doc.hscGroup,
     hscGpa: doc.hscGpa,
+    hscRoll: doc.hscRoll,
+    hscRegistrationNumber: doc.hscRegistrationNumber,
     sscInstitution: doc.sscInstitution,
     sscBoard: doc.sscBoard,
     sscPassingYear: doc.sscPassingYear,
     sscGroup: doc.sscGroup,
     sscGpa: doc.sscGpa,
+    sscRoll: doc.sscRoll,
+    sscRegistrationNumber: doc.sscRegistrationNumber,
     courseId: doc.courseId,
     course: doc.course,
     section: doc.section,

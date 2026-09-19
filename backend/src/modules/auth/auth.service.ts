@@ -6,13 +6,13 @@ import { Student } from "../students/student.model";
 import { Staff, StaffDoc } from "../staff/staff.model";
 import { RefreshToken } from "./refreshToken.model";
 import { ApiError } from "../../common/utils/ApiError";
-import { comparePassword, hashPassword } from "../../common/utils/password";
+import { comparePassword, hashPassword, normalizeIdentifier } from "../../common/utils/password";
 import { signAccessToken } from "../../common/utils/jwt";
 import { parseDurationToMs } from "../../common/utils/duration";
 import { env } from "../../config/env";
 import { MAX_FAILED_LOGIN_ATTEMPTS } from "../../config/constants";
 import { recordAudit } from "../../audit/auditLog.service";
-import { DEFAULT_ROLE_PERMISSIONS } from "../rbac/permissions";
+import { ALL_PERMISSION_KEYS, DEFAULT_ROLE_PERMISSIONS } from "../rbac/permissions";
 import { toAsciiDigits } from "../../common/utils/digits";
 
 const REFRESH_BYTES = 48;
@@ -21,10 +21,27 @@ function hashToken(raw: string): string {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
+/**
+ * A wildcard ("*") role normally collapses straight to ["*"] — but if this
+ * specific user has one or more permissions explicitly revoked
+ * (deniedPermissions, e.g. an Admin individually blocked from Admission
+ * Result), "*" can no longer be used as-is: requirePermission's own
+ * "*" shortcut would ignore the denial entirely. Materializing the full
+ * concrete permission list minus the denied ones preserves every other
+ * permission exactly as "*" would have, while still letting the denied
+ * key fail its check. A user with no denials (the overwhelming majority,
+ * and every existing Admin as of when this field was added) still gets
+ * the plain "*" string, unchanged from before.
+ */
 async function resolvePermissions(user: UserDoc): Promise<{ role: { id: string; name: string }; permissions: string[] }> {
   const role = await Role.findById(user.roleId);
   if (!role) throw ApiError.internal("User has no valid role");
-  const merged = role.permissions.includes("*") ? ["*"] : Array.from(new Set([...role.permissions, ...user.overridePermissions]));
+  let merged: string[];
+  if (role.permissions.includes("*")) {
+    merged = user.deniedPermissions?.length ? ALL_PERMISSION_KEYS.filter((p) => !user.deniedPermissions.includes(p)) : ["*"];
+  } else {
+    merged = Array.from(new Set([...role.permissions, ...user.overridePermissions]));
+  }
   return { role: { id: String(role._id), name: role.name }, permissions: merged };
 }
 
@@ -59,12 +76,22 @@ async function issueTokens(req: Request, user: UserDoc) {
       mustChangePassword: user.mustChangePassword,
       staffId: user.linkedStaffId,
       studentId: user.linkedStudentId,
+      // Same array already embedded in the access token — surfaced here too
+      // so the Admin frontend can conditionally show/hide something (e.g.
+      // the Admission Result nav item) without decoding the JWT itself.
+      // Never a new source of truth: every actual enforcement decision is
+      // still made server-side by requirePermission off the token.
+      permissions,
     },
   };
 }
 
 export async function login(req: Request, identifier: string, password: string) {
-  const user = await User.findOne({ identifier: identifier.toLowerCase() }).select("+passwordHash");
+  // normalizeIdentifier() is the SAME function createUser()/resetCredentials()
+  // use before saving (common/utils/password.ts) — one shared rule so a
+  // lookup here can never silently diverge from how the value was stored
+  // (e.g. one side trimming whitespace and the other not).
+  const user = await User.findOne({ identifier: normalizeIdentifier(identifier) }).select("+passwordHash");
   // Same generic message whether the identifier doesn't exist or the password is wrong —
   // never let login responses reveal which one failed (Phase 1 §9).
   const genericError = () => ApiError.unauthorized("Invalid credentials");

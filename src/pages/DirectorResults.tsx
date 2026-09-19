@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { format } from "date-fns";
 import { DashboardLayout } from "@/components/DashboardLayout";
@@ -10,13 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Settings2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
-import { useAttendance } from "@/contexts/AttendanceContext";
+import { useAttendance, ResultSmsTemplateConfig } from "@/contexts/AttendanceContext";
 import type { AttendanceStatus } from "@/types/attendance";
 import { toast } from "@/hooks/use-toast";
+import { ApiClientError } from "@/lib/apiClient";
+import { compareByRoll } from "@/lib/studentDisplay";
 
 /**
  * Result Entry — the single place a Batch Director records both marks and
@@ -24,13 +29,18 @@ import { toast } from "@/hooks/use-toast";
  * attendance workflow for directors anymore (see routes.tsx/AppSidebar.tsx —
  * "/director/attendance" now redirects here): saving a result always saves
  * attendance for the same students in the same action.
+ *
+ * "Save Result" and "Send Result" are two distinct actions (Result Entry
+ * SMS Split): Save never touches the SMS gateway; Send saves first (the
+ * exact same save step) and only then texts guardians using this
+ * director's own Result SMS Template (or the admin default).
  */
 const DirectorResults = () => {
   const { user } = useAuth();
   const { batches } = useBatches();
   const { students } = useStudents();
   const { courses, subjects, lectures } = useAcademic();
-  const { listExams, getResultsByExam, getByBatchDate, submitResult, resendSms } = useAttendance();
+  const { listExams, getResultsByExam, getByBatchDate, saveResult, submitResult, resendSms, getResultSmsTemplate, updateResultSmsTemplate } = useAttendance();
 
   const myBatches = useMemo(
     () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
@@ -66,19 +76,25 @@ const DirectorResults = () => {
   const [fullMarks, setFullMarks] = useState<number>(50);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const batchStudents = useMemo(() => students.filter((s) => s.batchId === batch?.id), [students, batch]);
+  const batchStudents = useMemo(() => students.filter((s) => s.batchId === batch?.id).sort(compareByRoll), [students, batch]);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [existingExamId, setExistingExamId] = useState<string | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [summary, setSummary] = useState<{ resultsSaved: number; smsSent: number; smsFailed: number; failedStudents: { studentId: string; name: string; roll?: string }[] } | null>(null);
+  const [busyAction, setBusyAction] = useState<"save" | "send" | "retry" | null>(null);
+  const [summary, setSummary] = useState<{ resultsSaved: number; smsSent: number; smsFailed: number; failedStudents: { studentId: string; name: string; roll?: string; reason: "guardianPhoneMissing" | "gatewayFailed" }[] } | null>(null);
+
+  // Synchronous guard: React's `busyAction` state won't disable the buttons
+  // until the next render, which two clicks inside the same tick (or a
+  // browser that fires both before repainting) can both slip past. Shared
+  // across Save/Send/Retry so none of them can overlap either.
+  const busyRef = useRef(false);
 
   // Load any already-saved result for this exact batch+subject+lecture+date
   // combination, so reopening it shows previous entries instead of a blank
-  // sheet — and re-sending updates that same result rather than creating a
-  // duplicate (the backend enforces this too; this is just so the director
-  // sees what's already there before they touch anything).
+  // sheet — and re-saving/re-sending updates that same result rather than
+  // creating a duplicate (the backend enforces this too; this is just so
+  // the director sees what's already there before they touch anything).
   useEffect(() => {
     setSummary(null);
     if (!batch || !subjectId || !lectureId || !date) {
@@ -133,21 +149,22 @@ const DirectorResults = () => {
     if (!checked) setMarks((p) => ({ ...p, [sid]: "" }));
   };
 
-  const handleSend = async () => {
+  /** Shared validation + payload build for both Save Result and Send Result — identical save step either way. */
+  const buildPayload = (): { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: { studentId: string; marks: number | null; attendance: AttendanceStatus }[] } | null => {
     if (!batch || !subjectId || !lectureId) {
       toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ, সাবজেক্ট ও লেকচার নির্বাচন করুন।" });
-      return;
+      return null;
     }
     if (!fullMarks || fullMarks <= 0) {
       toast({ title: "ভুল পূর্ণ মান", description: "পূর্ণ মান শূন্যের বেশি হতে হবে।" });
-      return;
+      return null;
     }
     if (batchStudents.length === 0) {
       toast({ title: "কোনো শিক্ষার্থী নেই", description: "এই ব্যাচে কোনো শিক্ষার্থী যুক্ত নেই।" });
-      return;
+      return null;
     }
 
-    // Validate before sending anything — Present always needs a valid 0..fullMarks mark.
+    // Validate before saving anything — Present always needs a valid 0..fullMarks mark.
     for (const s of batchStudents) {
       const status = attendance[s.id] || "Absent";
       if (status !== "Present") continue;
@@ -155,11 +172,11 @@ const DirectorResults = () => {
       const num = raw?.trim() ? Number(raw) : NaN;
       if (raw === undefined || raw.trim() === "" || Number.isNaN(num)) {
         toast({ title: "নম্বর প্রয়োজন", description: `${s.name} উপস্থিত হিসেবে চিহ্নিত কিন্তু নম্বর দেওয়া হয়নি।` });
-        return;
+        return null;
       }
       if (num < 0 || num > fullMarks) {
         toast({ title: "ভুল নম্বর", description: `${s.name}-এর নম্বর ০ থেকে ${fullMarks}-এর মধ্যে হতে হবে।` });
-        return;
+        return null;
       }
     }
 
@@ -170,45 +187,95 @@ const DirectorResults = () => {
       return { studentId: s.id, marks: num, attendance: status };
     });
 
-    setSaving(true);
+    return { batchId: batch.id, subjectId, lectureId, date, fullMarks, items };
+  };
+
+  const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiClientError ? err.message : fallback);
+
+  /** "Save Result" — only saves marks + attendance, never calls the SMS API. Safe to click repeatedly. */
+  const handleSave = async () => {
+    if (busyRef.current) return;
+    const payload = buildPayload();
+    if (!payload) return;
+
+    busyRef.current = true;
+    setBusyAction("save");
     setSummary(null);
     try {
-      const result = await submitResult({ batchId: batch.id, subjectId, lectureId, date, fullMarks, items });
+      const result = await saveResult(payload);
+      setExistingExamId(result.examId);
+      toast({ title: "রেজাল্ট সংরক্ষিত হয়েছে", description: "Result successfully saved. SMS পাঠানো হয়নি।" });
+    } catch (err) {
+      toast({ title: "সংরক্ষণ ব্যর্থ", description: errorMessage(err, "রেজাল্ট সংরক্ষণ করা যায়নি।") });
+    } finally {
+      busyRef.current = false;
+      setBusyAction(null);
+    }
+  };
+
+  /** "Send Result" — saves first, and only after that save actually commits does it text guardians. SMS failure never rolls back the save. */
+  const handleSend = async () => {
+    if (busyRef.current) return;
+    const payload = buildPayload();
+    if (!payload) return;
+
+    busyRef.current = true;
+    setBusyAction("send");
+    setSummary(null);
+    try {
+      const result = await submitResult(payload);
       setExistingExamId(result.examId);
       setSummary(result);
-      toast({
-        title: "রেজাল্ট সংরক্ষিত হয়েছে",
-        description: `সংরক্ষণ: ${result.resultsSaved} জন। SMS পাঠানো হয়েছে: ${result.smsSent} জনকে। ব্যর্থ: ${result.smsFailed} জন।`,
-      });
-    } catch {
-      toast({ title: "ব্যর্থ", description: "রেজাল্ট সংরক্ষণ করা যায়নি" });
+      if (result.smsFailed > 0) {
+        toast({ title: "আংশিক সফল", description: `Result saved, but SMS পাঠানো যায়নি ${result.smsFailed} জনের জন্য। সংরক্ষণ: ${result.resultsSaved} জন, SMS: ${result.smsSent} জন।` });
+      } else {
+        toast({ title: "রেজাল্ট পাঠানো হয়েছে", description: `সংরক্ষণ: ${result.resultsSaved} জন। SMS পাঠানো হয়েছে: ${result.smsSent} জনকে।` });
+      }
+    } catch (err) {
+      toast({ title: "ব্যর্থ", description: errorMessage(err, "রেজাল্ট পাঠানো যায়নি।") });
     } finally {
-      setSaving(false);
+      busyRef.current = false;
+      setBusyAction(null);
     }
   };
 
   const handleRetrySms = async () => {
-    if (!existingExamId || !summary?.failedStudents.length) return;
-    setSaving(true);
+    if (busyRef.current || !existingExamId || !summary?.failedStudents.length) return;
+    busyRef.current = true;
+    setBusyAction("retry");
     try {
       const retry = await resendSms(existingExamId, summary.failedStudents.map((f) => f.studentId));
       setSummary((prev) => (prev ? { ...prev, smsSent: prev.smsSent + retry.smsSent, smsFailed: retry.smsFailed, failedStudents: retry.failedStudents } : prev));
       toast({ title: "পুনরায় পাঠানো হয়েছে", description: `SMS পাঠানো হয়েছে: ${retry.smsSent} জনকে। ব্যর্থ: ${retry.smsFailed} জন।` });
-    } catch {
-      toast({ title: "ব্যর্থ", description: "SMS পুনরায় পাঠানো যায়নি" });
+    } catch (err) {
+      toast({ title: "ব্যর্থ", description: errorMessage(err, "SMS পুনরায় পাঠানো যায়নি।") });
     } finally {
-      setSaving(false);
+      busyRef.current = false;
+      setBusyAction(null);
     }
   };
+
+  const failureReasonLabel = (reason: "guardianPhoneMissing" | "gatewayFailed") =>
+    reason === "guardianPhoneMissing" ? "অভিভাবকের মোবাইল নম্বর নেই" : "SMS গেটওয়ে ব্যর্থ";
+
+  const busy = busyAction !== null;
+
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   if (!user || user.role !== "Batch Director") return <Navigate to="/login" replace />;
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">রেজাল্ট এন্ট্রি</h1>
-          <p className="text-sm text-muted-foreground">এখান থেকেই নম্বর ও উপস্থিতি একসাথে দিন — কোর্স আপনার ব্যাচ থেকে অটো লোড হবে</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">রেজাল্ট এন্ট্রি</h1>
+            <p className="text-sm text-muted-foreground">এখান থেকেই নম্বর ও উপস্থিতি একসাথে দিন — কোর্স আপনার ব্যাচ থেকে অটো লোড হবে</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="self-start sm:self-auto">
+            <Settings2 className="h-4 w-4 mr-2" />
+            Result SMS টেমপ্লেট
+          </Button>
         </div>
 
         <Card className="border-none shadow-sm">
@@ -270,7 +337,7 @@ const DirectorResults = () => {
             </div>
             {existingExamId && (
               <div className="md:col-span-3">
-                <Badge variant="outline" className="text-xs">এই এন্ট্রির আগের রেজাল্ট পাওয়া গেছে — নিচে দেখানো হচ্ছে, নতুন করে পাঠালে তা হালনাগাদ হবে</Badge>
+                <Badge variant="outline" className="text-xs">এই এন্ট্রির আগের রেজাল্ট পাওয়া গেছে — নিচে দেখানো হচ্ছে, নতুন করে সংরক্ষণ/পাঠালে তা হালনাগাদ হবে (নতুন এন্ট্রি তৈরি হবে না)</Badge>
               </div>
             )}
           </CardContent>
@@ -279,11 +346,13 @@ const DirectorResults = () => {
         <Card className="border-none shadow-sm">
           <CardHeader><CardTitle className="text-base">শিক্ষার্থী তালিকা ({batchStudents.length})</CardTitle></CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            {/* Desktop/tablet: table layout, unchanged. */}
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>রোল</TableHead>
+                    <TableHead>Registration ID</TableHead>
                     <TableHead>নাম</TableHead>
                     <TableHead className="w-[120px]">নম্বর</TableHead>
                     <TableHead className="w-[160px] text-center">উপস্থিতি</TableHead>
@@ -291,15 +360,16 @@ const DirectorResults = () => {
                 </TableHeader>
                 <TableBody>
                   {loadingExisting ? (
-                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
                   ) : batchStudents.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
                   ) : batchStudents.map((s) => {
                     const status: AttendanceStatus = attendance[s.id] || "Absent";
                     const isPresent = status === "Present";
                     return (
                       <TableRow key={s.id}>
                         <TableCell className="font-mono text-xs">{s.rollNumber || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{s.studentId}</TableCell>
                         <TableCell className="font-medium">{s.name}</TableCell>
                         <TableCell>
                           <Input
@@ -325,9 +395,59 @@ const DirectorResults = () => {
                 </TableBody>
               </Table>
             </div>
-            <div className="flex justify-end mt-4">
-              <Button onClick={handleSend} disabled={saving || loadingExisting} size="lg">
-                {saving ? "পাঠানো হচ্ছে..." : "Send Result"}
+
+            {/*
+              Mobile: a table here squeezes the mark input to near-unusable
+              width once রোল/নাম/উপস্থিতি all fight for the same row (Result
+              Entry Mobile UI Fix). Each student instead gets its own
+              full-width row: roll+name on top so they stay clearly attached
+              to the input below them, then a large touch-friendly numeric
+              input plus the attendance toggle — no column ever shrinks the
+              input to fit unrelated content.
+            */}
+            <div className="md:hidden space-y-2">
+              {loadingExisting ? (
+                <p className="text-center py-8 text-sm text-muted-foreground">লোড হচ্ছে...</p>
+              ) : batchStudents.length === 0 ? (
+                <p className="text-center py-8 text-sm text-muted-foreground">কোনো শিক্ষার্থী নেই</p>
+              ) : batchStudents.map((s) => {
+                const status: AttendanceStatus = attendance[s.id] || "Absent";
+                const isPresent = status === "Present";
+                return (
+                  <div key={s.id} className="rounded-lg border p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{s.name}</p>
+                        <p className="text-xs text-muted-foreground font-mono">রোল: {s.rollNumber || "—"} · Reg ID: {s.studentId}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs ${!isPresent ? "text-destructive font-medium" : "text-muted-foreground"}`}>অনুপস্থিত</span>
+                        <Switch checked={isPresent} onCheckedChange={(c) => handleToggle(s.id, c)} />
+                        <span className={`text-xs ${isPresent ? "text-success font-medium" : "text-muted-foreground"}`}>উপস্থিত</span>
+                      </div>
+                    </div>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={fullMarks}
+                      value={marks[s.id] || ""}
+                      onChange={(e) => handleMarks(s.id, e.target.value)}
+                      disabled={!isPresent}
+                      placeholder={`নম্বর (০ - ${fullMarks})`}
+                      className="w-full h-12 text-lg"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-4">
+              <Button onClick={handleSave} disabled={busy || loadingExisting} variant="outline" size="lg">
+                {busyAction === "save" ? "সংরক্ষণ হচ্ছে..." : "Save Result"}
+              </Button>
+              <Button onClick={handleSend} disabled={busy || loadingExisting} size="lg">
+                {busyAction === "send" ? "পাঠানো হচ্ছে..." : "Send Result"}
               </Button>
             </div>
           </CardContent>
@@ -354,10 +474,10 @@ const DirectorResults = () => {
               {summary.failedStudents.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    যাদের SMS পাঠানো যায়নি: {summary.failedStudents.map((f) => `${f.name}${f.roll ? ` (রোল ${f.roll})` : ""}`).join(", ")}
+                    যাদের SMS পাঠানো যায়নি: {summary.failedStudents.map((f) => `${f.name}${f.roll ? ` (রোল ${f.roll})` : ""} — ${failureReasonLabel(f.reason)}`).join("; ")}
                   </p>
-                  <Button variant="outline" size="sm" onClick={handleRetrySms} disabled={saving}>
-                    ব্যর্থ SMS আবার পাঠান
+                  <Button variant="outline" size="sm" onClick={handleRetrySms} disabled={busy}>
+                    {busyAction === "retry" ? "পাঠানো হচ্ছে..." : "ব্যর্থ SMS আবার পাঠান"}
                   </Button>
                 </div>
               )}
@@ -365,8 +485,175 @@ const DirectorResults = () => {
           </Card>
         )}
       </div>
+
+      <ResultSmsTemplateDialog
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        getResultSmsTemplate={getResultSmsTemplate}
+        updateResultSmsTemplate={updateResultSmsTemplate}
+      />
     </DashboardLayout>
   );
 };
+
+/**
+ * Result SMS Template editor — a Batch Director's own template (Batch
+ * Director Result SMS Template System), stored server-side (Staff.
+ * resultSmsTemplate / Settings.resultSmsTemplate), never hardcoded in the
+ * frontend. Placeholders are validated against the actual variable list
+ * the backend returns (RESULT_SMS_VARIABLES) — never an invented field.
+ */
+function ResultSmsTemplateDialog({
+  open,
+  onOpenChange,
+  getResultSmsTemplate,
+  updateResultSmsTemplate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  getResultSmsTemplate: () => Promise<ResultSmsTemplateConfig>;
+  updateResultSmsTemplate: (template: string) => Promise<ResultSmsTemplateConfig>;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<ResultSmsTemplateConfig | null>(null);
+  const [template, setTemplate] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const cfg = await getResultSmsTemplate();
+        if (cancelled) return;
+        setConfig(cfg);
+        setTemplate(cfg.effectiveTemplate);
+      } catch {
+        if (!cancelled) toast({ title: "ব্যর্থ", description: "টেমপ্লেট লোড করা যায়নি।" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, getResultSmsTemplate]);
+
+  const unknownPlaceholders = useMemo(() => {
+    if (!config) return [];
+    const knownKeys = new Set(config.variables.map((v) => v.key));
+    const found = new Set<string>();
+    for (const m of template.matchAll(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g)) {
+      if (!knownKeys.has(m[1])) found.add(m[1]);
+    }
+    return Array.from(found);
+  }, [template, config]);
+
+  const previewText = useMemo(() => {
+    if (!config) return "";
+    const sample: Record<string, string> = {
+      studentName: "রহিম উদ্দিন", roll: "12", registrationId: "REG-1023", courseName: "HSC কোচিং",
+      batchName: "সকাল ব্যাচ", examName: "গণিত - অধ্যায় ৩", subjectName: "গণিত", fullMarks: "100",
+      obtainedMarks: "৮৫", percentage: "৮৫", grade: "A+", result: "পাস", guardianName: "আব্দুল করিম", date: "১৫-০৯-২০২৬",
+    };
+    return template.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (_m, key: string) => sample[key] ?? "");
+  }, [template, config]);
+
+  const insertVariable = (key: string) => {
+    const el = textareaRef.current;
+    const placeholder = `{{${key}}}`;
+    if (!el) {
+      setTemplate((t) => t + placeholder);
+      return;
+    }
+    const start = el.selectionStart ?? template.length;
+    const end = el.selectionEnd ?? template.length;
+    const next = template.slice(0, start) + placeholder + template.slice(end);
+    setTemplate(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + placeholder.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const handleSave = async () => {
+    if (!template.trim()) {
+      toast({ title: "খালি টেমপ্লেট", description: "টেমপ্লেট খালি রাখা যাবে না।" });
+      return;
+    }
+    if (unknownPlaceholders.length > 0) {
+      toast({ title: "অসমর্থিত ভ্যারিয়েবল", description: `এই ভ্যারিয়েবলগুলো সমর্থিত নয়: ${unknownPlaceholders.map((k) => `{{${k}}}`).join(", ")}` });
+      return;
+    }
+    setSaving(true);
+    try {
+      const cfg = await updateResultSmsTemplate(template.trim());
+      setConfig(cfg);
+      setTemplate(cfg.effectiveTemplate);
+      toast({ title: "টেমপ্লেট সংরক্ষিত হয়েছে" });
+      onOpenChange(false);
+    } catch (err) {
+      toast({ title: "ব্যর্থ", description: err instanceof ApiClientError ? err.message : "টেমপ্লেট সংরক্ষণ করা যায়নি।" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl flex flex-col overflow-hidden max-h-[90dvh]">
+        <DialogHeader>
+          <DialogTitle>Result SMS টেমপ্লেট</DialogTitle>
+          <DialogDescription>
+            "Send Result" চাপলে এই টেমপ্লেট দিয়ে অভিভাবকের নম্বরে SMS পাঠানো হবে। নিচের ভ্যারিয়েবলগুলো ব্যবহার করতে পারবেন।
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">লোড হচ্ছে...</p>
+        ) : (
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            <div>
+              <Label className="mb-1.5 block">উপলব্ধ ভ্যারিয়েবল (ক্লিক করলে যোগ হবে)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {config?.variables.map((v) => (
+                  <Button key={v.key} type="button" variant="secondary" size="sm" className="h-7 text-xs font-mono" onClick={() => insertVariable(v.key)} title={v.label}>
+                    {`{{${v.key}}}`}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-1.5 block">টেমপ্লেট</Label>
+              <Textarea ref={textareaRef} value={template} onChange={(e) => setTemplate(e.target.value)} rows={6} className="font-mono text-sm resize-y" />
+              {unknownPlaceholders.length > 0 && (
+                <p className="mt-1.5 text-xs text-destructive">
+                  অসমর্থিত ভ্যারিয়েবল: {unknownPlaceholders.map((k) => `{{${k}}}`).join(", ")}
+                </p>
+              )}
+              {config?.isDefault && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {config.scope === "director" ? "আপনি এখনও নিজের টেমপ্লেট সেট করেননি — ডিফল্ট টেমপ্লেট দেখানো হচ্ছে।" : "এটি প্রতিষ্ঠানের ডিফল্ট টেমপ্লেট — যেসব Batch Director নিজস্ব টেমপ্লেট সেট করেননি, তাদের জন্য এটি ব্যবহৃত হবে।"}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label className="mb-1.5 block">প্রিভিউ (নমুনা তথ্য দিয়ে)</Label>
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm whitespace-pre-wrap break-words">{previewText || "—"}</div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>বাতিল</Button>
+          <Button onClick={handleSave} disabled={saving || loading}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default DirectorResults;

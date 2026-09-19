@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from "mongoose";
+import { DEFAULT_RESULT_SMS_TEMPLATE } from "../exams/exam.smsTemplate";
 
 export interface GradeBand {
   minPercent: number;
@@ -22,6 +23,27 @@ export interface SettingsDoc extends Document {
    * changes later (Settings §6/§24 historical-snapshot requirement).
    */
   admissionFeeBdt: number;
+  /**
+   * Student System ID prefix (Coaching Reg No / Roll vs System ID
+   * clarification spec §7-§10) — generateRegistrationId() (idGenerators.ts)
+   * reads this at creation time only. Changing it never touches an
+   * already-issued Student.registrationId (Mongoose `immutable: true` on
+   * that field already forbids it structurally); it only changes what
+   * prefix the NEXT newly-created student gets. The numeric sequence itself
+   * lives in a separate, prefix-independent Counter document
+   * ("student_registration_id"), so changing this can never reset or
+   * duplicate the sequence.
+   */
+  studentIdPrefix: string;
+  /**
+   * The fallback Result SMS template (Result Entry's "Send Result") used
+   * whenever a Batch Director hasn't configured their own (Staff.
+   * resultSmsTemplate) — see exam.service.ts's resolveResultSmsTemplate.
+   * Admin-editable via the same GET/PATCH /exams/result-sms-template a
+   * Batch Director uses for their own, branched by whether the caller has
+   * a linked staff record (Settings §2 "extend, don't duplicate config").
+   */
+  resultSmsTemplate: string;
 }
 
 const gradeBandSchema = new Schema<GradeBand>(
@@ -50,6 +72,8 @@ const settingsSchema = new Schema<SettingsDoc>(
     },
     rollNumberScope: { type: String, enum: ["batch", "course", "global"], default: "batch" },
     admissionFeeBdt: { type: Number, default: 200, min: 0 },
+    studentIdPrefix: { type: String, trim: true, default: "LMS" },
+    resultSmsTemplate: { type: String, trim: true, default: DEFAULT_RESULT_SMS_TEMPLATE },
   },
   { timestamps: true },
 );
@@ -133,3 +157,24 @@ const publicResultsSettingsSchema = new Schema<PublicResultsSettingsDoc>(
 );
 
 export const PublicResultsSettings = model<PublicResultsSettingsDoc>("PublicResultsSettings", publicResultsSettingsSchema);
+
+// -------------------- Material Settings (Coaching Material Inventory §21) --------------------
+
+export const DUPLICATE_DISTRIBUTION_RULES = ["allow", "warn", "block"] as const;
+
+export interface MaterialSettingsDoc extends Document {
+  /** §8 — "allow" never checks, "warn" (default) surfaces a warning but still lets an admin distribute again, "block" refuses outright. */
+  duplicateDistributionRule: (typeof DUPLICATE_DISTRIBUTION_RULES)[number];
+  /** Pre-filled as the suggested Minimum Stock Alert on a new Material's Add form — never applied retroactively to existing materials. */
+  defaultMinimumStock: number;
+}
+
+const materialSettingsSchema = new Schema<MaterialSettingsDoc>(
+  {
+    duplicateDistributionRule: { type: String, enum: DUPLICATE_DISTRIBUTION_RULES, default: "warn" },
+    defaultMinimumStock: { type: Number, default: 0, min: 0 },
+  },
+  { timestamps: true },
+);
+
+export const MaterialSettings = model<MaterialSettingsDoc>("MaterialSettings", materialSettingsSchema);

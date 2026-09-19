@@ -242,6 +242,11 @@ function compareRoll(a: string, b: string): number {
   const aNum = /^\d+$/.test(an) ? Number(an) : null;
   const bNum = /^\d+$/.test(bn) ? Number(bn) : null;
   if (aNum !== null && bNum !== null) return aNum - bNum;
+  // A missing/non-numeric roll (e.g. "-") always sorts after every real
+  // numeric roll, regardless of string value — same rule as every other
+  // student roster in the app.
+  if (aNum !== null) return -1;
+  if (bNum !== null) return 1;
   return an.localeCompare(bn, "bn");
 }
 

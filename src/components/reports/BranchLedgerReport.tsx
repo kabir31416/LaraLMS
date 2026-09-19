@@ -1,5 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { TrendingDown, TrendingUp, Scale } from "lucide-react";
 import { useBranchLedger } from "@/contexts/BranchLedgerContext";
 import { ReportToolbar } from "./ReportToolbar";
 
@@ -13,9 +15,16 @@ export default function BranchLedgerReport() {
   });
   const headers = ["ব্রাঞ্চ", "মোট ব্যয়", "মোট আয়", "বকেয়া ব্যালান্স"];
   const rows = Array.from(byBranch.values()).map((b) => [b.name, b.expense, b.income, b.expense - b.income]);
+  const totalExpense = rows.reduce((s, r) => s + Number(r[1]), 0);
+  const totalIncome = rows.reduce((s, r) => s + Number(r[2]), 0);
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard title="মোট ব্যয়" value={`৳ ${totalExpense.toLocaleString()}`} icon={TrendingDown} variant="warning" />
+        <StatCard title="মোট আয়" value={`৳ ${totalIncome.toLocaleString()}`} icon={TrendingUp} variant="success" />
+        <StatCard title="নিট বকেয়া" value={`৳ ${(totalExpense - totalIncome).toLocaleString()}`} icon={Scale} variant="primary" />
+      </div>
       <div className="flex justify-end"><ReportToolbar data={{ filename: "branch-ledger", title: "ব্রাঞ্চ লেজার রিপোর্ট", headers, rows }} /></div>
       <Card><CardContent className="p-0">
         <Table>

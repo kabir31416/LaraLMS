@@ -1,6 +1,17 @@
 import bcrypt from "bcryptjs";
 import { env } from "../../config/env";
 
+/**
+ * The ONE normalization rule for a User login identifier (phone/username) —
+ * used identically at create time, reset time, and login time. A mismatch
+ * between these (e.g. one trimming whitespace and the other not) is exactly
+ * the class of bug that makes an objectively-correct identifier/password
+ * pair fail to match its own stored record.
+ */
+export function normalizeIdentifier(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
 export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, env.BCRYPT_SALT_ROUNDS);
 }

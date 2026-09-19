@@ -32,7 +32,28 @@ export function InstitutionTab() {
     if (!settings) return;
     setSaving(true);
     try {
-      const updated = await api.patch<InstitutionSettings>("/settings/institution", settings);
+      // Send only the actual updatable fields — never the whole fetched
+      // object back, since that also carries Mongo's _id/createdAt/
+      // updatedAt/__v, which the backend's .strict() schema rejects as
+      // unrecognized keys (surfaced as an unhelpful generic "Invalid input").
+      const payload: InstitutionSettings = {
+        name: settings.name,
+        shortName: settings.shortName,
+        logoUrl: settings.logoUrl,
+        address: settings.address,
+        phone: settings.phone,
+        email: settings.email,
+        website: settings.website,
+        facebookUrl: settings.facebookUrl,
+        currencySymbol: settings.currencySymbol,
+        dateFormat: settings.dateFormat,
+        timezone: settings.timezone,
+        registrationInfo: settings.registrationInfo,
+        defaultBranchId: settings.defaultBranchId,
+        receipt: settings.receipt,
+        print: settings.print,
+      };
+      const updated = await api.patch<InstitutionSettings>("/settings/institution", payload);
       setSettings(updated);
       toast.success("সংরক্ষিত হয়েছে");
     } catch (err) {

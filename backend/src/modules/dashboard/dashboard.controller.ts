@@ -8,6 +8,10 @@ export const adminSummary = asyncHandler(async (_req: Request, res: Response) =>
   sendSuccess(res, await dashboardService.getAdminSummary());
 });
 
+export const admissionSummary = asyncHandler(async (_req: Request, res: Response) => {
+  sendSuccess(res, await dashboardService.getAdmissionSummary());
+});
+
 export const directorSummary = asyncHandler(async (req: Request, res: Response) => {
   const staffId = req.user?.staffId;
   if (!staffId) throw ApiError.forbidden("This account has no linked Batch Director record");

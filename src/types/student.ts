@@ -22,6 +22,10 @@ export interface Student {
   class?: string;
   /** Admin-controlled (Phase 4). */
   bloodGroup?: string;
+  /** Excel Student Information Import — free text, no enum. */
+  religion?: string;
+  fatherName?: string;
+  motherName?: string;
 
   // Guardian (stored server-side in its own collection — Phase 1 §17 — but
   // still readable/writable here exactly as before; nothing else changes).
@@ -36,6 +40,13 @@ export interface Student {
   /** Student-editable (Phase 4). */
   presentAddress?: string;
   permanentAddress?: string;
+  /** Bangladesh administrative address hierarchy — Excel Student Information Import, all free text. */
+  division?: string;
+  district?: string;
+  upazila?: string;
+  postOffice?: string;
+  postcode?: string;
+  village?: string;
 
   // Student-editable HSC/SSC info (Phase 4)
   hscInstitution?: string;
@@ -43,11 +54,16 @@ export interface Student {
   hscPassingYear?: string;
   hscGroup?: string;
   hscGpa?: string;
+  /** Excel Student Information Import — kept as strings so a leading zero is never lost. */
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
   sscInstitution?: string;
   sscBoard?: string;
   sscPassingYear?: string;
   sscGroup?: string;
   sscGpa?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
 
   // Academic — courseId is the real Course reference (Phase 4); `course` stays
   // as free text for existing UI/reports that read it as a string.
@@ -88,10 +104,11 @@ export interface Payment {
   feeType: FeeType;
   month?: string; // for monthly payments
   note?: string;
+  /** The student's due immediately before this payment (payment.model.ts) — the receipt's "পূর্ববর্তী বকেয়া"/"বর্তমান বকেয়া" are derived from this + paidAmount, not from the student's live (possibly since-changed) due. */
+  previousDue?: number;
 }
 
 export const FEE_TYPES: FeeType[] = ["এককালীন", "মাসিক"];
-export const COURSES = ["বিজ্ঞান", "বাণিজ্য", "মানবিক", "সাধারণ"];
 export const BATCHES = ["ব্যাচ-২০২৬-A", "ব্যাচ-২০২৬-B", "ব্যাচ-২০২৫-A", "ব্যাচ-২০২৫-B"];
 export const SECTIONS = ["সেকশন-A", "সেকশন-B", "সেকশন-C"];
 export const GROUPS = ["বিজ্ঞান", "বাণিজ্য", "মানবিক"];

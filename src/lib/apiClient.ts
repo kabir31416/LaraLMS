@@ -75,6 +75,16 @@ async function rawFormRequest<T>(path: string, formData: FormData): Promise<{ bo
   return { body, status: res.status };
 }
 
+/** Appends which field(s) failed validation to the error message, so a toast never shows a bare "Invalid input" with no indication of what to fix. */
+function describeError(message: string | undefined, fields?: Record<string, string[]>): string {
+  const base = message ?? "Request failed";
+  if (!fields || Object.keys(fields).length === 0) return base;
+  const detail = Object.entries(fields)
+    .map(([field, msgs]) => `${field === "_" ? "" : field + ": "}${msgs.join(", ")}`)
+    .join("; ");
+  return `${base} — ${detail}`;
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = rawRequest<{ accessToken: string }>("/auth/refresh", { method: "POST" })
@@ -104,7 +114,7 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
   }
 
   if (!body.success) {
-    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
+    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", describeError(body.error?.message, body.error?.fields), body.error?.fields);
   }
   return { data: body.data as T, meta: body.meta };
 }
@@ -120,7 +130,7 @@ async function formRequest<T>(path: string, formData: FormData, isRetry = false)
   }
 
   if (!body.success) {
-    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", body.error?.message ?? "Request failed", body.error?.fields);
+    throw new ApiClientError(status, body.error?.code ?? "UNKNOWN", describeError(body.error?.message, body.error?.fields), body.error?.fields);
   }
   return { data: body.data as T, meta: body.meta };
 }
@@ -143,4 +153,29 @@ export const api = {
    * handling is identical to `post`, just without JSON-encoding the body.
    */
   postForm: <T>(path: string, formData: FormData) => formRequest<T>(path, formData).then((r) => r.data),
+  /**
+   * GET a binary response (e.g. the Bulk Student Upload .xlsx template) and
+   * trigger a browser download — the JSON envelope helpers above can't be
+   * used here since the endpoint returns the file bytes directly, not
+   * `{success,data}`. No 401-refresh retry (template download isn't worth
+   * the complexity); a stale token just surfaces as a toast-able error.
+   */
+  downloadFile: async (path: string, filename: string): Promise<void> => {
+    const headers = new Headers();
+    if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+    const res = await fetch(`${BASE_URL}${path}`, { headers, credentials: "include" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new ApiClientError(res.status, body?.error?.code ?? "UNKNOWN", describeError(body?.error?.message, body?.error?.fields));
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

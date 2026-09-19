@@ -28,6 +28,14 @@ export const updatePublicResultsSettings = asyncHandler(async (req: Request, res
   sendSuccess(res, await settingsService.updatePublicResultsSettings(req, req.body));
 });
 
+export const getMaterialSettings = asyncHandler(async (_req: Request, res: Response) => {
+  sendSuccess(res, await settingsService.getMaterialSettings());
+});
+
+export const updateMaterialSettings = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await settingsService.updateMaterialSettings(req, req.body));
+});
+
 export const getInstitutionSettings = asyncHandler(async (_req: Request, res: Response) => {
   sendSuccess(res, await institutionService.getInstitutionSettings());
 });

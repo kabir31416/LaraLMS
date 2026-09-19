@@ -29,6 +29,14 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, doc);
 });
 
+export const getReceipt = asyncHandler(async (req: Request, res: Response) => {
+  const doc = await paymentService.getById(req.params.id);
+  if (!hasBroadReadAccess(req) && String(doc.studentId) !== req.user!.studentId) {
+    throw ApiError.forbidden("You may only access your own payments");
+  }
+  sendSuccess(res, await paymentService.getReceipt(doc));
+});
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const doc = await paymentService.create(req, req.body);
   sendSuccess(res, doc, 201);

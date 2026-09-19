@@ -59,11 +59,19 @@ export async function upsertPrimaryFromInlineFields(
     await existing.save();
     return;
   }
+  // Guardian.phone is a required schema field (guardian.model.ts) — the
+  // Excel Student Information Import spec (§5/§28) makes guardianMobile
+  // optional, unlike the Admission form which always supplies it, so a row
+  // with a guardian name but no guardian phone must not attempt to create a
+  // Guardian record at all (it would otherwise fail Mongoose validation on
+  // the empty required `phone`). The name/relation/occupation are simply
+  // not saved until a phone is provided later via the normal edit flow.
+  if (!fields.guardianMobile) return;
   await Guardian.create({
     studentId,
     name: fields.guardianName || "—",
     relation: fields.guardianRelation || "অন্যান্য",
-    phone: fields.guardianMobile || "",
+    phone: fields.guardianMobile,
     occupation: fields.guardianOccupation,
     address: fields.guardianAddress,
     isPrimary: true,

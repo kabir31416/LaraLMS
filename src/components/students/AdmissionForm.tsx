@@ -28,6 +28,7 @@ import { bn } from "date-fns/locale";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { AcademicSelect } from "@/components/common/AcademicSelect";
+import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
 import { GENDERS, RELATIONS } from "@/types/student";
 import type { Student } from "@/types/student";
 import { toast } from "sonner";
@@ -81,6 +82,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         guardianMobile: student.guardianMobile,
         address: student.address,
         courseId: student.courseId || "",
+        hscInstitution: student.hscInstitution || "",
         discount: student.discount,
         paid: 0,
         paymentMethod: "নগদ" as string,
@@ -99,6 +101,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       guardianMobile: "",
       address: "",
       courseId: "" as string,
+      hscInstitution: "",
       discount: 0,
       paid: 0,
       paymentMethod: "নগদ" as string,
@@ -127,7 +130,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
     // record admitted before this field existed must stay editable without
     // being forced to pick one now (Phase 4 §11 backward compatibility).
     if (!form.name || !form.mobile || !form.rollNumber || !dob || !form.guardianMobile || (!isEdit && !form.courseId)) {
-      toast.error("নাম, মোবাইল নম্বর, রেজিস্ট্রেশন নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
+      toast.error("নাম, মোবাইল নম্বর, রোল নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
       return;
     }
 
@@ -144,6 +147,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       guardianRelation: form.guardianRelation,
       guardianMobile: form.guardianMobile,
       address: form.address,
+      hscInstitution: form.hscInstitution || undefined,
       admissionDate: admissionDate ? format(admissionDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       discount: Number(form.discount),
     };
@@ -201,7 +205,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.name} onChange={(e) => updateField("name", e.target.value)} placeholder="পূর্ণ নাম লিখুন" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>রেজিস্ট্রেশন নম্বর (পূর্বের রোল) *</Label>
+                  <Label>রোল নম্বর *</Label>
                   <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
                 </div>
                 <div className="space-y-1.5">
@@ -246,6 +250,10 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                 <div className="space-y-1.5">
                   <Label>রক্তের গ্রুপ</Label>
                   <Input value={form.bloodGroup} onChange={(e) => updateField("bloodGroup", e.target.value)} placeholder="যেমন: B+" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>HSC কলেজ/প্রতিষ্ঠান</Label>
+                  <HscInstitutionCombobox value={form.hscInstitution} onChange={(v) => updateField("hscInstitution", v)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>ভর্তি তারিখ</Label>
@@ -293,7 +301,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                অভিভাবকের পেশা, ঠিকানার বিস্তারিত, HSC/SSC তথ্য ও ছবি — ভর্তির পর শিক্ষার্থী নিজে স্টুডেন্ট পোর্টাল থেকে যোগ করতে পারবে।
+                অভিভাবকের পেশা, ঠিকানার বিস্তারিত, HSC-এর বাকি তথ্য (বোর্ড/সাল/গ্রুপ/জিপিএ), SSC তথ্য ও ছবি — ভর্তির পর শিক্ষার্থী নিজে স্টুডেন্ট পোর্টাল থেকে যোগ করতে পারবে।
               </p>
             </section>
 

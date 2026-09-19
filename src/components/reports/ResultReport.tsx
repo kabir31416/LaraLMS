@@ -3,10 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { Filter, BarChart3, TrendingUp, TrendingDown, Award } from "lucide-react";
 import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { compareByRoll } from "@/lib/studentDisplay";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function ResultReport() {
@@ -63,34 +66,42 @@ export default function ResultReport() {
   const headers = ["এক্সাম", "শিক্ষার্থী", "নম্বর", "পূর্ণ মান"];
   const rows: (string | number)[][] = [];
   filteredExams.forEach((ex) => {
-    results.filter((r) => r.examId === ex.id).forEach((r) => {
-      const s = students.find((x) => x.id === r.studentId);
-      rows.push([ex.title, s?.name || r.studentId, r.marks ?? "অনুপস্থিত", ex.fullMarks]);
-    });
+    results
+      .filter((r) => r.examId === ex.id)
+      .map((r) => ({ r, s: students.find((x) => x.id === r.studentId) }))
+      .sort((a, b) => compareByRoll({ rollNumber: a.s?.rollNumber, name: a.s?.name || a.r.studentId }, { rollNumber: b.s?.rollNumber, name: b.s?.name || b.r.studentId }))
+      .forEach(({ r, s }) => {
+        rows.push([ex.title, s?.name || r.studentId, r.marks ?? "অনুপস্থিত", ex.fullMarks]);
+      });
   });
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div><Label className="text-xs">কোর্স</Label>
-          <Select value="all" onValueChange={() => {}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
-        </div>
-        <div><Label className="text-xs">সাবজেক্ট</Label>
-          <Select value={subject} onValueChange={setSubject}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select>
-        </div>
-        <div><Label className="text-xs">লেকচার</Label>
-          <Select value={lecture} onValueChange={setLecture}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{lectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}</SelectContent></Select>
-        </div>
-        <div><Label className="text-xs">এক্সাম</Label>
-          <Select value={examId} onValueChange={setExamId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{exams.map((e) => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}</SelectContent></Select>
-        </div>
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground"><Filter className="h-4 w-4" /> ফিল্টার</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div><Label className="text-xs">কোর্স</Label>
+            <Select value="all" onValueChange={() => {}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div><Label className="text-xs">সাবজেক্ট</Label>
+            <Select value={subject} onValueChange={setSubject}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div><Label className="text-xs">লেকচার</Label>
+            <Select value={lecture} onValueChange={setLecture}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{lectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div><Label className="text-xs">এক্সাম</Label>
+            <Select value={examId} onValueChange={setExamId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{exams.map((e) => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}</SelectContent></Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">গড় নম্বর</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{stats.avg}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">সর্বোচ্চ</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-success">{stats.max}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">সর্বনিম্ন</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-destructive">{stats.min}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">পাশের হার</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{stats.passRate}%</CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard title="গড় নম্বর" value={String(stats.avg)} icon={BarChart3} variant="primary" />
+        <StatCard title="সর্বোচ্চ" value={String(stats.max)} icon={TrendingUp} variant="success" />
+        <StatCard title="সর্বনিম্ন" value={String(stats.min)} icon={TrendingDown} variant="warning" />
+        <StatCard title="পাশের হার" value={`${stats.passRate}%`} icon={Award} variant="info" />
       </div>
 
       <div className="flex justify-end"><ReportToolbar data={{ filename: "result-report", title: "ফলাফল রিপোর্ট", headers, rows }} /></div>

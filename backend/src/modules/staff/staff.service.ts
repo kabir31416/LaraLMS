@@ -5,6 +5,10 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { toAsciiDigits } from "../../common/utils/digits";
 
+function isDuplicateKeyError(err: unknown): boolean {
+  return !!(err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000);
+}
+
 /**
  * Normalizes and uniqueness-checks a staffId before it's written, the same
  * way applyRollNumberIfPresent does for a Student's Roll Number — this is
@@ -47,7 +51,18 @@ export async function listDirectors(): Promise<StaffDoc[]> {
 export async function create(req: Request, data: Partial<StaffDoc>): Promise<StaffDoc> {
   const payload = { ...data };
   if (payload.staffId) payload.staffId = await normalizeAndCheckStaffId(payload.staffId);
-  const doc = await Staff.create(payload);
+  let doc: StaffDoc;
+  try {
+    doc = await Staff.create(payload);
+  } catch (err) {
+    // The pre-check above is a plain findOne — a genuine concurrent
+    // request (e.g. a double-submitted create) can still race past it and
+    // hit the unique index at insert time. Translate that into the same
+    // clean conflict instead of letting a raw E11000 fall through to the
+    // generic "A record with this value already exists" handler.
+    if (isDuplicateKeyError(err)) throw ApiError.conflict(`Staff ID "${payload.staffId}" is already in use`);
+    throw err;
+  }
   await recordAudit({ req, action: "staff.create", module: "staff", targetCollection: "staff", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }

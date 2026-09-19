@@ -4,10 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatCard } from "@/components/StatCard";
+import { Filter, Percent, CheckCircle2, XCircle } from "lucide-react";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { ReportToolbar } from "./ReportToolbar";
+import { compareByRoll } from "@/lib/studentDisplay";
 import { format, subDays } from "date-fns";
 
 export default function AttendanceReport() {
@@ -47,40 +50,47 @@ export default function AttendanceReport() {
     return () => { cancelled = true; };
   }, [batchId, actualFrom, actualTo, getStats, getByStudentStats]);
 
-  const perStudent = useMemo(() => perStudentRaw.map((r) => {
-    const s = students.find((x) => x.id === r.studentId);
-    return { name: s?.name || r.studentId, sid: s?.studentId || r.studentId, present: r.present, absent: r.absent, pct: r.pct };
-  }), [perStudentRaw, students]);
+  const perStudent = useMemo(() => perStudentRaw
+    .map((r) => {
+      const s = students.find((x) => x.id === r.studentId);
+      return { name: s?.name || r.studentId, sid: s?.studentId || r.studentId, rollNumber: s?.rollNumber, present: r.present, absent: r.absent, pct: r.pct };
+    })
+    .sort(compareByRoll), [perStudentRaw, students]);
 
   const headers = ["শিক্ষার্থী", "Student ID", "উপস্থিত", "অনুপস্থিত", "%"];
   const rows = perStudent.map((r) => [r.name, r.sid, r.present, r.absent, `${r.pct}%`]);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div><Label className="text-xs">ব্যাচ</Label>
-          <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
-        </div>
-        <div><Label className="text-xs">রেঞ্জ</Label>
-          <Select value={range} onValueChange={(v) => setRange(v as typeof range)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="weekly">সাপ্তাহিক</SelectItem>
-              <SelectItem value="monthly">মাসিক</SelectItem>
-              <SelectItem value="custom">কাস্টম</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {range === "custom" && <>
-          <div><Label className="text-xs">থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div><Label className="text-xs">পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-        </>}
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground"><Filter className="h-4 w-4" /> ফিল্টার</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div><Label className="text-xs">ব্যাচ</Label>
+            <Select value={batch} onValueChange={setBatch}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব</SelectItem>{batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div><Label className="text-xs">রেঞ্জ</Label>
+            <Select value={range} onValueChange={(v) => setRange(v as typeof range)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="weekly">সাপ্তাহিক</SelectItem>
+                <SelectItem value="monthly">মাসিক</SelectItem>
+                <SelectItem value="custom">কাস্টম</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {range === "custom" && <>
+            <div><Label className="text-xs">থেকে</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+            <div><Label className="text-xs">পর্যন্ত</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          </>}
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-3 gap-3">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিতি %</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold">{summary.pct}%</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">উপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-success">{summary.present}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">অনুপস্থিত</CardTitle></CardHeader><CardContent className="pt-0 text-2xl font-bold text-destructive">{summary.absent}</CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard title="উপস্থিতি %" value={`${summary.pct}%`} icon={Percent} variant="primary" />
+        <StatCard title="উপস্থিত" value={summary.present.toLocaleString("bn-BD")} icon={CheckCircle2} variant="success" />
+        <StatCard title="অনুপস্থিত" value={summary.absent.toLocaleString("bn-BD")} icon={XCircle} variant="warning" />
       </div>
 
       <div className="flex justify-end"><ReportToolbar data={{ filename: "attendance-report", title: "উপস্থিতি রিপোর্ট", headers, rows }} /></div>

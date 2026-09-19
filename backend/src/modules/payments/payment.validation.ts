@@ -20,6 +20,8 @@ export const createPaymentSchema = z.object({
     feeType: z.enum(FEE_TYPES),
     month: z.string().trim().optional(),
     note: z.string().trim().optional(),
+    /** One per user-initiated submission attempt — see payment.model.ts's own field comment and payment.service.ts's create(). */
+    idempotencyKey: z.string().trim().min(1).max(100).optional(),
   }),
 });
 

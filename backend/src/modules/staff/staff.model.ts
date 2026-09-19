@@ -15,6 +15,15 @@ export interface StaffDoc extends Document {
   status: (typeof STAFF_STATUS)[number];
   /** The Staff Portal credential (see auth.service.ts's staffLogin) — phone + staffId matching this same record IS the login, no separate password/account. */
   staffId?: string;
+  /**
+   * A Batch Director's own custom Result SMS template (exams module's
+   * Result Entry "Send Result" action) — only meaningful when
+   * staffType === "Batch Director". Undefined means "use the Settings-wide
+   * default template" (settings.model.ts's SettingsDoc.resultSmsTemplate),
+   * so a director who never configures one keeps working exactly as
+   * before this feature existed.
+   */
+  resultSmsTemplate?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +40,7 @@ const staffSchema = new Schema<StaffDoc>(
     joinDate: { type: String, required: true },
     status: { type: String, enum: STAFF_STATUS, default: "সক্রিয়" },
     staffId: { type: String, trim: true },
+    resultSmsTemplate: { type: String, trim: true },
   },
   { timestamps: true },
 );

@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Pencil, Phone, Mail, MapPin } from "lucide-react";
+import { ArrowLeft, Pencil, Phone, Mail, MapPin, Trophy } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
@@ -21,7 +21,7 @@ import { gradeFor } from "@/lib/grading";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 import { api } from "@/lib/apiClient";
 import type { ChanceResult } from "@/types/chanceResult";
-import { Trophy } from "lucide-react";
+import type { StudentMaterialHistoryRow } from "@/types/material";
 
 const StudentProfile = () => {
   const { id } = useParams();
@@ -37,6 +37,7 @@ const StudentProfile = () => {
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
   const [admissionHistory, setAdmissionHistory] = useState<ChanceResult[]>([]);
+  const [materialHistory, setMaterialHistory] = useState<StudentMaterialHistoryRow[]>([]);
 
   const student = getStudent(id || "");
 
@@ -70,6 +71,17 @@ const StudentProfile = () => {
     api.get<{ history: ChanceResult[] }>(`/admission-results/student/${student.id}`)
       .then((res) => { if (!cancelled) setAdmissionHistory(res.history); })
       .catch(() => { if (!cancelled) setAdmissionHistory([]); });
+    return () => { cancelled = true; };
+  }, [student]);
+
+  // Coaching Material Inventory distribution history — same direct-call
+  // reasoning as the Chance Result fetch above.
+  useEffect(() => {
+    if (!student) return;
+    let cancelled = false;
+    api.get<StudentMaterialHistoryRow[]>(`/materials/students/${student.id}/history`)
+      .then((rows) => { if (!cancelled) setMaterialHistory(rows); })
+      .catch(() => { if (!cancelled) setMaterialHistory([]); });
     return () => { cancelled = true; };
   }, [student]);
 
@@ -133,7 +145,9 @@ const StudentProfile = () => {
                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {student.mobile}</span>
                   {student.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {student.email}</span>}
-                  <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {student.address}</span>
+                  {(student.presentAddress || student.address) && (
+                    <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {student.presentAddress || student.address}</span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {student.rollNumber && <Badge variant="outline">রোল: {student.rollNumber}</Badge>}
@@ -170,10 +184,13 @@ const StudentProfile = () => {
             <TabsTrigger value="attendance">উপস্থিতি</TabsTrigger>
             <TabsTrigger value="results">ফলাফল</TabsTrigger>
             <TabsTrigger value="admission">চান্স রেজাল্ট</TabsTrigger>
+            <TabsTrigger value="materials">ম্যাটেরিয়াল</TabsTrigger>
             <TabsTrigger value="payments">পেমেন্ট</TabsTrigger>
           </TabsList>
 
-          {/* Basic Info */}
+          {/* Basic Info — restructured into Excel Student Information Import §18's sections
+              (Basic/Guardian/Address/SSC/HSC), each rendering safely with "—" when a field
+              is absent (imported or legacy students never crash this page). */}
           <TabsContent value="basic">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Card className="border-none shadow-sm">
@@ -184,20 +201,50 @@ const StudentProfile = () => {
                   <InfoRow label="নাম" value={student.name} />
                   <InfoRow label="জন্ম তারিখ" value={student.dob} />
                   <InfoRow label="লিঙ্গ" value={student.gender} />
+                  <InfoRow label="ধর্ম" value={student.religion} />
+                  <InfoRow label="রক্তের গ্রুপ" value={student.bloodGroup} />
                   <InfoRow label="প্রতিষ্ঠান" value={student.institution} />
                   <InfoRow label="মোবাইল" value={student.mobile} />
                   {student.altMobile && <InfoRow label="বিকল্প মোবাইল" value={student.altMobile} />}
                   {student.email && <InfoRow label="ইমেইল" value={student.email} />}
                 </CardContent>
               </Card>
+
               <Card className="border-none shadow-sm">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold">অভিভাবক ও একাডেমিক</CardTitle>
+                  <CardTitle className="text-sm font-semibold">অভিভাবকের তথ্য</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  <InfoRow label="অভিভাবক" value={`${student.guardianName} (${student.guardianRelation})`} />
+                  <InfoRow label="পিতার নাম" value={student.fatherName} />
+                  <InfoRow label="মাতার নাম" value={student.motherName} />
+                  <InfoRow label="অভিভাবকের নাম" value={student.guardianName} />
+                  <InfoRow label="সম্পর্ক" value={student.guardianRelation} />
                   <InfoRow label="অভিভাবকের মোবাইল" value={student.guardianMobile} />
-                  <InfoRow label="ঠিকানা" value={student.address} />
+                  <InfoRow label="অভিভাবকের পেশা" value={student.guardianOccupation} />
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">ঠিকানা</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <InfoRow label="বিভাগ" value={student.division} />
+                  <InfoRow label="জেলা" value={student.district} />
+                  <InfoRow label="উপজেলা" value={student.upazila} />
+                  <InfoRow label="পোস্ট অফিস" value={student.postOffice} />
+                  <InfoRow label="পোস্টকোড" value={student.postcode} />
+                  <InfoRow label="গ্রাম" value={student.village} />
+                  <InfoRow label="বর্তমান ঠিকানা" value={student.presentAddress || student.address} />
+                  <InfoRow label="স্থায়ী ঠিকানা" value={student.permanentAddress} />
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">একাডেমিক</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
                   <InfoRow label="গ্রুপ" value={student.group} />
                   <InfoRow label="ভর্তি তারিখ" value={student.admissionDate} />
                   <InfoRow label="ভর্তি ধরন" value={student.admissionType} />
@@ -207,6 +254,36 @@ const StudentProfile = () => {
                       <Badge key={s} variant="outline" className="text-xs">{s}</Badge>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">SSC তথ্য</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <InfoRow label="প্রতিষ্ঠান" value={student.sscInstitution} />
+                  <InfoRow label="বোর্ড" value={student.sscBoard} />
+                  <InfoRow label="রোল" value={student.sscRoll} />
+                  <InfoRow label="রেজিস্ট্রেশন" value={student.sscRegistrationNumber} />
+                  <InfoRow label="জিপিএ" value={student.sscGpa} />
+                  <InfoRow label="পাসের বছর" value={student.sscPassingYear} />
+                  <InfoRow label="গ্রুপ" value={student.sscGroup} />
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">HSC তথ্য</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <InfoRow label="প্রতিষ্ঠান" value={student.hscInstitution} />
+                  <InfoRow label="বোর্ড" value={student.hscBoard} />
+                  <InfoRow label="রোল" value={student.hscRoll} />
+                  <InfoRow label="রেজিস্ট্রেশন" value={student.hscRegistrationNumber} />
+                  <InfoRow label="জিপিএ" value={student.hscGpa} />
+                  <InfoRow label="পাসের বছর" value={student.hscPassingYear} />
+                  <InfoRow label="গ্রুপ" value={student.hscGroup} />
                 </CardContent>
               </Card>
             </div>
@@ -396,6 +473,44 @@ const StudentProfile = () => {
             </div>
           </TabsContent>
 
+          {/* Coaching Material Inventory — distribution history */}
+          <TabsContent value="materials">
+            <Card className="border-none shadow-sm">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>তারিখ</TableHead>
+                    <TableHead>ম্যাটেরিয়াল</TableHead>
+                    <TableHead>টাইপ</TableHead>
+                    <TableHead className="text-center">পরিমাণ</TableHead>
+                    <TableHead>Free/Paid</TableHead>
+                    <TableHead className="text-right">মূল্য</TableHead>
+                    <TableHead>বিতরণকারী</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {materialHistory.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">কোনো ম্যাটেরিয়াল বিতরণ করা হয়নি</TableCell></TableRow>
+                  ) : (
+                    materialHistory.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{r.date}</TableCell>
+                        <TableCell className="font-medium">{r.materialName}</TableCell>
+                        <TableCell><Badge variant="outline">{r.materialType}</Badge></TableCell>
+                        <TableCell className="text-center">{r.quantity}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={r.isPaid ? "" : "bg-info/10 text-info border-info/20"}>{r.isPaid ? "Paid" : "Free"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{r.isPaid ? `৳ ${r.lineTotal.toLocaleString()}` : "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.distributedBy}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
+          </TabsContent>
+
           {/* Payment History */}
           <TabsContent value="payments">
             <Card className="border-none shadow-sm">
@@ -441,11 +556,11 @@ const StudentProfile = () => {
   );
 };
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value }: { label: string; value?: string }) {
   return (
     <div className="flex">
       <span className="text-muted-foreground min-w-[120px]">{label}:</span>
-      <span className="font-medium">{value}</span>
+      <span className="font-medium">{value || "—"}</span>
     </div>
   );
 }

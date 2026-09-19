@@ -4,7 +4,6 @@ import {
   UserPlus,
   DollarSign,
   ClipboardCheck,
-  CalendarDays,
   FileText,
   Award,
   GraduationCap,
@@ -19,6 +18,7 @@ import {
   BarChart3 as ReportIcon,
   User,
   ListChecks,
+  FileSpreadsheet,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -33,24 +33,25 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useAuth } from "@/contexts/AuthContext";
+import { hasPermission, useAuth } from "@/contexts/AuthContext";
+import { ADMISSION_RESULTS_MANAGE } from "@/lib/permissions";
 
 const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
   { title: "শিক্ষার্থী", url: "/students", icon: Users },
   { title: "ভর্তি", url: "/admission", icon: UserPlus },
-  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks },
+  // Individually disable-able per-Admin (User.deniedPermissions) — see routes.tsx's matching permission-gated route block.
+  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks, permission: ADMISSION_RESULTS_MANAGE },
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
-  { title: "রুটিন", url: "/routine", icon: CalendarDays },
   { title: "এক্সাম", url: "/exams", icon: FileText },
+  { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
   { title: "নোটিশ", url: "/notices", icon: Bell },
   { title: "রিপোর্ট", url: "/reports", icon: ReportIcon },
   { title: "স্টাফ", url: "/staff", icon: UserCog },
   { title: "ব্যাচ", url: "/batches", icon: Layers },
-  { title: "শিক্ষক", url: "/teachers", icon: GraduationCap },
-  { title: "বই", url: "/books", icon: BookOpen },
+  { title: "ম্যাটেরিয়াল", url: "/books", icon: BookOpen },
   { title: "হিসাব", url: "/accounts", icon: Calculator },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
@@ -60,6 +61,7 @@ const directorMenu = [
   { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
   // Marks and attendance are both entered together here now — there's no separate attendance page for directors anymore.
   { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList },
+  { title: "ফলাফল ব্যবস্থাপনা", url: "/director/result-management", icon: FileSpreadsheet },
   { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks },
   { title: "এক্সাম", url: "/exams", icon: FileText },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
@@ -71,7 +73,7 @@ const studentMenu = [
   { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck },
   { title: "ফলাফল", url: "/student/results", icon: Award },
   { title: "পেমেন্ট", url: "/student/payments", icon: DollarSign },
-  { title: "বই", url: "/student/books", icon: BookOpen },
+  { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen },
   { title: "নোটিশ", url: "/student/notices", icon: Bell },
   { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video },
 ];
@@ -82,9 +84,15 @@ export function AppSidebar() {
   const location = useLocation();
   const { user } = useAuth();
 
-  const menuItems = user?.role === "Batch Director" ? directorMenu
+  const rawMenuItems = user?.role === "Batch Director" ? directorMenu
     : user?.role === "Student" ? studentMenu
     : adminMenu;
+  // Only adminMenu entries ever carry a `permission` field (e.g. Admission
+  // Result) — an item without one always shows, same as before this filter existed.
+  const menuItems = rawMenuItems.filter((item) => {
+    const permission = (item as { permission?: string }).permission;
+    return !permission || hasPermission(user, permission);
+  });
 
   return (
     <Sidebar collapsible="icon">

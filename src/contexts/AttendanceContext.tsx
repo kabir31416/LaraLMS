@@ -58,12 +58,33 @@ export interface SubmitResultItem {
   attendance: AttendanceStatus;
 }
 
+export interface FailedSmsStudent {
+  studentId: string;
+  name: string;
+  roll?: string;
+  /** Why this particular student's SMS didn't go out — lets the UI show a precise Bengali message instead of a generic failure. */
+  reason: "guardianPhoneMissing" | "gatewayFailed";
+}
+
 export interface SubmitResultSummary {
   examId: string;
   resultsSaved: number;
   smsSent: number;
   smsFailed: number;
-  failedStudents: { studentId: string; name: string; roll?: string }[];
+  failedStudents: FailedSmsStudent[];
+}
+
+export interface ResultSmsVariable {
+  key: string;
+  label: string;
+}
+
+export interface ResultSmsTemplateConfig {
+  scope: "director" | "admin-default";
+  effectiveTemplate: string;
+  customTemplate?: string;
+  isDefault: boolean;
+  variables: ResultSmsVariable[];
 }
 
 interface Ctx {
@@ -76,9 +97,13 @@ interface Ctx {
   getResultsByExam: (examId: string) => Promise<OfflineResult[]>;
   getResultsByExams: (examIds: string[]) => Promise<OfflineResult[]>;
   getResultsByStudent: (studentId: string) => Promise<OfflineResult[]>;
-  /** Result Entry's single "Send Result" action — upserts the exam, saves marks + attendance together, and best-effort texts guardians. */
+  /** "Save Result" — saves marks + attendance only, never calls the SMS gateway. Safe to click repeatedly. */
+  saveResult: (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<{ examId: string; resultsSaved: number }>;
+  /** "Send Result" — saves first, then texts guardians using the caller's Result SMS template. */
   submitResult: (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
   resendSms: (examId: string, studentIds: string[]) => Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">>;
+  getResultSmsTemplate: () => Promise<ResultSmsTemplateConfig>;
+  updateResultSmsTemplate: (template: string) => Promise<ResultSmsTemplateConfig>;
   attendancePercent: (studentId: string, from?: string, to?: string) => Promise<number>;
   attendancePercentages: (params: { studentIds?: string[]; batchId?: string; batchIds?: string[] }, from?: string, to?: string) => Promise<Record<string, number>>;
   getByStudentStats: (params: { batchId?: string; from?: string; to?: string }) => Promise<{ studentId: string; present: number; absent: number; pct: number }[]>;
@@ -131,12 +156,24 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     await api.post(`/exams/${examId}/results`, { items });
   }, []);
 
+  const saveResult = useCallback(async (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<{ examId: string; resultsSaved: number }> => {
+    return api.post("/exams/save-result", data);
+  }, []);
+
   const submitResult = useCallback(async (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
     return api.post<SubmitResultSummary>("/exams/submit-result", data);
   }, []);
 
   const resendSms = useCallback(async (examId: string, studentIds: string[]): Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">> => {
     return api.post(`/exams/${examId}/resend-sms`, { studentIds });
+  }, []);
+
+  const getResultSmsTemplate = useCallback(async (): Promise<ResultSmsTemplateConfig> => {
+    return api.get<ResultSmsTemplateConfig>("/exams/result-sms-template");
+  }, []);
+
+  const updateResultSmsTemplate = useCallback(async (template: string): Promise<ResultSmsTemplateConfig> => {
+    return api.patch<ResultSmsTemplateConfig>("/exams/result-sms-template", { template });
   }, []);
 
   const getResultsByExam = useCallback(async (examId: string): Promise<OfflineResult[]> => {
@@ -199,7 +236,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   const value: Ctx = {
     saveAttendance, getByBatchDate, getByStudent,
     addExam, listExams, saveResults, getResultsByExam, getResultsByExams, getResultsByStudent,
-    submitResult, resendSms,
+    saveResult, submitResult, resendSms, getResultSmsTemplate, updateResultSmsTemplate,
     attendancePercent, attendancePercentages, getByStudentStats, getStats,
   };
 

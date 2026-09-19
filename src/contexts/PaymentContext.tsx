@@ -22,6 +22,7 @@ interface ApiPayment {
   feeType: Payment["feeType"];
   month?: string;
   note?: string;
+  previousDue?: number;
 }
 
 function fromApi(doc: ApiPayment): Payment {
@@ -38,6 +39,7 @@ function fromApi(doc: ApiPayment): Payment {
     feeType: doc.feeType,
     month: doc.month,
     note: doc.note,
+    previousDue: doc.previousDue,
   };
 }
 
@@ -45,7 +47,15 @@ interface PaymentContextType {
   payments: Payment[];
   loading: boolean;
   getPayments: (studentId: string) => Payment[];
-  addPayment: (payment: Omit<Payment, "id" | "receiptNo">) => Promise<Payment>;
+  /**
+   * `idempotencyKey` should be one value generated once per user-initiated
+   * submission attempt (not once per student/payment) and reused if that
+   * same attempt is retried (double-click, network retry) — see
+   * FeeManagement.tsx's PaymentDialog for where it's generated. Omitting it
+   * still works (no duplicate protection for that call), which is fine for
+   * any call site that isn't a click-driven form.
+   */
+  addPayment: (payment: Omit<Payment, "id" | "receiptNo"> & { idempotencyKey?: string }) => Promise<Payment>;
   refreshPayments: () => Promise<void>;
 }
 
@@ -76,7 +86,7 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
 
   const getPayments = useCallback((studentId: string) => payments.filter((p) => p.studentId === studentId), [payments]);
 
-  const addPayment = useCallback(async (payment: Omit<Payment, "id" | "receiptNo">): Promise<Payment> => {
+  const addPayment = useCallback(async (payment: Omit<Payment, "id" | "receiptNo"> & { idempotencyKey?: string }): Promise<Payment> => {
     const created = fromApi(
       await api.post<ApiPayment>("/payments", {
         studentId: payment.studentId,
@@ -88,6 +98,7 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
         feeType: payment.feeType,
         month: payment.month,
         note: payment.note,
+        idempotencyKey: payment.idempotencyKey,
       }),
     );
     setPayments((prev) => [created, ...prev]);
