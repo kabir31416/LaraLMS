@@ -43,6 +43,34 @@ function isDuplicateKeyError(err: unknown): boolean {
 }
 
 /**
+ * Turns the generic "already exists" conflict into a self-diagnosing one —
+ * names exactly which existing account the identifier collides with, so an
+ * operator (who already holds USERS_MANAGE to even reach this endpoint,
+ * i.e. can already list every user) can immediately tell "this identifier
+ * is genuinely already in use by X" apart from "this looks like a bug",
+ * without needing server log access at all.
+ */
+async function describeExistingOwner(existing: UserDoc): Promise<string> {
+  if (existing.linkedStaffId) {
+    const { Staff } = await import("../staff/staff.model");
+    const staff = await Staff.findById(existing.linkedStaffId).select("name staffType");
+    if (staff) return `${staff.staffType} "${staff.name}"`;
+    return "a staff account (that staff record has since been removed)";
+  }
+  if (existing.linkedStudentId) {
+    const { Student } = await import("../students/student.model");
+    const student = await Student.findById(existing.linkedStudentId).select("name");
+    if (student) return `student "${student.name}"`;
+    return "a student account (that student record has since been removed)";
+  }
+  // No linked Staff/Student — most commonly the initial seeded Super Admin
+  // account (backend/src/scripts/seed.ts's seedAdmin(), identifier defaults
+  // to ADMIN_SEED_PHONE, "01700000000" unless overridden), a very guessable
+  // value a tester can easily retype without realizing it's already taken.
+  return "an existing Admin login not linked to any staff record (this is often the initial seeded Super Admin account)";
+}
+
+/**
  * "Create a login for this staff member" (Admin/Staff only — the Student
  * Portal no longer has a login account at all; see auth.service.ts's
  * studentLogin) needs to be safe to call more than once for the same
@@ -65,11 +93,31 @@ export async function createUser(req: Request, input: CreateUserInput): Promise<
   const effectivePassword = input.password ?? tempPassword!;
 
   const existing = await User.findOne({ identifier: normalizedIdentifier });
+  // Temporary diagnostic — safe fields only (never password/hash/tokens).
+  // Remove once the "false duplicate" report is confirmed resolved.
+  logger.info(
+    {
+      receivedIdentifier: input.identifier,
+      normalizedIdentifier,
+      linkedStaffId: input.linkedStaffId,
+      linkedStudentId: input.linkedStudentId,
+      existingFound: !!existing,
+      existingId: existing ? String(existing._id) : undefined,
+      existingRoleId: existing ? String(existing.roleId) : undefined,
+      existingLinkedStaffId: existing?.linkedStaffId ? String(existing.linkedStaffId) : undefined,
+      existingLinkedStudentId: existing?.linkedStudentId ? String(existing.linkedStudentId) : undefined,
+      existingCreatedAt: existing?.createdAt,
+    },
+    "ADMIN CREATE DEBUG — createUser() identifier check",
+  );
   if (existing) {
     const sameOwner =
       (!!input.linkedStudentId && String(existing.linkedStudentId ?? "") === input.linkedStudentId) ||
       (!!input.linkedStaffId && String(existing.linkedStaffId ?? "") === input.linkedStaffId);
-    if (!sameOwner) throw ApiError.conflict("A user with this identifier already exists");
+    if (!sameOwner) {
+      const owner = await describeExistingOwner(existing);
+      throw ApiError.conflict(`A user with this identifier already exists — currently linked to ${owner}. Use a different login identifier.`);
+    }
 
     const before = existing.toObject();
     existing.passwordHash = await hashPassword(effectivePassword);
@@ -98,7 +146,14 @@ export async function createUser(req: Request, input: CreateUserInput): Promise<
       deniedPermissions: input.deniedPermissions ?? [],
     });
   } catch (err) {
-    if (isDuplicateKeyError(err)) throw ApiError.conflict("A user with this identifier already exists");
+    if (isDuplicateKeyError(err)) {
+      // A genuine race: something else inserted the exact same identifier
+      // between our findOne above and this insert. Look it up fresh so the
+      // error is just as self-diagnosing as the normal path's.
+      const racedExisting = await User.findOne({ identifier: normalizedIdentifier });
+      const owner = racedExisting ? await describeExistingOwner(racedExisting) : "another account";
+      throw ApiError.conflict(`A user with this identifier already exists — currently linked to ${owner}. Use a different login identifier.`);
+    }
     throw err;
   }
 
