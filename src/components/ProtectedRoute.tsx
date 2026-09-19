@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { hasPermission, useAuth, type Role } from "@/contexts/AuthContext";
+import { ChangePasswordGate } from "@/components/ChangePasswordGate";
 
 interface Props {
   children: React.ReactNode;
@@ -19,6 +20,12 @@ export function ProtectedRoute({ children, roles, permission }: Props) {
   const { user, initializing } = useAuth();
   if (initializing) return null; // avoid a flash-redirect to /login while the session cookie is being checked
   if (!user) return <Navigate to="/login" replace />;
+  // A forced password change (backend's User.mustChangePassword — set for
+  // the seeded root Super Admin, and for any login created/reset without an
+  // explicit password) blocks every protected page until resolved, ahead of
+  // the role/permission checks below, since a stale/default credential is a
+  // bigger problem than which page was requested.
+  if (user.mustChangePassword) return <ChangePasswordGate />;
   if (roles && !roles.includes(user.role)) {
     return <Navigate to={homeRouteFor(user.role)} replace />;
   }

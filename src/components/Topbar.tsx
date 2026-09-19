@@ -1,14 +1,19 @@
-import { Search, Bell, LogOut } from "lucide-react";
+import { useState } from "react";
+import { Search, Bell, LogOut, KeyRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ChangePasswordForm } from "@/components/ChangePasswordForm";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 export function Topbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   const initial = user?.name?.charAt(0) || "অ";
   const roleLabel = user?.role === "Batch Director" ? "ব্যাচ ডিরেক্টর"
@@ -40,20 +45,40 @@ export function Topbar() {
         </button>
 
         <div className="flex items-center gap-2 pl-2 border-l border-border">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
-              {initial}
-            </AvatarFallback>
-          </Avatar>
-          <div className="hidden md:block">
-            <p className="text-sm font-medium leading-tight">{user?.name || "অ্যাডমিন"}</p>
-            <p className="text-xs text-muted-foreground">{roleLabel}</p>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-muted transition-colors">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                    {initial}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden md:block text-left">
+                  <p className="text-sm font-medium leading-tight">{user?.name || "অ্যাডমিন"}</p>
+                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setChangePasswordOpen(true)}>
+                <KeyRound className="mr-2 h-4 w-4" /> পাসওয়ার্ড পরিবর্তন
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="ghost" size="icon" onClick={handleLogout} title="লগআউট">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>
+
+      <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>পাসওয়ার্ড পরিবর্তন</DialogTitle>
+          </DialogHeader>
+          <ChangePasswordForm onSuccess={() => setChangePasswordOpen(false)} />
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }
