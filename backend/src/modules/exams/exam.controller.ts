@@ -32,8 +32,8 @@ export const saveResult = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, result);
 });
 
-export const getResultSmsTemplate = asyncHandler(async (req: Request, res: Response) => {
-  sendSuccess(res, await examService.getResultSmsTemplateConfig(req));
+export const getResultSmsTemplate = asyncHandler(async (_req: Request, res: Response) => {
+  sendSuccess(res, await examService.getResultSmsTemplateConfig());
 });
 
 export const updateResultSmsTemplate = asyncHandler(async (req: Request, res: Response) => {

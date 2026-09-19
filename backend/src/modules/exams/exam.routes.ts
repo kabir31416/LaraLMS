@@ -40,15 +40,17 @@ router.post(
   validate(saveResultSchema),
   controller.saveResult,
 );
-// Result SMS template (Batch Director's own, or the Admin-editable Settings-wide default) — also fixed paths, before ":id".
+// Result SMS template — a single, system-wide setting editable only from
+// the Admin dashboard (EXAMS_MANAGE only; a Batch Director's former
+// per-staff override has been retired). Also fixed paths, before ":id".
 router.get(
   "/result-sms-template",
-  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  requirePermission(PERMISSIONS.EXAMS_MANAGE),
   controller.getResultSmsTemplate,
 );
 router.patch(
   "/result-sms-template",
-  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  requirePermission(PERMISSIONS.EXAMS_MANAGE),
   validate(updateResultSmsTemplateSchema),
   controller.updateResultSmsTemplate,
 );

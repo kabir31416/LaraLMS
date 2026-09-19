@@ -24,27 +24,37 @@ import { ApiClientError } from "@/lib/apiClient";
 import { compareByRoll } from "@/lib/studentDisplay";
 
 /**
- * Result Entry — the single place a Batch Director records both marks and
- * attendance for one Subject/Lecture/Date (Phase 5). There is no separate
+ * Result Entry — the single place marks and attendance are recorded
+ * together for one Subject/Lecture/Date (Phase 5). There is no separate
  * attendance workflow for directors anymore (see routes.tsx/AppSidebar.tsx —
  * "/director/attendance" now redirects here): saving a result always saves
  * attendance for the same students in the same action.
  *
+ * Reused for two routes/roles: a Batch Director only sees and can act on
+ * their own batch(es) (unchanged); an Admin sees every batch in the system,
+ * so Admin can enter results for any batch, not just their own — the
+ * backend already allowed this via EXAMS_MANAGE (assertCanActOnBatch in
+ * exam.service.ts never restricted Admin), this page was simply never
+ * reachable for that role before.
+ *
  * "Save Result" and "Send Result" are two distinct actions (Result Entry
  * SMS Split): Save never touches the SMS gateway; Send saves first (the
- * exact same save step) and only then texts guardians using this
- * director's own Result SMS Template (or the admin default).
+ * exact same save step) and only then texts guardians using the single,
+ * system-wide Result SMS Template — editable only by an Admin (see the
+ * "Result SMS টেমপ্লেট" button below, hidden for Batch Director).
  */
 const DirectorResults = () => {
   const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
   const { batches } = useBatches();
   const { students } = useStudents();
   const { courses, subjects, lectures } = useAcademic();
   const { listExams, getResultsByExam, getByBatchDate, saveResult, submitResult, resendSms, getResultSmsTemplate, updateResultSmsTemplate } = useAttendance();
 
+  // Admin can enter results for any batch; a Batch Director only their own.
   const myBatches = useMemo(
-    () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
-    [batches, user],
+    () => (isAdmin ? batches : user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    [batches, user, isAdmin],
   );
 
   const [batchId, setBatchId] = useState<string>(myBatches[0]?.id || "");
@@ -262,7 +272,7 @@ const DirectorResults = () => {
 
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  if (!user || user.role !== "Batch Director") return <Navigate to="/login" replace />;
+  if (!user || (user.role !== "Batch Director" && user.role !== "Admin")) return <Navigate to="/login" replace />;
 
   return (
     <DashboardLayout>
@@ -270,12 +280,17 @@ const DirectorResults = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">রেজাল্ট এন্ট্রি</h1>
-            <p className="text-sm text-muted-foreground">এখান থেকেই নম্বর ও উপস্থিতি একসাথে দিন — কোর্স আপনার ব্যাচ থেকে অটো লোড হবে</p>
+            <p className="text-sm text-muted-foreground">
+              {isAdmin ? "ব্যাচ নির্বাচন করে নম্বর ও উপস্থিতি একসাথে দিন — যেকোনো ব্যাচের জন্য" : "এখান থেকেই নম্বর ও উপস্থিতি একসাথে দিন — কোর্স আপনার ব্যাচ থেকে অটো লোড হবে"}
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="self-start sm:self-auto">
-            <Settings2 className="h-4 w-4 mr-2" />
-            Result SMS টেমপ্লেট
-          </Button>
+          {/* SMS ফরম্যাট এখন একটিমাত্র, সিস্টেম-ওয়াইড সেটিং — শুধু Admin ড্যাশবোর্ড থেকে সেট করা যাবে। */}
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="self-start sm:self-auto">
+              <Settings2 className="h-4 w-4 mr-2" />
+              Result SMS টেমপ্লেট
+            </Button>
+          )}
         </div>
 
         <Card className="border-none shadow-sm">
@@ -555,6 +570,7 @@ function ResultSmsTemplateDialog({
       studentName: "রহিম উদ্দিন", roll: "12", registrationId: "REG-1023", courseName: "HSC কোচিং",
       batchName: "সকাল ব্যাচ", examName: "গণিত - অধ্যায় ৩", subjectName: "গণিত", fullMarks: "100",
       obtainedMarks: "৮৫", percentage: "৮৫", grade: "A+", result: "পাস", guardianName: "আব্দুল করিম", date: "১৫-০৯-২০২৬",
+      highestMark: "৯৮",
     };
     return template.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/g, (_m, key: string) => sample[key] ?? "");
   }, [template, config]);
@@ -633,11 +649,9 @@ function ResultSmsTemplateDialog({
                   অসমর্থিত ভ্যারিয়েবল: {unknownPlaceholders.map((k) => `{{${k}}}`).join(", ")}
                 </p>
               )}
-              {config?.isDefault && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {config.scope === "director" ? "আপনি এখনও নিজের টেমপ্লেট সেট করেননি — ডিফল্ট টেমপ্লেট দেখানো হচ্ছে।" : "এটি প্রতিষ্ঠানের ডিফল্ট টেমপ্লেট — যেসব Batch Director নিজস্ব টেমপ্লেট সেট করেননি, তাদের জন্য এটি ব্যবহৃত হবে।"}
-                </p>
-              )}
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                এটি প্রতিষ্ঠানের একমাত্র Result SMS ফরম্যাট — যেকোনো Batch Director "Send Result" চাপলে এই একই ফরম্যাটে SMS যাবে।
+              </p>
             </div>
 
             <div>

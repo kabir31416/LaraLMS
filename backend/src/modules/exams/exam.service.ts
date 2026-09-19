@@ -4,7 +4,6 @@ import { OfflineExam, OfflineExamDoc } from "./exam.model";
 import { OfflineResult } from "./result.model";
 import { Batch } from "../batches/batch.model";
 import { Student, StudentDoc } from "../students/student.model";
-import { Staff } from "../staff/staff.model";
 import { Subject, SubjectDoc } from "../subjects/subject.model";
 import { Lecture, LectureDoc } from "../lectures/lecture.model";
 import * as guardianService from "../guardians/guardian.service";
@@ -175,6 +174,7 @@ async function buildResultSmsVariables(input: {
   attendance: "Present" | "Absent";
   guardianName?: string;
   date: string;
+  highestMark: string;
 }): Promise<Record<string, string>> {
   const settings = await getSettings();
   const isGraded = input.attendance === "Present" && input.marks !== null;
@@ -206,22 +206,25 @@ async function buildResultSmsVariables(input: {
     result,
     guardianName: input.guardianName || "",
     date: formatDateForSms(input.date),
+    highestMark: input.highestMark,
   };
 }
 
+/** The single highest mark actually saved so far for this exam (across every student, not just the ones in the current submission/resend) — used for the {{highestMark}} SMS variable. Empty string if nobody has a mark yet (e.g. a class marked entirely absent). */
+async function computeHighestMark(examId: Types.ObjectId | string): Promise<string> {
+  const top = await OfflineResult.findOne({ examId, marks: { $ne: null } }).sort({ marks: -1 }).select("marks");
+  return top?.marks != null ? String(top.marks) : "";
+}
+
 /**
- * A Batch Director's own Result SMS template (Staff.resultSmsTemplate) if
- * they've set one, else the Settings-wide default (settings.model.ts's
- * SettingsDoc.resultSmsTemplate) — never a hard-coded string. A caller with
- * no linked staff record (an Admin-type account) always gets the default,
- * since "their own template" doesn't apply to them.
+ * The single, system-wide Result SMS template (settings.model.ts's
+ * SettingsDoc.resultSmsTemplate) — set only from the Admin dashboard and
+ * used for every guardian SMS regardless of who triggers Send Result. A
+ * Batch Director's own per-staff override (Staff.resultSmsTemplate) has
+ * been retired: whatever the Admin sets here is the format every SMS goes
+ * out in, never a hard-coded string.
  */
-async function resolveResultSmsTemplate(req: Request): Promise<string> {
-  const staffId = req.user?.staffId;
-  if (staffId) {
-    const staff = await Staff.findById(staffId).select("resultSmsTemplate");
-    if (staff?.resultSmsTemplate) return staff.resultSmsTemplate;
-  }
+async function resolveResultSmsTemplate(): Promise<string> {
   const settings = await getSettings();
   return settings.resultSmsTemplate;
 }
@@ -382,7 +385,8 @@ export async function submitResult(
   }
 
   try {
-    const template = await resolveResultSmsTemplate(req);
+    const template = await resolveResultSmsTemplate();
+    const highestMark = await computeHighestMark(exam._id);
     let smsSent = 0;
     const failedStudents: FailedSmsStudent[] = [];
 
@@ -405,6 +409,7 @@ export async function submitResult(
         attendance: item.attendance,
         guardianName: guardian.name,
         date: data.date,
+        highestMark,
       });
       const message = renderTemplate(template, variables);
       const res = await sendSms(guardian.phone, message);
@@ -456,7 +461,8 @@ export async function resendSms(req: Request, examId: string, studentIds: string
   const resultByStudent = new Map(results.map((r) => [String(r.studentId), r.marks]));
   const attendanceByStudent = new Map(attendances.map((a) => [String(a.studentId), a.status]));
 
-  const template = await resolveResultSmsTemplate(req);
+  const template = await resolveResultSmsTemplate();
+  const highestMark = await computeHighestMark(exam._id);
   let smsSent = 0;
   const failedStudents: FailedSmsStudent[] = [];
   for (const student of students) {
@@ -477,6 +483,7 @@ export async function resendSms(req: Request, examId: string, studentIds: string
       attendance: (attendanceByStudent.get(sid) as "Present" | "Absent") || "Absent",
       guardianName: guardian.name,
       date: exam.date,
+      highestMark,
     });
     const message = renderTemplate(template, variables);
     const res = await sendSms(guardian.phone, message);
@@ -502,7 +509,7 @@ export async function resendSms(req: Request, examId: string, studentIds: string
 }
 
 export interface ResultSmsTemplateConfig {
-  scope: "director" | "admin-default";
+  scope: "admin-default";
   effectiveTemplate: string;
   customTemplate?: string;
   isDefault: boolean;
@@ -510,27 +517,14 @@ export interface ResultSmsTemplateConfig {
 }
 
 /**
- * A Batch Director sees/edits their own template (falling back to the
- * Settings-wide default when they haven't set one); a caller with no
- * linked staff record but broad exam access (Admin) sees/edits the
- * Settings-wide default itself (Settings §2 — extend existing config, no
- * parallel system). RBAC is enforced by the route (EXAMS_MANAGE or
- * OFFLINE_RESULTS_MANAGE_OWN_BATCH), same as every other exam endpoint.
+ * The Result SMS template is a single, system-wide setting — editable only
+ * from the Admin dashboard (route-level EXAMS_MANAGE gate) and used as-is
+ * for every guardian SMS, whoever triggers Send Result. A Batch Director's
+ * former ability to set their own personal override (Staff.resultSmsTemplate)
+ * has been retired so there is exactly one format in effect at a time.
  */
-export async function getResultSmsTemplateConfig(req: Request): Promise<ResultSmsTemplateConfig> {
+export async function getResultSmsTemplateConfig(): Promise<ResultSmsTemplateConfig> {
   const settings = await getSettings();
-  const staffId = req.user?.staffId;
-  if (staffId) {
-    const staff = await Staff.findById(staffId).select("resultSmsTemplate");
-    const customTemplate = staff?.resultSmsTemplate;
-    return {
-      scope: "director",
-      effectiveTemplate: customTemplate || settings.resultSmsTemplate,
-      customTemplate,
-      isDefault: !customTemplate,
-      variables: RESULT_SMS_VARIABLES,
-    };
-  }
   return {
     scope: "admin-default",
     effectiveTemplate: settings.resultSmsTemplate,
@@ -547,34 +541,16 @@ export async function updateResultSmsTemplate(req: Request, template: string): P
     throw ApiError.badRequest(`টেমপ্লেটে অসমর্থিত ভ্যারিয়েবল আছে: ${unknown.map((k) => `{{${k}}}`).join(", ")}`);
   }
 
-  const staffId = req.user?.staffId;
-  if (staffId) {
-    const staff = await Staff.findById(staffId);
-    if (!staff) throw ApiError.forbidden("No linked staff record");
-    const before = staff.toObject();
-    staff.resultSmsTemplate = template;
-    await staff.save();
-    await recordAudit({
-      req,
-      action: "result-sms-template.update",
-      module: "exams",
-      targetCollection: "staff",
-      targetId: String(staff._id),
-      before,
-      after: staff.toObject(),
-    });
-  } else {
-    const perms = req.user!.permissions;
-    if (!perms.includes("*") && !perms.includes(PERMISSIONS.EXAMS_MANAGE)) throw ApiError.forbidden("Missing permission");
-    await updateSettings(req, { resultSmsTemplate: template });
-    await recordAudit({
-      req,
-      action: "result-sms-template.update",
-      module: "exams",
-      targetCollection: "settings",
-      after: { resultSmsTemplate: template },
-    });
-  }
+  const perms = req.user!.permissions;
+  if (!perms.includes("*") && !perms.includes(PERMISSIONS.EXAMS_MANAGE)) throw ApiError.forbidden("Missing permission");
+  await updateSettings(req, { resultSmsTemplate: template });
+  await recordAudit({
+    req,
+    action: "result-sms-template.update",
+    module: "exams",
+    targetCollection: "settings",
+    after: { resultSmsTemplate: template },
+  });
 
-  return getResultSmsTemplateConfig(req);
+  return getResultSmsTemplateConfig();
 }
