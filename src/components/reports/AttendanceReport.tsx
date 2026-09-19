@@ -10,6 +10,7 @@ import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { ReportToolbar } from "./ReportToolbar";
+import { compareByRoll } from "@/lib/studentDisplay";
 import { format, subDays } from "date-fns";
 
 export default function AttendanceReport() {
@@ -49,10 +50,12 @@ export default function AttendanceReport() {
     return () => { cancelled = true; };
   }, [batchId, actualFrom, actualTo, getStats, getByStudentStats]);
 
-  const perStudent = useMemo(() => perStudentRaw.map((r) => {
-    const s = students.find((x) => x.id === r.studentId);
-    return { name: s?.name || r.studentId, sid: s?.studentId || r.studentId, present: r.present, absent: r.absent, pct: r.pct };
-  }), [perStudentRaw, students]);
+  const perStudent = useMemo(() => perStudentRaw
+    .map((r) => {
+      const s = students.find((x) => x.id === r.studentId);
+      return { name: s?.name || r.studentId, sid: s?.studentId || r.studentId, rollNumber: s?.rollNumber, present: r.present, absent: r.absent, pct: r.pct };
+    })
+    .sort(compareByRoll), [perStudentRaw, students]);
 
   const headers = ["শিক্ষার্থী", "Student ID", "উপস্থিত", "অনুপস্থিত", "%"];
   const rows = perStudent.map((r) => [r.name, r.sid, r.present, r.absent, `${r.pct}%`]);

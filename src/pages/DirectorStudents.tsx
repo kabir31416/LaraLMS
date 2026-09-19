@@ -12,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { isBirthdayToday } from "@/lib/date";
-import { matchesStudentQuery } from "@/lib/studentDisplay";
+import { matchesStudentQuery, compareByRoll } from "@/lib/studentDisplay";
 
 const DirectorStudents = () => {
   const { user } = useAuth();
@@ -34,7 +34,8 @@ const DirectorStudents = () => {
       .filter((s) => s.batchId && myBatchIds.has(s.batchId))
       .filter((s) => batchFilter === "all" || s.batchId === batchFilter)
       .filter((s) => !birthdayOnly || isBirthdayToday(s.dob))
-      .filter((s) => matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }));
+      .filter((s) => matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }))
+      .sort(compareByRoll);
   }, [students, myBatchIds, search, batchFilter, birthdayOnly]);
 
   if (!user || user.role !== "Batch Director") {

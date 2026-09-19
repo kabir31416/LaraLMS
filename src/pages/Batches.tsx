@@ -21,6 +21,7 @@ import { BatchForm } from "@/components/batches/BatchForm";
 import { AssignStudentsDialog } from "@/components/batches/AssignStudentsDialog";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { compareByRoll } from "@/lib/studentDisplay";
 
 const Batches = () => {
   const { batches, deleteBatch } = useBatches();
@@ -70,7 +71,7 @@ const Batches = () => {
   };
 
   const openBatch = batches.find((b) => b.id === openBatchId);
-  const openBatchStudents = openBatch ? students.filter((s) => s.batchId === openBatch.id) : [];
+  const openBatchStudents = openBatch ? students.filter((s) => s.batchId === openBatch.id).sort(compareByRoll) : [];
 
   if (openBatch) {
     return (

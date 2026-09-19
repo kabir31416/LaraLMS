@@ -9,6 +9,7 @@ import { Filter, Users, UserPlus, RotateCcw } from "lucide-react";
 import { useStudents } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { compareByRoll } from "@/lib/studentDisplay";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function AdmissionReport() {
@@ -23,13 +24,15 @@ export default function AdmissionReport() {
   const [to, setTo] = useState("");
 
   const filtered = useMemo(() => {
-    return students.filter((s) => {
-      if (course !== "all" && s.course !== course) return false;
-      if (batch !== "all" && s.batchId !== batch) return false;
-      if (from && s.admissionDate < from) return false;
-      if (to && s.admissionDate > to) return false;
-      return true;
-    });
+    return students
+      .filter((s) => {
+        if (course !== "all" && s.course !== course) return false;
+        if (batch !== "all" && s.batchId !== batch) return false;
+        if (from && s.admissionDate < from) return false;
+        if (to && s.admissionDate > to) return false;
+        return true;
+      })
+      .sort(compareByRoll);
   }, [students, course, batch, from, to]);
 
   const newCount = filtered.filter((s) => s.admissionType === "নতুন").length;

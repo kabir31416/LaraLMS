@@ -9,6 +9,7 @@ import { getSettings } from "../settings/settings.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter } from "../../common/utils/pagination";
+import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import { MAX_PAGE_SIZE } from "../../config/constants";
 import { assertCanActOnBatch, computeGrade, readScope } from "./exam.service";
 
@@ -159,10 +160,14 @@ export async function listStudentResults(
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(params.limit) || 50));
   const skip = (page - 1) * limit;
 
-  const [students, total] = await Promise.all([
-    Student.find(filter).select("name registrationId currentRollNumber phone course currentBatchId").sort({ currentRollNumber: 1, name: 1 }).skip(skip).limit(limit),
+  // Roll ascending, numeric-aware — currentRollNumber is a free-text String
+  // field, so a plain Mongo .sort() would order "10" before "2".
+  const [orderedIds, total] = await Promise.all([
+    pageIdsByRoll(Student, filter, 1, skip, limit),
     Student.countDocuments(filter),
   ]);
+  const fetchedStudents = await Student.find({ _id: { $in: orderedIds } }).select("name registrationId currentRollNumber phone course currentBatchId");
+  const students = reorderByIds(fetchedStudents, orderedIds);
 
   const [totalsByStudent, settings] = await Promise.all([
     computeOverallTotals(students.map((s) => String(s._id))),
@@ -420,7 +425,14 @@ export async function getBatchResults(
       grade: totalFullMarks > 0 ? computeGrade(percentage, settings.gradeScale) : "-",
     };
   });
-  rows.sort((a, b) => a.rollNumber.localeCompare(b.rollNumber, "bn", { numeric: true }));
+  // Numeric-aware ascending roll order, with a missing roll ("-") always
+  // pushed last — same rule as every other student roster in the app.
+  rows.sort((a, b) => {
+    const aMissing = a.rollNumber === "-";
+    const bMissing = b.rollNumber === "-";
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
+    return a.rollNumber.localeCompare(b.rollNumber, "bn", { numeric: true });
+  });
 
   return { batch: { id: String(batch._id), name: batch.name, courseName: await courseNameOf(batch) }, columns, rows };
 }

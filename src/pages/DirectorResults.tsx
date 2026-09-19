@@ -21,6 +21,7 @@ import { useAttendance, ResultSmsTemplateConfig } from "@/contexts/AttendanceCon
 import type { AttendanceStatus } from "@/types/attendance";
 import { toast } from "@/hooks/use-toast";
 import { ApiClientError } from "@/lib/apiClient";
+import { compareByRoll } from "@/lib/studentDisplay";
 
 /**
  * Result Entry — the single place a Batch Director records both marks and
@@ -75,7 +76,7 @@ const DirectorResults = () => {
   const [fullMarks, setFullMarks] = useState<number>(50);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const batchStudents = useMemo(() => students.filter((s) => s.batchId === batch?.id), [students, batch]);
+  const batchStudents = useMemo(() => students.filter((s) => s.batchId === batch?.id).sort(compareByRoll), [students, batch]);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [existingExamId, setExistingExamId] = useState<string | null>(null);

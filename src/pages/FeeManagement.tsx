@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { formatStudentLabel, matchesStudentQuery, studentIdentifierLabel } from "@/lib/studentDisplay";
+import { formatStudentLabel, matchesStudentQuery, studentIdentifierLabel, compareByRoll } from "@/lib/studentDisplay";
 import { useStudents } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
@@ -77,7 +77,8 @@ const FeeManagement = () => {
       if (filterFeeType !== "all" && s.feeType !== filterFeeType) return false;
       if (search) return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
       return true;
-    });
+    })
+    .sort(compareByRoll);
 
   return (
     <DashboardLayout>
@@ -376,7 +377,7 @@ function PaymentDialog({
                   <CommandList className="max-h-[40vh]">
                     <CommandEmpty>কোনো শিক্ষার্থী পাওয়া যায়নি</CommandEmpty>
                     <CommandGroup>
-                      {students.map((s) => (
+                      {[...students].sort(compareByRoll).map((s) => (
                         <CommandItem
                           key={s.id}
                           value={s.id}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,7 +46,7 @@ interface Props {
 }
 
 export function StaffForm({ open, onOpenChange, editStaff }: Props) {
-  const { addStaff, updateStaff } = useStaff();
+  const { addStaff, updateStaff, deleteStaff } = useStaff();
   const isEdit = !!editStaff;
 
   const [form, setForm] = useState(() => init(editStaff));
@@ -56,6 +56,13 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  // React's `submitting` state only disables the button from the NEXT
+  // render onward — two clicks (or an Enter-key repeat) dispatched in the
+  // same tick can both slip past it and fire two create requests before the
+  // first one even resolves. This ref is checked synchronously, so the
+  // second call is rejected immediately, before either network request.
+  const busyRef = useRef(false);
 
   // This dialog instance stays mounted across opens (Staff.tsx never remounts
   // it), so without this a password typed for one new Admin would still be
@@ -135,6 +142,7 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
   const isNewAdmin = !isEdit && LOGIN_ELIGIBLE.includes(form.staffType);
 
   const handleSubmit = async () => {
+    if (busyRef.current) return;
     if (!form.name || !form.mobile || (!isEdit && !form.staffId.trim())) {
       toast.error("নাম, মোবাইল এবং স্টাফ আইডি প্রয়োজন");
       return;
@@ -162,42 +170,64 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
       staffId: form.staffId.trim() || undefined,
     };
 
+    busyRef.current = true;
     setSubmitting(true);
     try {
-      let staffRecord: Staff;
       if (isEdit && editStaff) {
-        staffRecord = await updateStaff(editStaff.id, data);
-        toast.success("স্টাফ আপডেট হয়েছে");
-      } else {
-        staffRecord = await addStaff(data);
-        toast.success("স্টাফ যোগ হয়েছে");
-      }
-
-      const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
-
-      if (isNewAdmin) {
-        const roleId = await findRoleId(form.staffType);
-        if (!roleId) {
-          toast.error("Admin রোল খুঁজে পাওয়া যায়নি — স্টাফ তৈরি হয়েছে কিন্তু লগইন তৈরি করা যায়নি। রোল ও পারমিশন সেটিংস পরীক্ষা করুন।");
-        } else {
-          await api.post("/users", {
-            identifier: form.mobile,
-            password,
-            roleId,
-            linkedStaffId: staffRecord.id,
-            deniedPermissions,
-          });
-          toast.success("এডমিন প্যানেল লগইন তৈরি হয়েছে");
+        await updateStaff(editStaff.id, data);
+        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
+        if (existingAdminUserId) {
+          // Existing Admin login — only the Admission Result permission can change here (role/password reset stay untouched).
+          await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions });
         }
-      } else if (isEdit && existingAdminUserId) {
-        // Existing Admin login — only the Admission Result permission can change here (role/password reset stay untouched).
-        await api.patch(`/users/${existingAdminUserId}`, { deniedPermissions });
+        toast.success("স্টাফ আপডেট হয়েছে");
+        onOpenChange(false);
+        return;
       }
 
+      const staffRecord = await addStaff(data);
+
+      if (!isNewAdmin) {
+        toast.success("স্টাফ যোগ হয়েছে");
+        onOpenChange(false);
+        return;
+      }
+
+      // New Admin: the Staff row alone is useless without a working login,
+      // so the two are treated as one atomic operation from the operator's
+      // point of view — no "স্টাফ যোগ হয়েছে" toast until the login is
+      // ALSO confirmed. If the login step fails for any reason (including a
+      // genuine duplicate identifier), the just-created Staff row is rolled
+      // back so this never leaves behind an orphaned Admin with no way to
+      // log in and no confusing "succeeded, then failed" toast sequence.
+      try {
+        const deniedPermissions = admissionResultAllowed ? [] : [ADMISSION_RESULTS_MANAGE];
+        const roleId = await findRoleId(form.staffType);
+        if (!roleId) throw new Error("Admin রোল খুঁজে পাওয়া যায়নি — RBAC সেটিংস পরীক্ষা করুন।");
+        await api.post("/users", {
+          identifier: form.mobile,
+          password,
+          roleId,
+          linkedStaffId: staffRecord.id,
+          deniedPermissions,
+        });
+      } catch (loginErr) {
+        try {
+          await deleteStaff(staffRecord.id);
+        } catch {
+          // Rollback itself failed — surface the ORIGINAL error below regardless;
+          // an orphaned Staff row with no login is a lesser problem than
+          // silently swallowing the real cause.
+        }
+        throw loginErr;
+      }
+
+      toast.success("এডমিন তৈরি হয়েছে — মোবাইল ও পাসওয়ার্ড দিয়ে লগইন করা যাবে");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
+      toast.error(err instanceof ApiClientError ? err.message : err instanceof Error ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
     } finally {
+      busyRef.current = false;
       setSubmitting(false);
     }
   };

@@ -9,7 +9,7 @@ import { useBatches } from "@/contexts/BatchContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
-import { matchesStudentQuery, studentIdentifierLabel } from "@/lib/studentDisplay";
+import { matchesStudentQuery, studentIdentifierLabel, compareByRoll } from "@/lib/studentDisplay";
 
 interface Props {
   open: boolean;
@@ -29,10 +29,12 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
   // Only students with no current batch can be enrolled here — a student
   // already in another batch needs Transfer instead (Phase 1 §14).
   const filtered = useMemo(() => {
-    return students.filter((s) => {
-      if (s.batchId) return false;
-      return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
-    });
+    return students
+      .filter((s) => {
+        if (s.batchId) return false;
+        return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
+      })
+      .sort(compareByRoll);
   }, [students, search]);
 
   const toggle = (id: string) =>

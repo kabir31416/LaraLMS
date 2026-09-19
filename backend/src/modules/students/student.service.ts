@@ -8,6 +8,7 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateRegistrationId } from "../../common/utils/idGenerators";
 import { toAsciiDigits } from "../../common/utils/digits";
+import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import * as guardianService from "../guardians/guardian.service";
 
 /**
@@ -234,6 +235,11 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
 }
 
 export async function list(req: Request) {
+  // Default sort is Roll Number ascending (numeric-aware) — never Registration
+  // ID, never MongoDB insertion order. A caller may still explicitly ask for
+  // a different field via ?sortBy=&sortOrder=, which parsePagination handles
+  // as before; only the *default* (no sortBy given) changes here.
+  const explicitSort = typeof req.query.sortBy === "string" && req.query.sortBy.trim();
   const { page, limit, skip, sort } = parsePagination(req, { createdAt: -1 });
   const filter = await buildStudentFilter(req);
 
@@ -245,10 +251,23 @@ export async function list(req: Request) {
 
   Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
-  const [docs, total] = await Promise.all([
-    Student.find(filter).sort(sort).skip(skip).limit(limit),
-    Student.countDocuments(filter),
-  ]);
+  let docs: StudentDoc[];
+  let total: number;
+  if (explicitSort) {
+    [docs, total] = await Promise.all([
+      Student.find(filter).sort(sort).skip(skip).limit(limit),
+      Student.countDocuments(filter),
+    ]);
+  } else {
+    const order = req.query.sortOrder === "desc" ? -1 : 1;
+    const [orderedIds, count] = await Promise.all([
+      pageIdsByRoll(Student, filter, order, skip, limit),
+      Student.countDocuments(filter),
+    ]);
+    const fetched = await Student.find({ _id: { $in: orderedIds } });
+    docs = reorderByIds(fetched, orderedIds);
+    total = count;
+  }
   const items = await withGuardians(docs);
   return { items, meta: buildMeta(page, limit, total) };
 }
@@ -269,7 +288,11 @@ export async function exportList(req: Request): Promise<Record<string, unknown>[
   const filter = await buildStudentFilter(req);
   Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
-  const docs = await Student.find(filter).sort({ name: 1 }).limit(EXPORT_MAX_ROWS);
+  // Roll ascending (numeric-aware), same default as list() — a print/export
+  // must show students in the same order the on-screen list does.
+  const orderedIds = await pageIdsByRoll(Student, filter, 1, 0, EXPORT_MAX_ROWS);
+  const fetched = await Student.find({ _id: { $in: orderedIds } });
+  const docs = reorderByIds(fetched, orderedIds);
   const withG = await withGuardians(docs);
 
   const batchIds = [...new Set(docs.map((d) => d.currentBatchId).filter(Boolean).map((id) => String(id)))];

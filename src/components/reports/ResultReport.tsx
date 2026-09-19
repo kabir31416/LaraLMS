@@ -9,6 +9,7 @@ import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudents } from "@/contexts/StudentContext";
+import { compareByRoll } from "@/lib/studentDisplay";
 import { ReportToolbar } from "./ReportToolbar";
 
 export default function ResultReport() {
@@ -65,10 +66,13 @@ export default function ResultReport() {
   const headers = ["এক্সাম", "শিক্ষার্থী", "নম্বর", "পূর্ণ মান"];
   const rows: (string | number)[][] = [];
   filteredExams.forEach((ex) => {
-    results.filter((r) => r.examId === ex.id).forEach((r) => {
-      const s = students.find((x) => x.id === r.studentId);
-      rows.push([ex.title, s?.name || r.studentId, r.marks ?? "অনুপস্থিত", ex.fullMarks]);
-    });
+    results
+      .filter((r) => r.examId === ex.id)
+      .map((r) => ({ r, s: students.find((x) => x.id === r.studentId) }))
+      .sort((a, b) => compareByRoll({ rollNumber: a.s?.rollNumber, name: a.s?.name || a.r.studentId }, { rollNumber: b.s?.rollNumber, name: b.s?.name || b.r.studentId }))
+      .forEach(({ r, s }) => {
+        rows.push([ex.title, s?.name || r.studentId, r.marks ?? "অনুপস্থিত", ex.fullMarks]);
+      });
   });
 
   return (

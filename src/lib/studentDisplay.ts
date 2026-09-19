@@ -36,3 +36,24 @@ export function matchesStudentQuery(query: string, s: { name: string; rollNumber
   const haystack = `${s.name} ${s.rollNumber || ""} ${s.systemId} ${s.mobile || ""}`.toLowerCase();
   return haystack.includes(q);
 }
+
+const MISSING_ROLL_SORT_KEY = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Numeric-aware ascending Roll Number comparator for every student roster in
+ * the app (Student List, Batch roster, Result Entry, Fee due list, etc.) —
+ * `rollNumber` is admin-entered/Excel-imported free text, so a plain string
+ * sort would put "10" before "2". Missing/non-numeric rolls always sort
+ * last, regardless of direction; `name` is the tiebreaker. This sorts by
+ * Roll ONLY — never by Registration ID (`systemId`/`studentId`), which is a
+ * separate, permanent identity field.
+ */
+export function compareByRoll(a: { rollNumber?: string; name: string }, b: { rollNumber?: string; name: string }): number {
+  const parse = (v?: string): number => {
+    if (!v || !v.trim()) return MISSING_ROLL_SORT_KEY;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : MISSING_ROLL_SORT_KEY;
+  };
+  const diff = parse(a.rollNumber) - parse(b.rollNumber);
+  return diff !== 0 ? diff : a.name.localeCompare(b.name);
+}
