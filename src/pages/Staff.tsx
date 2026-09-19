@@ -13,10 +13,11 @@ import { useStaff } from "@/contexts/StaffContext";
 import { STAFF_TYPES, STAFF_TYPE_LABELS, type Staff } from "@/types/staff";
 import { StaffForm } from "@/components/staff/StaffForm";
 import { toast } from "sonner";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { ApiClientError, useAuth } from "@/contexts/AuthContext";
 
 const StaffPage = () => {
   const { staff, deleteStaff } = useStaff();
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [type, setType] = useState<string>("all");
   const [open, setOpen] = useState(false);
@@ -90,7 +91,13 @@ const StaffPage = () => {
                 {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">কোনো স্টাফ পাওয়া যায়নি</TableCell></TableRow>
                 ) : (
-                  filtered.map((s) => (
+                  filtered.map((s) => {
+                    // Only the original Super Admin may edit/remove an Admin
+                    // staff record or reset their login — the backend
+                    // rejects this too (staff.service.ts/user.service.ts),
+                    // this just avoids offering an action that would 403.
+                    const adminLocked = s.staffType === "Admin" && !user?.isSuperAdmin;
+                    return (
                     <TableRow key={s.id}>
                       <TableCell>
                         <Avatar className="h-9 w-9">
@@ -116,15 +123,22 @@ const StaffPage = () => {
                             <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEdit(s)}><Pencil className="mr-2 h-4 w-4" /> সম্পাদনা</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDelete(s.id)}>
+                            <DropdownMenuItem disabled={adminLocked} onClick={() => handleEdit(s)} title={adminLocked ? "শুধু সুপার অ্যাডমিন এডমিন স্টাফ সম্পাদনা করতে পারবেন" : undefined}>
+                              <Pencil className="mr-2 h-4 w-4" /> সম্পাদনা
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={adminLocked}
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDelete(s.id)}
+                              title={adminLocked ? "শুধু সুপার অ্যাডমিন এডমিন স্টাফ মুছতে পারবেন" : undefined}
+                            >
                               <Trash2 className="mr-2 h-4 w-4" /> মুছে ফেলুন
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))
+                  );})
                 )}
               </TableBody>
             </Table>

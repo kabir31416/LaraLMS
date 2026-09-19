@@ -43,6 +43,44 @@ function isDuplicateKeyError(err: unknown): boolean {
 }
 
 /**
+ * True only for the original seeded root Admin (User.isSuperAdmin). For an
+ * install that had its Admin seeded before this field existed, nobody is
+ * flagged yet — in that case, the earliest-created Admin-role user (the
+ * seeded account in every install, old or new) is treated as the super
+ * admin, so the restriction below takes effect immediately without a
+ * separate manual migration step. Called once at login time (auth.service.ts)
+ * to bake the result into the JWT, not on every request.
+ */
+export async function resolveIsSuperAdmin(user: UserDoc): Promise<boolean> {
+  if (user.isSuperAdmin) return true;
+  const anyFlagged = await User.exists({ isSuperAdmin: true });
+  if (anyFlagged) return false;
+  const role = await Role.findById(user.roleId);
+  if (!role || !role.permissions.includes("*")) return false;
+  const earliestAdmin = await User.findOne({ roleId: user.roleId }).sort({ createdAt: 1 });
+  return !!earliestAdmin && String(earliestAdmin._id) === String(user._id);
+}
+
+/** Throws unless the requester is the super admin — see resolveIsSuperAdmin(). */
+export function assertSuperAdmin(req: Request): void {
+  if (!req.user?.isSuperAdmin) {
+    throw ApiError.forbidden("Only the original Super Admin account can do this");
+  }
+}
+
+/**
+ * A regular Admin can create other Admins and set their initial module
+ * permissions, but must not be able to later edit an existing Admin's own
+ * login (role/status/permissions/credentials) — otherwise any Admin could
+ * escalate/deescalate another Admin's access, lock them out, or take over
+ * their account outright. Only the root Super Admin may do that.
+ */
+async function isAdminRoleUser(user: UserDoc): Promise<boolean> {
+  const role = await Role.findById(user.roleId);
+  return role?.name === "admin";
+}
+
+/**
  * Turns the generic "already exists" conflict into a self-diagnosing one —
  * names exactly which existing account the identifier collides with, so an
  * operator (who already holds USERS_MANAGE to even reach this endpoint,
@@ -205,6 +243,7 @@ export async function updateUser(
   patch: { roleId?: string; status?: "active" | "locked"; overridePermissions?: string[]; deniedPermissions?: string[] },
 ): Promise<UserDoc> {
   const user = await getUserById(id);
+  if (await isAdminRoleUser(user)) assertSuperAdmin(req);
   const before = user.toObject();
   if (patch.roleId) user.roleId = patch.roleId as never;
   if (patch.status) {
@@ -227,6 +266,7 @@ export async function updateUser(
  */
 export async function resetCredentials(req: Request, id: string, patch: { identifier?: string; password: string }): Promise<UserDoc> {
   const user = await getUserById(id);
+  if (await isAdminRoleUser(user)) assertSuperAdmin(req);
   const before = user.toObject();
 
   if (patch.identifier) {
@@ -256,6 +296,7 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
 
 export async function deleteUser(req: Request, id: string): Promise<void> {
   const user = await getUserById(id);
+  if (await isAdminRoleUser(user)) assertSuperAdmin(req);
   await user.deleteOne();
   await recordAudit({ req, action: "user.delete", module: "users", targetCollection: "users", targetId: id, before: user.toObject() });
 }

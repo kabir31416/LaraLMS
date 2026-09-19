@@ -4,6 +4,17 @@ import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { toAsciiDigits } from "../../common/utils/digits";
+import { assertSuperAdmin } from "../users/user.service";
+
+/**
+ * An "Admin" staff row backs a real password login — editing or removing one
+ * (name/mobile/status swap, or deleting it outright) is as sensitive as
+ * touching that login directly, so both are gated the same way
+ * user.service.ts gates editing/resetting an existing Admin's User account:
+ * only the original Super Admin, never any other Admin with plain
+ * STAFF_MANAGE. Creating a NEW Admin is unaffected — this only guards an
+ * EXISTING one.
+ */
 
 function isDuplicateKeyError(err: unknown): boolean {
   return !!(err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000);
@@ -69,6 +80,10 @@ export async function create(req: Request, data: Partial<StaffDoc>): Promise<Sta
 
 export async function update(req: Request, id: string, patch: Partial<StaffDoc>): Promise<StaffDoc> {
   const doc = await getById(id);
+  // Covers both directions: editing an existing Admin, and trying to
+  // promote a non-Admin staff member INTO "Admin" via this same edit —
+  // both are gated the same way as touching an Admin's login directly.
+  if (doc.staffType === "Admin" || patch.staffType === "Admin") assertSuperAdmin(req);
   const before = doc.toObject();
   if (typeof patch.staffId === "string" && patch.staffId.trim() !== (doc.staffId ?? "")) {
     patch = { ...patch, staffId: await normalizeAndCheckStaffId(patch.staffId, id) };
@@ -81,6 +96,7 @@ export async function update(req: Request, id: string, patch: Partial<StaffDoc>)
 
 export async function remove(req: Request, id: string): Promise<void> {
   const doc = await getById(id);
+  if (doc.staffType === "Admin") assertSuperAdmin(req);
 
   // Phase 1 §4's missing-delete-guard finding, fixed: a director who still
   // directs at least one batch can't just vanish.

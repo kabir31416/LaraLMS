@@ -42,6 +42,7 @@ async function seedAdmin(adminRoleId: string) {
     passwordHash,
     roleId: adminRoleId,
     mustChangePassword: true,
+    isSuperAdmin: true,
   });
   logger.info(`Seeded first Admin user — identifier: ${env.ADMIN_SEED_PHONE} (change the password on first login).`);
 }
