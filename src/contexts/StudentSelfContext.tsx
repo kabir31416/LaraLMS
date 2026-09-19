@@ -164,6 +164,8 @@ interface StudentSelfContextType {
   loading: boolean;
   refresh: () => Promise<void>;
   updateProfile: (patch: SelfEditableFields) => Promise<void>;
+  uploadPhoto: (photo: Blob) => Promise<void>;
+  removePhoto: () => Promise<void>;
 }
 
 const StudentSelfContext = createContext<StudentSelfContextType | null>(null);
@@ -195,6 +197,19 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
     setStudent(studentFromApi({ ...doc, batch: null, director: null }));
   }, [student]);
 
+  /** POST /students/me/photo — identity comes from the session token server-side, never the URL, so there's no student id to pass here at all. */
+  const uploadPhoto = useCallback(async (photo: Blob) => {
+    const formData = new FormData();
+    formData.append("photo", photo, "photo.jpg");
+    const doc = await api.postForm<Omit<ApiMyProfile, "batch" | "director">>("/students/me/photo", formData);
+    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+  }, []);
+
+  const removePhoto = useCallback(async () => {
+    const doc = await api.del<Omit<ApiMyProfile, "batch" | "director">>("/students/me/photo");
+    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+  }, []);
+
   useEffect(() => {
     if (!user?.studentId) {
       setLoading(false);
@@ -204,8 +219,8 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
   }, [user?.studentId, refresh]);
 
   const value = useMemo(
-    () => ({ student, batch, director, loading, refresh, updateProfile }),
-    [student, batch, director, loading, refresh, updateProfile],
+    () => ({ student, batch, director, loading, refresh, updateProfile, uploadPhoto, removePhoto }),
+    [student, batch, director, loading, refresh, updateProfile, uploadPhoto, removePhoto],
   );
 
   return <StudentSelfContext.Provider value={value}>{children}</StudentSelfContext.Provider>;

@@ -17,6 +17,7 @@ import { useAcademic } from "@/contexts/AcademicContext";
 import { StudentFilters, type DueStatus } from "@/components/students/StudentFilters";
 import { StudentTable } from "@/components/students/StudentTable";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
+import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
 import type { Student } from "@/types/student";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -63,7 +64,7 @@ function friendlyError(err: unknown, fallback: string): string {
 }
 
 const Students = () => {
-  const { deleteStudent } = useStudents();
+  const { deleteStudent, uploadStudentPhoto, deleteStudentPhoto } = useStudents();
   const { getCourse } = useAcademic();
 
   const [search, setSearch] = useState("");
@@ -89,6 +90,7 @@ const Students = () => {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [photoStudent, setPhotoStudent] = useState<Student | null>(null);
 
   const courseName = courseId === "all" ? undefined : getCourse(courseId)?.name;
 
@@ -141,6 +143,13 @@ const Students = () => {
       load();
     } catch (err) {
       toast.error(friendlyError(err, "মুছতে ব্যর্থ হয়েছে"));
+    }
+  };
+
+  const handlePhotoOpenChange = (open: boolean) => {
+    if (!open) {
+      setPhotoStudent(null);
+      load(); // refresh this page's own list so the new photo shows immediately, same as after edit/delete
     }
   };
 
@@ -239,7 +248,7 @@ const Students = () => {
           {loading ? (
             <div className="p-6 space-y-3">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
-            <StudentTable students={students} onEdit={handleEdit} onDelete={handleDelete} />
+            <StudentTable students={students} onEdit={handleEdit} onDelete={handleDelete} onUploadPhoto={setPhotoStudent} />
           )}
 
           {meta && meta.totalPages > 1 && (
@@ -283,6 +292,16 @@ const Students = () => {
           onOpenChange={handleFormOpenChange}
           editStudent={editStudent}
         />
+        {photoStudent && (
+          <StudentPhotoUploader
+            open={!!photoStudent}
+            onOpenChange={handlePhotoOpenChange}
+            studentName={photoStudent.name}
+            currentPhotoUrl={photoStudent.photo}
+            onUpload={async (blob) => { await uploadStudentPhoto(photoStudent.id, blob); }}
+            onRemove={async () => { await deleteStudentPhoto(photoStudent.id); }}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

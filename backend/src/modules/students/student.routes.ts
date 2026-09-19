@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth.middleware";
 import { requirePermission, requirePermissionOrSelf, requireSelf } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
+import { photoUpload } from "../../common/middlewares/imageUpload.middleware";
 import {
   admissionRollStatsQuerySchema,
   createStudentSchema,
@@ -31,6 +32,12 @@ router.post("/", requirePermission(PERMISSIONS.STUDENTS_CREATE), validate(create
 // Student Portal self-profile (Phase 3, Module 27) — must precede "/:id" so
 // Express doesn't try to resolve "me" as an :id.
 router.get("/me", requirePermission(PERMISSIONS.STUDENTS_UPDATE_SELF), controller.getMyProfile);
+// Student Photo Management's self-service upload — identity comes from the
+// session (req.user.studentId in the controller/service), never the URL, so
+// there's no "/me/photo" vs "/:id/photo" ambiguity to worry about; still
+// must precede "/:id/photo" below for the same routing reason as "/me" itself.
+router.post("/me/photo", requirePermission(PERMISSIONS.STUDENTS_UPDATE_SELF), photoUpload.single("photo"), controller.uploadMyPhoto);
+router.delete("/me/photo", requirePermission(PERMISSIONS.STUDENTS_UPDATE_SELF), controller.removeMyPhoto);
 
 // Admission Result feature's summary cards — must also precede "/:id".
 router.get(
@@ -64,6 +71,10 @@ router.patch(
   controller.updateAdmissionRoll,
 );
 router.patch("/:id/status", requirePermission(PERMISSIONS.STUDENTS_UPDATE), validate(updateStatusSchema), controller.updateStatus);
+// Admin upload/replace/remove — same STUDENTS_UPDATE permission every other
+// admin edit to this student already requires, no separate privilege.
+router.post("/:id/photo", requirePermission(PERMISSIONS.STUDENTS_UPDATE), validate(idParamSchema), photoUpload.single("photo"), controller.uploadPhoto);
+router.delete("/:id/photo", requirePermission(PERMISSIONS.STUDENTS_UPDATE), validate(idParamSchema), controller.removePhoto);
 router.delete("/:id", requirePermission(PERMISSIONS.STUDENTS_DELETE), validate(idParamSchema), controller.remove);
 
 // Batch enrollment & transfer history — Phase 1 §14.

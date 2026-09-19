@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -55,6 +56,7 @@
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^6.2.3",
     "react-hook-form": "^7.61.1",
     "react-resizable-panels": "^2.1.9",
     "react-router-dom": "^6.30.1",

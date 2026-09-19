@@ -25,6 +25,14 @@ const envSchema = z.object({
    * two logins only — Admin/Staff-password logins are unaffected.
    */
   PORTAL_ACCESS_EXPIRES_IN: z.string().default("12h"),
+  /**
+   * The public Student Entry page (/studententry) issues its own short-lived
+   * token after verifying registration/roll + phone (publicStudentEntry
+   * module) — separate from every other session lifetime above since it's
+   * neither an Admin session nor a Portal login, just enough time to
+   * complete one profile/photo update in a single visit.
+   */
+  STUDENT_ENTRY_TOKEN_EXPIRES_IN: z.string().default("15m"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
 

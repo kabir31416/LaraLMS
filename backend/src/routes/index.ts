@@ -28,6 +28,7 @@ import branchLedgerRoutes from "../modules/accounts/branchLedger.routes";
 import noticeRoutes from "../modules/notices/notice.routes";
 import publicInfoRoutes from "../modules/publicInfo/publicInfo.routes";
 import publicResultsRoutes from "../modules/publicResults/publicResults.routes";
+import publicStudentEntryRoutes from "../modules/publicStudentEntry/publicStudentEntry.routes";
 import auditLogRoutes from "../audit/auditLog.routes";
 import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
 
@@ -69,6 +70,7 @@ router.use("/branch-ledger", branchLedgerRoutes);
 router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
 router.use("/public/results", publicResultsRoutes);
+router.use("/public/student-entry", publicStudentEntryRoutes);
 router.use("/audit-logs", auditLogRoutes);
 router.use("/admission-results", admissionResultRoutes);
 

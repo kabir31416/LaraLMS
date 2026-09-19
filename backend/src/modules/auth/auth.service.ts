@@ -129,7 +129,7 @@ export async function login(req: Request, identifier: string, password: string) 
  * either typing style matches the stored value, without ever touching the
  * stored value itself.
  */
-function normalizePhoneForLookup(input: string): string {
+export function normalizePhoneForLookup(input: string): string {
   const digits = toAsciiDigits(input).replace(/\D/g, "");
   if (digits.length === 13 && digits.startsWith("880")) return "0" + digits.slice(3);
   return digits;

@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
 import { RELATIONS } from "@/types/student";
@@ -13,6 +14,8 @@ import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
 import { Navigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
+import { Camera } from "lucide-react";
 
 function Field({ label, value }: { label: string; value?: string | number }) {
   return <div><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value || "—"}</p></div>;
@@ -29,9 +32,10 @@ function ReadOnlyField({ label, value }: { label: string; value?: string | numbe
 }
 
 export default function StudentProfile() {
-  const { user, student, batch, director, updateProfile } = useStudentSelf();
+  const { user, student, batch, director, updateProfile, uploadPhoto, removePhoto } = useStudentSelf();
   const [form, setForm] = useState<SelfEditableFields>(() => initForm());
   const [saving, setSaving] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   function initForm(): SelfEditableFields {
     return {
@@ -85,6 +89,23 @@ export default function StudentProfile() {
     <DashboardLayout>
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">আমার প্রোফাইল</h1>
+
+        <Card>
+          <CardContent className="pt-6 flex flex-col items-center gap-3">
+            <button type="button" onClick={() => setPhotoOpen(true)} className="relative group" title="ছবি পরিবর্তন করুন">
+              <Avatar className="h-24 w-24 border-4 border-muted">
+                {student.photo && <AvatarImage src={student.photo} alt={student.name} className="object-cover" />}
+                <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">{student.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera className="h-6 w-6 text-white" />
+              </span>
+            </button>
+            <Button variant="outline" size="sm" onClick={() => setPhotoOpen(true)}>
+              <Camera className="h-4 w-4 mr-2" /> {student.photo ? "ছবি পরিবর্তন করুন" : "ছবি আপলোড করুন"}
+            </Button>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="pt-6">
@@ -191,6 +212,15 @@ export default function StudentProfile() {
           <Button onClick={handleSave} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "প্রোফাইল সংরক্ষণ করুন"}</Button>
         </div>
       </div>
+
+      <StudentPhotoUploader
+        open={photoOpen}
+        onOpenChange={setPhotoOpen}
+        studentName={student.name}
+        currentPhotoUrl={student.photo}
+        onUpload={uploadPhoto}
+        onRemove={removePhoto}
+      />
     </DashboardLayout>
   );
 }

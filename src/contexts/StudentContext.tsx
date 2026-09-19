@@ -173,6 +173,8 @@ interface StudentContextType {
   addStudentQuick: (data: { rollNumber: string; name: string; mobile: string }) => Promise<Student>;
   updateStudent: (id: string, data: Partial<Student>) => Promise<Student>;
   updateRoll: (id: string, rollNumber: string) => Promise<Student>;
+  uploadStudentPhoto: (id: string, photo: Blob) => Promise<Student>;
+  deleteStudentPhoto: (id: string) => Promise<Student>;
   deleteStudent: (id: string) => Promise<void>;
   getStudent: (id: string) => Student | undefined;
   // Batch enrollment — Phase 1 §14
@@ -233,6 +235,20 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
     return updated;
   }, [upsertLocal]);
 
+  const uploadStudentPhoto = useCallback(async (id: string, photo: Blob): Promise<Student> => {
+    const formData = new FormData();
+    formData.append("photo", photo, "photo.jpg");
+    const updated = fromApi(await api.postForm<ApiStudent>(`/students/${id}/photo`, formData));
+    upsertLocal(updated);
+    return updated;
+  }, [upsertLocal]);
+
+  const deleteStudentPhoto = useCallback(async (id: string): Promise<Student> => {
+    const updated = fromApi(await api.del<ApiStudent>(`/students/${id}/photo`));
+    upsertLocal(updated);
+    return updated;
+  }, [upsertLocal]);
+
   const deleteStudent = useCallback(async (id: string) => {
     await api.del(`/students/${id}`);
     setStudents((prev) => prev.filter((s) => s.id !== id));
@@ -258,10 +274,10 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       students, loading,
-      addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
+      addStudent, addStudentQuick, updateStudent, updateRoll, uploadStudentPhoto, deleteStudentPhoto, deleteStudent, getStudent,
       enrollStudent, transferStudent, withdrawStudent, refreshStudents,
     }),
-    [students, loading, addStudent, addStudentQuick, updateStudent, updateRoll, deleteStudent, getStudent,
+    [students, loading, addStudent, addStudentQuick, updateStudent, updateRoll, uploadStudentPhoto, deleteStudentPhoto, deleteStudent, getStudent,
       enrollStudent, transferStudent, withdrawStudent, refreshStudents],
   );
 
