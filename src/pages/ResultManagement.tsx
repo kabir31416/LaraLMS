@@ -585,7 +585,7 @@ function ResultRowEditable({ row, onUpdated }: { row: ResultRowView; onUpdated: 
 function BatchResultTab({ isDirector }: { isDirector: boolean }) {
   const { user } = useAuth();
   const { batches } = useBatches();
-  const { courses, subjects, lectures } = useAcademic();
+  const { courses, getSubjectsByCourse, getLecturesBySubject } = useAcademic();
   const { listExams } = useAttendance();
 
   const myBatches = useMemo(
@@ -604,8 +604,11 @@ function BatchResultTab({ isDirector }: { isDirector: boolean }) {
     () => (courseId ? myBatches.filter((b) => b.courseId === courseId) : myBatches),
     [myBatches, courseId],
   );
-  const courseSubjects = useMemo(() => (courseId ? subjects.filter((s) => s.courseId === courseId) : []), [subjects, courseId]);
-  const subjectLectures = useMemo(() => lectures.filter((l) => l.subjectId === subjectId), [lectures, subjectId]);
+  const courseSubjects = useMemo(() => (courseId ? getSubjectsByCourse(courseId) : []), [getSubjectsByCourse, courseId]);
+  const subjectLectures = useMemo(
+    () => (courseId && subjectId ? getLecturesBySubject(courseId, subjectId) : []),
+    [getLecturesBySubject, courseId, subjectId],
+  );
 
   useEffect(() => { setBatchId(""); setSubjectId(""); setLectureId(""); setExamId(""); }, [courseId]);
   useEffect(() => { setLectureId(""); setExamId(""); }, [subjectId]);

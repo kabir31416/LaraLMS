@@ -69,12 +69,8 @@ export default function Settings() {
   const [section, setSection] = useState<Section>("institution");
   const [academicTab, setAcademicTab] = useState("sessions");
   const [publicTab, setPublicTab] = useState("info");
-  const [subjectCourseFilter, setSubjectCourseFilter] = useState<string | undefined>(undefined);
-
-  const openSubjectsForCourse = (courseId: string) => {
-    setSubjectCourseFilter(courseId);
-    setAcademicTab("subjects");
-  };
+  /** Jumps to the global Subject catalog tab — used by CoursesTab's "নতুন গ্লোবাল সাবজেক্ট তৈরি" when the Subject an admin wants to assign doesn't exist yet. Assigning an EXISTING Subject to a Course happens inline in CoursesTab itself, not here. */
+  const openSubjectsForCourse = () => setAcademicTab("subjects");
 
   return (
     <DashboardLayout>
@@ -121,7 +117,7 @@ export default function Settings() {
                 </TabsList>
                 <TabsContent value="sessions" className="mt-4"><SessionsTab /></TabsContent>
                 <TabsContent value="courses" className="mt-4"><CoursesTab onManageSubjects={openSubjectsForCourse} /></TabsContent>
-                <TabsContent value="subjects" className="mt-4"><SubjectsTab initialCourseFilter={subjectCourseFilter} /></TabsContent>
+                <TabsContent value="subjects" className="mt-4"><SubjectsTab /></TabsContent>
                 <TabsContent value="lectures" className="mt-4"><LecturesTab /></TabsContent>
               </Tabs>
               </div>

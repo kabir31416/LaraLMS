@@ -12,6 +12,7 @@
     "check-login": "ts-node-dev --transpile-only src/scripts/check-login.ts",
     "list-logins": "ts-node-dev --transpile-only src/scripts/list-student-logins.ts",
     "check-setup": "ts-node-dev --transpile-only src/scripts/check-setup.ts",
+    "migrate:global-subjects": "ts-node-dev --transpile-only src/scripts/migrate-global-subjects.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

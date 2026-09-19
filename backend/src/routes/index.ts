@@ -6,6 +6,8 @@ import settingsRoutes from "../modules/settings/settings.routes";
 import academicSessionRoutes from "../modules/academicSessions/academicSession.routes";
 import courseRoutes from "../modules/courses/course.routes";
 import subjectRoutes from "../modules/subjects/subject.routes";
+import courseSubjectRoutes from "../modules/courseSubjects/courseSubject.routes";
+import courseSubjectFlatRoutes from "../modules/courseSubjects/courseSubjectFlat.routes";
 import lectureRoutes from "../modules/lectures/lecture.routes";
 import studentRoutes from "../modules/students/student.routes";
 import studentImportRoutes from "../modules/studentImports/studentImport.routes";
@@ -46,6 +48,12 @@ router.use("/settings", settingsRoutes);
 router.use("/sessions", academicSessionRoutes);
 router.use("/courses", courseRoutes);
 router.use("/subjects", subjectRoutes);
+// Course → Subjects assignment (Subject/Course Refactor): a flat listing
+// across every Course ("/course-subjects") alongside per-Course CRUD
+// ("/courses/:courseId/subjects" — mergeParams:true reads :courseId from
+// this mount path).
+router.use("/course-subjects", courseSubjectFlatRoutes);
+router.use("/courses/:courseId/subjects", courseSubjectRoutes);
 router.use("/lectures", lectureRoutes);
 // Mounted before "/students" so its fixed-segment paths (e.g. /students/import/history)
 // are never at risk of a future "/students/:id"-style route swallowing them.

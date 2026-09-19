@@ -4,7 +4,7 @@ import { MASTER_DATA_STATUS } from "../academicSessions/academicSession.model";
 export const createSubjectSchema = z.object({
   body: z.object({
     name: z.string().trim().min(2).max(80),
-    courseId: z.string().length(24),
+    code: z.string().trim().min(1).max(20).optional(),
     status: z.enum(MASTER_DATA_STATUS).optional(),
     displayOrder: z.number().int().optional(),
   }),
@@ -14,7 +14,7 @@ export const updateSubjectSchema = z.object({
   params: z.object({ id: z.string().length(24) }),
   body: z.object({
     name: z.string().trim().min(2).max(80).optional(),
-    courseId: z.string().length(24).optional(),
+    code: z.string().trim().min(1).max(20).optional(),
     status: z.enum(MASTER_DATA_STATUS).optional(),
     displayOrder: z.number().int().optional(),
   }),
@@ -27,7 +27,6 @@ export const listQuerySchema = z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
     search: z.string().optional(),
-    courseId: z.string().length(24).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
   }),

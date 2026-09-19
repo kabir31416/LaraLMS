@@ -14,7 +14,7 @@ import type { ClassExam, ClassExamType } from "@/types/academic";
 import { toast } from "sonner";
 
 export function ClassExamsTab() {
-  const { classExams, lectures, subjects, addClassExam, updateClassExam, deleteClassExam, settings } = useAcademic();
+  const { classExams, lectures, addClassExam, updateClassExam, deleteClassExam, settings, getSubjectForCourseSubject } = useAcademic();
   const { batches } = useBatches();
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<ClassExam | null>(null);
@@ -52,7 +52,7 @@ export function ClassExamsTab() {
   const lecName = (id: string) => {
     const l = lectures.find((x) => x.id === id);
     if (!l) return "—";
-    const s = subjects.find((s) => s.id === l.subjectId);
+    const s = getSubjectForCourseSubject(l.courseSubjectId);
     return `${l.title} (${s?.name || ""})`;
   };
 

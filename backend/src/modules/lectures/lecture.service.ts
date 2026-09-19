@@ -4,20 +4,22 @@ import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 
-/** See course.service.ts's getDirectorCourseIds — a Batch Director only sees lectures whose Subject belongs to their own course(s) (Phase 4 §7/§8). */
-async function scopeSubjectIds(scopeCourseIds: string[]): Promise<string[]> {
-  const { Subject } = await import("../subjects/subject.model");
-  const ids = await Subject.find({ courseId: { $in: scopeCourseIds } }).distinct("_id");
+/** See course.service.ts's getDirectorCourseIds — a Batch Director only sees lectures whose CourseSubject belongs to their own course(s) (Phase 4 §7/§8). */
+async function scopeCourseSubjectIds(scopeCourseIds: string[]): Promise<string[]> {
+  const { CourseSubject } = await import("../courseSubjects/courseSubject.model");
+  const ids = await CourseSubject.find({ courseId: { $in: scopeCourseIds } }).distinct("_id");
   return ids.map(String);
 }
 
 export async function list(req: Request, scopeCourseIds?: string[]) {
   const { page, limit, skip, sort } = parsePagination(req, { lectureNumber: 1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["title"]) };
-  if (req.query.subjectId) filter.subjectId = req.query.subjectId;
+  if (req.query.courseSubjectId) filter.courseSubjectId = req.query.courseSubjectId;
   if (scopeCourseIds) {
-    const allowedSubjectIds = await scopeSubjectIds(scopeCourseIds);
-    filter.subjectId = filter.subjectId ? { $eq: filter.subjectId, $in: allowedSubjectIds } : { $in: allowedSubjectIds };
+    const allowedCourseSubjectIds = await scopeCourseSubjectIds(scopeCourseIds);
+    filter.courseSubjectId = filter.courseSubjectId
+      ? { $eq: filter.courseSubjectId, $in: allowedCourseSubjectIds }
+      : { $in: allowedCourseSubjectIds };
   }
 
   const [items, total] = await Promise.all([
@@ -31,19 +33,19 @@ export async function getById(id: string, scopeCourseIds?: string[]): Promise<Le
   const doc = await Lecture.findById(id);
   if (!doc) throw ApiError.notFound("Lecture not found");
   if (scopeCourseIds) {
-    const allowedSubjectIds = await scopeSubjectIds(scopeCourseIds);
-    if (!allowedSubjectIds.includes(String(doc.subjectId))) throw ApiError.notFound("Lecture not found");
+    const allowedCourseSubjectIds = await scopeCourseSubjectIds(scopeCourseIds);
+    if (!allowedCourseSubjectIds.includes(String(doc.courseSubjectId))) throw ApiError.notFound("Lecture not found");
   }
   return doc;
 }
 
-export async function create(req: Request, data: Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description"> & Partial<Pick<LectureDoc, "status">>) {
+export async function create(req: Request, data: Pick<LectureDoc, "title" | "courseSubjectId" | "lectureNumber" | "description"> & Partial<Pick<LectureDoc, "status">>) {
   const doc = await Lecture.create(data);
   await recordAudit({ req, action: "lecture.create", module: "academic", targetCollection: "lectures", targetId: String(doc._id), after: doc.toObject() });
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<Pick<LectureDoc, "title" | "subjectId" | "lectureNumber" | "description" | "status">>) {
+export async function update(req: Request, id: string, patch: Partial<Pick<LectureDoc, "title" | "courseSubjectId" | "lectureNumber" | "description" | "status">>) {
   const doc = await Lecture.findById(id);
   if (!doc) throw ApiError.notFound("Lecture not found");
   const before = doc.toObject();

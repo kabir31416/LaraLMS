@@ -5,6 +5,7 @@ import { OfflineResult } from "./result.model";
 import { Batch } from "../batches/batch.model";
 import { Student, StudentDoc } from "../students/student.model";
 import { Subject, SubjectDoc } from "../subjects/subject.model";
+import { CourseSubject, CourseSubjectDoc } from "../courseSubjects/courseSubject.model";
 import { Lecture, LectureDoc } from "../lectures/lecture.model";
 import * as guardianService from "../guardians/guardian.service";
 import { getSettings, updateSettings } from "../settings/settings.service";
@@ -47,7 +48,31 @@ export async function readScope(req: Request): Promise<{ batchIds?: string[] } |
 }
 
 /**
- * A result entry is conceptually unique per batch+subject+lecture+date
+ * Resolves and validates the CourseSubject a caller referenced when
+ * creating/saving a result: it must exist, its Subject must exist, its
+ * Course must be the same Course the Batch belongs to, and the Lecture (if
+ * given) must actually belong to it — the same three checks persistResult
+ * used to do against a raw Subject, now against the CourseSubject that
+ * replaces it as the canonical link (Course→CourseSubject→Subject→Lecture).
+ */
+async function resolveCourseSubject(
+  courseSubjectId: string,
+  batchCourseId: Types.ObjectId,
+): Promise<{ courseSubject: CourseSubjectDoc; subject: SubjectDoc }> {
+  const courseSubject = await CourseSubject.findById(courseSubjectId);
+  if (!courseSubject) throw ApiError.badRequest("Invalid subject");
+  // The frontend only ever offers CourseSubjects belonging to the batch's own course, but a
+  // caller could still craft a request bypassing that — never trust the client's filtering alone.
+  if (String(courseSubject.courseId) !== String(batchCourseId)) {
+    throw ApiError.badRequest("This subject does not belong to the batch's course");
+  }
+  const subject = await Subject.findById(courseSubject.subjectId);
+  if (!subject) throw ApiError.badRequest("Invalid subject");
+  return { courseSubject, subject };
+}
+
+/**
+ * A result entry is conceptually unique per batch+courseSubject+lecture+date
  * (Phase 5 §9) — findOneAndUpdate(upsert) here means resubmitting the exact
  * same combination (e.g. the Result Entry page re-saved, or two directors
  * accidentally double-clicking) updates the same OfflineExam instead of
@@ -55,12 +80,16 @@ export async function readScope(req: Request): Promise<{ batchIds?: string[] } |
  */
 export async function create(
   req: Request,
-  data: { batchId: string; subjectId: string; lectureId: string; title: string; fullMarks: number; date: string },
+  data: { batchId: string; courseSubjectId: string; lectureId: string; title: string; fullMarks: number; date: string },
 ): Promise<OfflineExamDoc> {
   await assertCanActOnBatch(req, data.batchId);
+  const batch = await Batch.findById(data.batchId);
+  if (!batch) throw ApiError.notFound("Batch not found");
+  const { subject } = await resolveCourseSubject(data.courseSubjectId, batch.courseId);
+
   const doc = await OfflineExam.findOneAndUpdate(
-    { batchId: data.batchId, subjectId: data.subjectId, lectureId: data.lectureId, date: data.date },
-    { $set: { title: data.title, fullMarks: data.fullMarks } },
+    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, lectureId: data.lectureId, date: data.date },
+    { $set: { title: data.title, fullMarks: data.fullMarks, subjectId: subject._id } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
   await recordAudit({ req, action: "exam.create", module: "exams", targetCollection: "offlineexams", targetId: String(doc._id), after: doc.toObject() });
@@ -72,6 +101,7 @@ export async function list(req: Request) {
   const { page, limit, skip, sort } = parsePagination(req, { date: -1 });
   const filter: Record<string, unknown> = {};
   if (req.query.batchId) filter.batchId = req.query.batchId;
+  if (req.query.courseSubjectId) filter.courseSubjectId = req.query.courseSubjectId;
   if (req.query.subjectId) filter.subjectId = req.query.subjectId;
   if (req.query.lectureId) filter.lectureId = req.query.lectureId;
   if (req.query.date) filter.date = req.query.date;
@@ -269,22 +299,18 @@ interface PersistedResult {
  */
 async function persistResult(
   req: Request,
-  data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<PersistedResult> {
   await assertCanActOnBatch(req, data.batchId);
 
-  const [subject, lecture, batch] = await Promise.all([
-    Subject.findById(data.subjectId),
-    Lecture.findById(data.lectureId),
-    Batch.findById(data.batchId),
-  ]);
-  if (!subject) throw ApiError.badRequest("Invalid subject");
-  if (!lecture) throw ApiError.badRequest("Invalid lecture");
+  const batch = await Batch.findById(data.batchId);
   if (!batch) throw ApiError.notFound("Batch not found");
-  if (String(lecture.subjectId) !== String(subject._id)) throw ApiError.badRequest("This lecture does not belong to the selected subject");
-  // The frontend only ever offers subjects belonging to the batch's own course, but a caller
-  // could still craft a request bypassing that — never trust the client's filtering alone.
-  if (String(subject.courseId) !== String(batch.courseId)) throw ApiError.badRequest("This subject does not belong to the batch's course");
+  const [{ subject }, lecture] = await Promise.all([
+    resolveCourseSubject(data.courseSubjectId, batch.courseId),
+    Lecture.findById(data.lectureId),
+  ]);
+  if (!lecture) throw ApiError.badRequest("Invalid lecture");
+  if (String(lecture.courseSubjectId) !== String(data.courseSubjectId)) throw ApiError.badRequest("This lecture does not belong to the selected subject");
 
   // Every student in the submission must actually belong to this batch —
   // the frontend's own student list is already scoped this way, but a
@@ -301,8 +327,8 @@ async function persistResult(
 
   const title = `${subject.name} - ${lecture.title}`;
   const exam = await OfflineExam.findOneAndUpdate(
-    { batchId: data.batchId, subjectId: data.subjectId, lectureId: data.lectureId, date: data.date },
-    { $set: { title, fullMarks: data.fullMarks } },
+    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, lectureId: data.lectureId, date: data.date },
+    { $set: { title, fullMarks: data.fullMarks, subjectId: subject._id } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
@@ -332,7 +358,7 @@ async function persistResult(
     module: "exams",
     targetCollection: "offlineexams",
     targetId: String(exam._id),
-    after: { batchId: data.batchId, subjectId: data.subjectId, lectureId: data.lectureId, date: data.date, count: data.items.length },
+    after: { batchId: data.batchId, courseSubjectId: data.courseSubjectId, lectureId: data.lectureId, date: data.date, count: data.items.length },
   });
 
   return { exam, subject, lecture, batch, studentById };
@@ -341,12 +367,12 @@ async function persistResult(
 /**
  * "Save Result" — saves marks + attendance only. Never calls the SMS
  * gateway. Safe to click repeatedly: persistResult() always upserts the
- * same exam/result/attendance rows for this batch+subject+lecture+date
+ * same exam/result/attendance rows for this batch+courseSubject+lecture+date
  * rather than creating new ones (Phase 5 §9, unchanged by this feature).
  */
 export async function saveResult(
   req: Request,
-  data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<{ examId: string; resultsSaved: number }> {
   const { exam } = await persistResult(req, data);
   return { examId: String(exam._id), resultsSaved: data.items.length };
@@ -370,7 +396,7 @@ export async function saveResult(
  */
 export async function submitResult(
   req: Request,
-  data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<SubmitResultSummary> {
   const { exam, subject, lecture, batch, studentById } = await persistResult(req, data);
 

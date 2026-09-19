@@ -35,7 +35,7 @@ export default function VideoClasses() {
   const [form, setForm] = useState({ title: "", youtubeLink: "", description: "", duration: "", lectureId: "", batchId: "" });
 
   const subjects = courseId ? getSubjectsByCourse(courseId) : [];
-  const lectures = subjectId ? getLecturesBySubject(subjectId) : [];
+  const lectures = courseId && subjectId ? getLecturesBySubject(courseId, subjectId) : [];
 
   const visible = useMemo(() => {
     let list = videos;

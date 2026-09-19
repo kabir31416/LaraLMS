@@ -48,7 +48,7 @@ const DirectorResults = () => {
   const isAdmin = user?.role === "Admin";
   const { batches } = useBatches();
   const { students } = useStudents();
-  const { courses, subjects, lectures } = useAcademic();
+  const { courses, getSubjectsByCourse, getCourseSubjectId, lectures } = useAcademic();
   const { listExams, getResultsByExam, getByBatchDate, saveResult, submitResult, resendSms, getResultSmsTemplate, updateResultSmsTemplate } = useAttendance();
 
   // Admin can enter results for any batch; a Batch Director only their own.
@@ -66,8 +66,8 @@ const DirectorResults = () => {
   // Batch.courseId is a real Course reference, so this is a direct lookup.
   const batchCourse = useMemo(() => courses.find((c) => c.id === batch?.courseId), [courses, batch]);
   const courseSubjects = useMemo(
-    () => (batchCourse ? subjects.filter((s) => s.courseId === batchCourse.id) : []),
-    [subjects, batchCourse],
+    () => (batchCourse ? getSubjectsByCourse(batchCourse.id) : []),
+    [getSubjectsByCourse, batchCourse],
   );
   const [subjectId, setSubjectId] = useState<string>("");
   const [lectureId, setLectureId] = useState<string>("");
@@ -78,9 +78,13 @@ const DirectorResults = () => {
       setLectureId("");
     }
   }, [courseSubjects, subjectId]);
+  // The CourseSubject this batch's Course + the selected global Subject resolve to
+  // — the actual id Lectures/Exams key off, never the global Subject id alone
+  // (the same Subject can be assigned to other Courses with entirely different Lectures).
+  const courseSubjectId = batchCourse && subjectId ? getCourseSubjectId(batchCourse.id, subjectId) : undefined;
   const subjectLectures = useMemo(
-    () => lectures.filter((l) => l.subjectId === subjectId).sort((a, b) => a.lectureNumber - b.lectureNumber),
-    [lectures, subjectId],
+    () => lectures.filter((l) => l.courseSubjectId === courseSubjectId).sort((a, b) => a.lectureNumber - b.lectureNumber),
+    [lectures, courseSubjectId],
   );
 
   const [fullMarks, setFullMarks] = useState<number>(50);
@@ -107,7 +111,7 @@ const DirectorResults = () => {
   // the director sees what's already there before they touch anything).
   useEffect(() => {
     setSummary(null);
-    if (!batch || !subjectId || !lectureId || !date) {
+    if (!batch || !courseSubjectId || !lectureId || !date) {
       setMarks({});
       setAttendance({});
       setExistingExamId(null);
@@ -117,7 +121,7 @@ const DirectorResults = () => {
     setLoadingExisting(true);
     (async () => {
       try {
-        const exams = await listExams({ batchId: batch.id, subjectId, lectureId, date });
+        const exams = await listExams({ batchId: batch.id, courseSubjectId, lectureId, date });
         const exam = exams[0];
         if (cancelled) return;
         if (!exam) {
@@ -144,7 +148,7 @@ const DirectorResults = () => {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batch?.id, subjectId, lectureId, date]);
+  }, [batch?.id, courseSubjectId, lectureId, date]);
 
   // Rule 1/2: a typed mark means Present, a cleared mark falls back to Absent.
   const handleMarks = (sid: string, val: string) => {
@@ -160,8 +164,8 @@ const DirectorResults = () => {
   };
 
   /** Shared validation + payload build for both Save Result and Send Result — identical save step either way. */
-  const buildPayload = (): { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: { studentId: string; marks: number | null; attendance: AttendanceStatus }[] } | null => {
-    if (!batch || !subjectId || !lectureId) {
+  const buildPayload = (): { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: { studentId: string; marks: number | null; attendance: AttendanceStatus }[] } | null => {
+    if (!batch || !courseSubjectId || !lectureId) {
       toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ, সাবজেক্ট ও লেকচার নির্বাচন করুন।" });
       return null;
     }
@@ -197,7 +201,7 @@ const DirectorResults = () => {
       return { studentId: s.id, marks: num, attendance: status };
     });
 
-    return { batchId: batch.id, subjectId, lectureId, date, fullMarks, items };
+    return { batchId: batch.id, courseSubjectId, lectureId, date, fullMarks, items };
   };
 
   const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiClientError ? err.message : fallback);
