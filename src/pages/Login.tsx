@@ -232,7 +232,7 @@ const Login = () => {
           <p className="text-center text-sm text-muted-foreground mt-4 space-x-3">
             <Link to="/info" className="text-primary hover:underline">শিক্ষার্থীর তথ্য খুঁজুন</Link>
             <span className="text-border">|</span>
-            <Link to="/studententry" className="text-primary hover:underline">প্রোফাইল ছবি আপলোড</Link>
+            <Link to="/studententry" className="text-primary hover:underline">তথ্য আপডেট করুন</Link>
           </p>
         </CardContent>
       </Card>
