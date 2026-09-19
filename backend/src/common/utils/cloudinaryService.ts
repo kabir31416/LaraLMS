@@ -18,9 +18,12 @@ export interface UploadedPhoto {
  * own `transformation` is a server-side backstop, not the only resize step,
  * so a well-behaved upload never actually needs it to do much work.
  *
- * `publicIdSeed` (the student's registrationId) makes the asset's name
- * traceable in the Cloudinary dashboard without a lookup — never used as a
- * security boundary, since Cloudinary public IDs aren't secret.
+ * `publicIdSeed` (the caller passes the student's current Roll Number, or
+ * their Registration ID when no roll is set yet — see student.service.ts's
+ * applyPhotoUpload) makes the asset's name recognizable in the Cloudinary
+ * dashboard without a lookup — never used as a security boundary, since
+ * Cloudinary public IDs aren't secret, and the trailing timestamp already
+ * guarantees uniqueness even if two students briefly shared the same seed.
  */
 export async function uploadStudentPhoto(buffer: Buffer, publicIdSeed: string): Promise<UploadedPhoto> {
   if (!isCloudinaryConfigured) {

@@ -707,7 +707,10 @@ export async function applyPhotoUpload(req: Request, id: string, fileBuffer: Buf
   const before = doc.toObject();
   const previousPublicId = doc.photoPublicId;
 
-  const uploaded = await uploadStudentPhoto(fileBuffer, doc.registrationId);
+  // Named after the student's current Roll Number when one is set (the
+  // identifier office staff actually recognize), falling back to the
+  // permanent Registration ID for a student not yet assigned a roll.
+  const uploaded = await uploadStudentPhoto(fileBuffer, doc.currentRollNumber || doc.registrationId);
   doc.photoUrl = uploaded.url;
   doc.photoPublicId = uploaded.publicId;
   await doc.save();

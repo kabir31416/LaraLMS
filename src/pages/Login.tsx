@@ -1,13 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, Shield, UserCog, Phone, Lock, IdCard, Hash } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
+import { api } from "@/lib/apiClient";
+import type { PublicInstitutionInfo } from "@/types/academic";
 import { toast } from "sonner";
+
+/** Same absolute-icon-inside-Input pattern already used in Topbar's search box and PublicInfo's search field — kept local since it's only three lines and only this file needs it as a wrapper. */
+function IconInput({ icon: Icon, ...props }: { icon: typeof Phone } & React.ComponentProps<typeof Input>) {
+  return (
+    <div className="relative">
+      <Icon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input className="pl-9" {...props} />
+    </div>
+  );
+}
 
 /**
  * Three tabs, three different auth calls underneath.
@@ -26,6 +38,7 @@ const Login = () => {
   const navigate = useNavigate();
   const { login, studentLogin, staffLogin } = useAuth();
   const [tab, setTab] = useState<"admin" | "staff" | "student">("admin");
+  const [institution, setInstitution] = useState<PublicInstitutionInfo | null>(null);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -37,6 +50,14 @@ const Login = () => {
   const [studentRoll, setStudentRoll] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Same public, no-login branding endpoint PublicInfo.tsx/Marksheet.tsx
+  // already use — a coaching centre that's set its own name/logo sees it
+  // here too, instead of a generic "LaraLMS" mark, on the first screen
+  // every user (Admin, Staff, Student) actually sees.
+  useEffect(() => {
+    api.get<PublicInstitutionInfo>("/public/institution").then(setInstitution).catch(() => {});
+  }, []);
 
   const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,28 +114,33 @@ const Login = () => {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm border-none shadow-lg">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center mb-2">
-            <GraduationCap className="w-7 h-7 text-primary-foreground" />
-          </div>
-          <CardTitle className="text-xl">লারা এলএমএস</CardTitle>
+    <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-muted/50 to-muted/20 p-4">
+      <Card className="w-full max-w-sm border-none shadow-xl">
+        <CardHeader className="text-center pb-2">
+          {institution?.logoUrl ? (
+            <img src={institution.logoUrl} alt={institution.name} className="mx-auto w-14 h-14 rounded-2xl object-cover shadow-sm mb-2" />
+          ) : (
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-sm mb-2">
+              <GraduationCap className="w-8 h-8 text-primary-foreground" />
+            </div>
+          )}
+          <CardTitle className="text-xl">{institution?.name || "লারা এলএমএস"}</CardTitle>
           <p className="text-sm text-muted-foreground">আপনার অ্যাকাউন্টে লগইন করুন</p>
         </CardHeader>
         <CardContent>
           <Tabs value={tab} onValueChange={(v) => setTab(v as "admin" | "staff" | "student")}>
             <TabsList className="grid grid-cols-3 w-full mb-4">
-              <TabsTrigger value="admin">এডমিন</TabsTrigger>
-              <TabsTrigger value="staff">স্টাফ</TabsTrigger>
-              <TabsTrigger value="student">শিক্ষার্থী</TabsTrigger>
+              <TabsTrigger value="admin" className="gap-1.5"><Shield className="h-3.5 w-3.5" /> এডমিন</TabsTrigger>
+              <TabsTrigger value="staff" className="gap-1.5"><UserCog className="h-3.5 w-3.5" /> স্টাফ</TabsTrigger>
+              <TabsTrigger value="student" className="gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> শিক্ষার্থী</TabsTrigger>
             </TabsList>
 
             <TabsContent value="admin">
               <form className="space-y-4" onSubmit={handleAdminSubmit}>
                 <div className="space-y-1.5">
                   <Label htmlFor="login-identifier">মোবাইল নম্বর / আইডি</Label>
-                  <Input
+                  <IconInput
+                    icon={IdCard}
                     id="login-identifier"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
@@ -124,7 +150,8 @@ const Login = () => {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="login-password">পাসওয়ার্ড</Label>
-                  <Input
+                  <IconInput
+                    icon={Lock}
                     id="login-password"
                     type="password"
                     value={password}
@@ -143,7 +170,8 @@ const Login = () => {
               <form className="space-y-4" onSubmit={handleStaffSubmit}>
                 <div className="space-y-1.5">
                   <Label htmlFor="staff-phone">ফোন নম্বর</Label>
-                  <Input
+                  <IconInput
+                    icon={Phone}
                     id="staff-phone"
                     value={staffPhone}
                     onChange={(e) => setStaffPhone(e.target.value)}
@@ -153,7 +181,8 @@ const Login = () => {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="staff-id">স্টাফ আইডি</Label>
-                  <Input
+                  <IconInput
+                    icon={IdCard}
                     id="staff-id"
                     value={staffId}
                     onChange={(e) => setStaffId(e.target.value)}
@@ -172,7 +201,8 @@ const Login = () => {
               <form className="space-y-4" onSubmit={handleStudentSubmit}>
                 <div className="space-y-1.5">
                   <Label htmlFor="student-phone">ফোন নম্বর</Label>
-                  <Input
+                  <IconInput
+                    icon={Phone}
                     id="student-phone"
                     value={studentPhone}
                     onChange={(e) => setStudentPhone(e.target.value)}
@@ -182,7 +212,8 @@ const Login = () => {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="student-roll">রোল নম্বর</Label>
-                  <Input
+                  <IconInput
+                    icon={Hash}
                     id="student-roll"
                     value={studentRoll}
                     onChange={(e) => setStudentRoll(e.target.value)}
