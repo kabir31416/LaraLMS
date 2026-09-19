@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import mongoose from "mongoose";
+import { MulterError } from "multer";
 import { ApiError } from "../utils/ApiError";
 import { logger } from "../../logger/logger";
 import { isProd } from "../../config/env";
@@ -30,6 +31,15 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
 
   if (err instanceof mongoose.Error.ValidationError) {
     return res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: err.message } });
+  }
+
+  // studentImport.routes.ts/student.routes.ts's multer configs throw this
+  // directly (not via their own fileFilter's ApiError) when a file exceeds
+  // the configured size limit — without this, an oversized upload surfaced
+  // as an opaque 500 instead of a clear, expected 400.
+  if (err instanceof MulterError) {
+    const message = err.code === "LIMIT_FILE_SIZE" ? "ফাইলের আকার অনুমোদিত সীমার চেয়ে বড়।" : "ফাইল আপলোড ব্যর্থ হয়েছে।";
+    return res.status(400).json({ success: false, error: { code: "BAD_REQUEST", message } });
   }
 
   if (err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000) {

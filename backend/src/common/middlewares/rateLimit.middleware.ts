@@ -45,3 +45,17 @@ export const publicResultLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many requests — slow down" } },
 });
+
+/**
+ * Public Student Entry's verify step (publicStudentEntry module) checks a
+ * registration/roll number + phone pair against a real record — the same
+ * brute-force-guessable shape as a login, so it gets the same window/limit
+ * as authLimiter rather than one of the lighter public-lookup limiters above.
+ */
+export const studentEntryVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many attempts — try again later" } },
+});

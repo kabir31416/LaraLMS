@@ -44,6 +44,8 @@ const adminMenu = [
   { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
   { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
   { title: "এক্সাম", url: "/exams", icon: FileText },
+  // Admin can enter results for any batch here (backend already allowed it — this page was simply never reachable for Admin before).
+  { title: "রেজাল্ট এন্ট্রি", url: "/result-entry", icon: ClipboardList },
   { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet },
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
   { title: "নোটিশ", url: "/notices", icon: Bell },

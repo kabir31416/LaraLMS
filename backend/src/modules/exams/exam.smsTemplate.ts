@@ -30,6 +30,7 @@ export const RESULT_SMS_VARIABLES: ResultSmsVariable[] = [
   { key: "result", label: "ফলাফল (পাস/ফেল/অনুপস্থিত)" },
   { key: "guardianName", label: "অভিভাবকের নাম" },
   { key: "date", label: "পরীক্ষার তারিখ" },
+  { key: "highestMark", label: "এই এক্সামের সর্বোচ্চ প্রাপ্ত নম্বর" },
 ];
 
 const VARIABLE_KEYS = new Set(RESULT_SMS_VARIABLES.map((v) => v.key));

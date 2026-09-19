@@ -10,6 +10,7 @@ import { generateRegistrationId } from "../../common/utils/idGenerators";
 import { toAsciiDigits } from "../../common/utils/digits";
 import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import * as guardianService from "../guardians/guardian.service";
+import { uploadStudentPhoto, deleteCloudinaryAsset } from "../../common/utils/cloudinaryService";
 
 /**
  * `hscInstitution` mirrors HscInstitution master data by name, same
@@ -683,4 +684,96 @@ export async function remove(req: Request, id: string): Promise<void> {
   const doc = await getDocOrThrow(id);
   await doc.deleteOne();
   await recordAudit({ req, action: "student.delete", module: "students", targetCollection: "students", targetId: id, before: doc.toObject() });
+}
+
+/**
+ * The one place a Student's photo is ever written — shared by the Admin
+ * upload endpoint, the Student Portal's self-upload, and the public Student
+ * Entry workflow (Student Photo Management), so all three follow the exact
+ * same "upload first, save second, delete-old-asset last" sequence rather
+ * than three near-duplicate implementations that could drift apart.
+ *
+ * Order matters here: the new photo is uploaded and the document saved
+ * *before* the old Cloudinary asset is touched, so a failure at any earlier
+ * step never leaves a student without a working photo. Deleting the old
+ * asset is best-effort (cloudinaryService logs and swallows its own
+ * errors) — a stray orphaned image in Cloudinary is a cheap, recoverable
+ * problem; a broken student update is not.
+ */
+export async function applyPhotoUpload(req: Request, id: string, fileBuffer: Buffer): Promise<StudentDoc> {
+  const doc = await Student.findById(id).select("+photoPublicId");
+  if (!doc) throw ApiError.notFound("Student not found");
+
+  const before = doc.toObject();
+  const previousPublicId = doc.photoPublicId;
+
+  // Named after the student's current Roll Number when one is set (the
+  // identifier office staff actually recognize), falling back to the
+  // permanent Registration ID for a student not yet assigned a roll.
+  const uploaded = await uploadStudentPhoto(fileBuffer, doc.currentRollNumber || doc.registrationId);
+  doc.photoUrl = uploaded.url;
+  doc.photoPublicId = uploaded.publicId;
+  await doc.save();
+  await refreshProfileCompletion(doc);
+
+  await recordAudit({
+    req,
+    action: "student.upload-photo",
+    module: "students",
+    targetCollection: "students",
+    targetId: id,
+    before,
+    after: { photoUrl: doc.photoUrl },
+  });
+
+  if (previousPublicId && previousPublicId !== uploaded.publicId) {
+    await deleteCloudinaryAsset(previousPublicId);
+  }
+
+  return doc;
+}
+
+/** Removes a student's photo entirely (Admin-only — see student.routes.ts). Never used by the self/public paths, which only ever replace a photo, never blank it out. */
+export async function applyPhotoRemoval(req: Request, id: string): Promise<StudentDoc> {
+  const doc = await Student.findById(id).select("+photoPublicId");
+  if (!doc) throw ApiError.notFound("Student not found");
+
+  const before = doc.toObject();
+  const previousPublicId = doc.photoPublicId;
+  doc.photoUrl = undefined;
+  doc.photoPublicId = undefined;
+  await doc.save();
+  await refreshProfileCompletion(doc);
+
+  await recordAudit({ req, action: "student.remove-photo", module: "students", targetCollection: "students", targetId: id, before, after: { photoUrl: null } });
+
+  if (previousPublicId) await deleteCloudinaryAsset(previousPublicId);
+
+  return doc;
+}
+
+/** Admin upload/replace — any student, gated by STUDENTS_UPDATE (student.routes.ts). */
+export async function uploadPhoto(req: Request, id: string, fileBuffer: Buffer): Promise<Record<string, unknown>> {
+  const doc = await applyPhotoUpload(req, id, fileBuffer);
+  return withGuardian(doc);
+}
+
+export async function removePhoto(req: Request, id: string): Promise<Record<string, unknown>> {
+  const doc = await applyPhotoRemoval(req, id);
+  return withGuardian(doc);
+}
+
+/** Student Portal self-upload — identity comes from the session (req.user.studentId), never a client-supplied id, same principle as getMyProfile above. */
+export async function uploadMyPhoto(req: Request, fileBuffer: Buffer): Promise<Record<string, unknown>> {
+  const studentId = req.user?.studentId;
+  if (!studentId) throw ApiError.forbidden("No linked student record");
+  const doc = await applyPhotoUpload(req, studentId, fileBuffer);
+  return withGuardian(doc);
+}
+
+export async function removeMyPhoto(req: Request): Promise<Record<string, unknown>> {
+  const studentId = req.user?.studentId;
+  if (!studentId) throw ApiError.forbidden("No linked student record");
+  const doc = await applyPhotoRemoval(req, studentId);
+  return withGuardian(doc);
 }

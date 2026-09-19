@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Search, GraduationCap } from "lucide-react";
+import { Search, GraduationCap, BookOpen, Layers, UserCog, CalendarCheck, Trophy, SearchX } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { ApiClientError } from "@/contexts/AuthContext";
 import type { PublicInstitutionInfo } from "@/types/academic";
@@ -40,11 +39,42 @@ const METHOD_LABELS: Record<PublicSearchMethod, string> = {
   name: "নাম",
 };
 
-function Field({ label, value }: { label: string; value: string }) {
+/** Square (never circular) per the public-page convention — a student's own portal/profile avatars stay circular, this page shows the same photo as its original 1:1 square. */
+function SquarePhoto({ src, name }: { src?: string | null; name?: string }) {
   return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
+    <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0 rounded-xl overflow-hidden border bg-muted flex items-center justify-center">
+      {src ? (
+        <img src={src} alt={name || ""} className="h-full w-full object-cover" />
+      ) : name ? (
+        <span className="text-2xl font-bold text-primary">{name.charAt(0)}</span>
+      ) : (
+        <GraduationCap className="h-8 w-8 text-muted-foreground" />
+      )}
+    </div>
+  );
+}
+
+function InfoChip({ icon: Icon, label, value }: { icon: typeof BookOpen; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/50 px-3 py-2">
+      <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+      <div className="min-w-0">
+        <p className="text-[11px] text-muted-foreground leading-none mb-0.5">{label}</p>
+        <p className="text-sm font-medium truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatTile({ icon: Icon, label, value, variant }: { icon: typeof CalendarCheck; label: string; value: string; variant: "success" | "info" }) {
+  const styles = variant === "success" ? "bg-success/10 text-success" : "bg-info/10 text-info";
+  return (
+    <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${styles}`}>
+      <Icon className="h-5 w-5 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-lg font-bold leading-none">{value}</p>
+        <p className="text-[11px] opacity-80 mt-0.5">{label}</p>
+      </div>
     </div>
   );
 }
@@ -95,10 +125,10 @@ export default function PublicInfo() {
       <div className="max-w-2xl mx-auto space-y-4 py-10">
         <div className="text-center space-y-2">
           {institution?.logoUrl ? (
-            <img src={institution.logoUrl} alt={institution.name} className="mx-auto w-12 h-12 rounded-xl object-cover" />
+            <img src={institution.logoUrl} alt={institution.name} className="mx-auto w-14 h-14 rounded-2xl object-cover shadow-sm" />
           ) : (
-            <div className="mx-auto w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-              <GraduationCap className="w-7 h-7 text-primary-foreground" />
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-sm">
+              <GraduationCap className="w-8 h-8 text-primary-foreground" />
             </div>
           )}
           {institution?.name && <p className="text-sm font-semibold text-primary">{institution.name}</p>}
@@ -106,7 +136,7 @@ export default function PublicInfo() {
           <p className="text-sm text-muted-foreground">রেজিস্ট্রেশন আইডি, মোবাইল নম্বর বা নাম দিয়ে খুঁজুন — লগইন প্রয়োজন নেই</p>
         </div>
 
-        <Card>
+        <Card className="border-none shadow-sm">
           <CardContent className="pt-6">
             <form className="flex flex-col sm:flex-row gap-3" onSubmit={handleSearch}>
               <Select value={method} onValueChange={(v) => setMethod(v as PublicSearchMethod)}>
@@ -117,16 +147,24 @@ export default function PublicInfo() {
                   ))}
                 </SelectContent>
               </Select>
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="এখানে লিখুন..." className="flex-1" />
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="এখানে লিখুন..." className="pl-9" />
+              </div>
               <Button type="submit" disabled={searching}>
-                <Search className="h-4 w-4 mr-1" /> {searching ? "খোঁজা হচ্ছে..." : "খুঁজুন"}
+                {searching ? "খোঁজা হচ্ছে..." : "খুঁজুন"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
         {searched && !searching && results && results.length === 0 && (
-          <Card><CardContent className="py-10 text-center text-muted-foreground">কোনো তথ্য পাওয়া যায়নি</CardContent></Card>
+          <Card className="border-none shadow-sm">
+            <CardContent className="py-12 text-center text-muted-foreground space-y-2">
+              <SearchX className="h-8 w-8 mx-auto opacity-50" />
+              <p>কোনো তথ্য পাওয়া যায়নি</p>
+            </CardContent>
+          </Card>
         )}
 
         {results?.map((r, i) => {
@@ -140,41 +178,51 @@ export default function PublicInfo() {
             r.registrationId ? `আইডি: ${r.registrationId}` : null,
           ].filter((p): p is string => !!p);
 
+          const hasStats = r.attendanceSummary || r.resultSummary;
+
           return (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center gap-4">
-                {/* Smart avatar: shows the student's photo when one is configured
-                    and loads successfully; otherwise (no photo link, or a broken
-                    one) Radix's Avatar automatically falls back to this initial/
-                    icon placeholder instead of a missing-image icon or empty gap. */}
-                <Avatar className="h-14 w-14 border">
-                  {r.photo && <AvatarImage src={r.photo} alt={r.name || ""} className="object-cover" />}
-                  <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
-                    {r.name ? r.name.charAt(0) : <GraduationCap className="h-6 w-6" />}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  {r.name && <CardTitle className="text-base truncate">{r.name}</CardTitle>}
-                  {identityParts.length > 0 && (
-                    <p className="text-xs text-muted-foreground font-mono truncate">{identityParts.join(" • ")}</p>
-                  )}
-                  {r.admissionStatus && (
-                    <Badge variant="outline" className="mt-1 text-xs">{r.admissionStatus}</Badge>
-                  )}
+            <Card key={i} className="border-none shadow-sm overflow-hidden">
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center gap-4">
+                  <SquarePhoto src={r.photo} name={r.name} />
+                  <div className="min-w-0 flex-1">
+                    {r.name && <p className="text-base font-bold truncate">{r.name}</p>}
+                    {identityParts.length > 0 && (
+                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{identityParts.join(" • ")}</p>
+                    )}
+                    {r.admissionStatus && (
+                      <Badge variant="outline" className="mt-1.5 text-xs bg-success/10 text-success border-success/20">{r.admissionStatus}</Badge>
+                    )}
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                {r.course && <Field label="কোর্স" value={r.course} />}
-                {r.currentBatch && <Field label="বর্তমান ব্যাচ" value={r.currentBatch} />}
-                {r.batchDirector && <Field label="ব্যাচ ডিরেক্টর" value={r.batchDirector} />}
-                {r.attendanceSummary && (
-                  <Field label="উপস্থিতির হার" value={r.attendanceSummary.percent != null ? `${r.attendanceSummary.percent}%` : "তথ্য নেই"} />
+
+                {(r.course || r.currentBatch || r.batchDirector) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {r.course && <InfoChip icon={BookOpen} label="কোর্স" value={r.course} />}
+                    {r.currentBatch && <InfoChip icon={Layers} label="বর্তমান ব্যাচ" value={r.currentBatch} />}
+                    {r.batchDirector && <InfoChip icon={UserCog} label="ব্যাচ ডিরেক্টর" value={r.batchDirector} />}
+                  </div>
                 )}
-                {r.resultSummary && (
-                  <Field
-                    label="ফলাফল সারাংশ"
-                    value={r.resultSummary.averagePercent != null ? `গড় ${r.resultSummary.averagePercent}% (${r.resultSummary.examsTaken}টি পরীক্ষা)` : "তথ্য নেই"}
-                  />
+
+                {hasStats && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {r.attendanceSummary && (
+                      <StatTile
+                        icon={CalendarCheck}
+                        variant="success"
+                        label="উপস্থিতির হার"
+                        value={r.attendanceSummary.percent != null ? `${r.attendanceSummary.percent}%` : "তথ্য নেই"}
+                      />
+                    )}
+                    {r.resultSummary && (
+                      <StatTile
+                        icon={Trophy}
+                        variant="info"
+                        label={r.resultSummary.averagePercent != null ? `${r.resultSummary.examsTaken}টি পরীক্ষার গড়` : "ফলাফল"}
+                        value={r.resultSummary.averagePercent != null ? `${r.resultSummary.averagePercent}%` : "তথ্য নেই"}
+                      />
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>

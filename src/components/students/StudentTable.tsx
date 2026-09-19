@@ -16,14 +16,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Eye, Pencil, Trash2, MoreVertical } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Eye, Pencil, Trash2, MoreVertical, ImageUp } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
 
 interface StudentTableProps {
   students: Student[];
   onEdit: (student: Student) => void;
   onDelete: (id: string) => void;
+  onUploadPhoto: (student: Student) => void;
 }
 
 /** dd MMM yyyy from a "yyyy-mm-dd" dob string, without pulling in date-fns just for this — malformed/absent values fall back to "—". */
@@ -38,7 +39,7 @@ function formatDob(dob?: string): string {
   return `${Number(d)} ${MONTHS[monthIdx]} ${y}`;
 }
 
-export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) {
+export function StudentTable({ students, onEdit, onDelete, onUploadPhoto }: StudentTableProps) {
   const navigate = useNavigate();
   const { batches } = useBatches();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
@@ -80,6 +81,7 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
               >
                 <TableCell>
                   <Avatar className="h-9 w-9">
+                    {student.photo && <AvatarImage src={student.photo} alt={student.name} className="object-cover" />}
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                       {student.name.charAt(0)}
                     </AvatarFallback>
@@ -128,6 +130,9 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(student); }}>
                         <Pencil className="mr-2 h-4 w-4" /> সম্পাদনা
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUploadPhoto(student); }}>
+                        <ImageUp className="mr-2 h-4 w-4" /> ছবি আপলোড
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"

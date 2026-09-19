@@ -16,12 +16,12 @@ export interface StaffDoc extends Document {
   /** The Staff Portal credential (see auth.service.ts's staffLogin) — phone + staffId matching this same record IS the login, no separate password/account. */
   staffId?: string;
   /**
-   * A Batch Director's own custom Result SMS template (exams module's
-   * Result Entry "Send Result" action) — only meaningful when
-   * staffType === "Batch Director". Undefined means "use the Settings-wide
-   * default template" (settings.model.ts's SettingsDoc.resultSmsTemplate),
-   * so a director who never configures one keeps working exactly as
-   * before this feature existed.
+   * Retired: a Batch Director could once set their own custom Result SMS
+   * template here. The Result SMS format is now a single, system-wide
+   * setting editable only from the Admin dashboard
+   * (settings.model.ts's SettingsDoc.resultSmsTemplate) — this field is no
+   * longer read or written anywhere, kept only so any value a director
+   * previously set isn't silently deleted from existing data.
    */
   resultSmsTemplate?: string;
   createdAt: Date;

@@ -74,7 +74,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
   { key: "admission-result", label: "অ্যাডমিশন রেজাল্ট", permissions: [ADMISSION_RESULTS_MANAGE], urls: ["/admission-result"] },
   { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, RECEIPTS_READ], urls: ["/fees"] },
   { key: "attendance", label: "উপস্থিতি", permissions: [ATTENDANCE_MARK, ATTENDANCE_READ], urls: ["/attendance"] },
-  { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management"] },
+  { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry"] },
   { key: "videos", label: "ভিডিও ক্লাস", permissions: [VIDEOS_MANAGE], urls: ["/videos"] },
   { key: "notices", label: "নোটিশ", permissions: [NOTICES_MANAGE], urls: ["/notices"] },
   { key: "reports", label: "রিপোর্ট", permissions: [REPORTS_READ], urls: ["/reports"] },

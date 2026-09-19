@@ -12,6 +12,15 @@ export interface StudentDoc extends Document {
   currentRollNumber?: string; // admin-editable live value — see PATCH /students/:id/roll
   currentBatchId?: Types.ObjectId; // cache, kept in sync by the enrollment service
   photoUrl?: string;
+  /**
+   * The Cloudinary public ID behind `photoUrl` (Student Photo Management §1)
+   * — undefined for a student with no photo, or one whose `photoUrl` was set
+   * some other way (e.g. Excel import/manual edit, a plain string with
+   * nothing to delete from Cloudinary). Never surfaced to any client; it
+   * exists only so student.service.ts can clean up the old asset when a
+   * photo is replaced or removed.
+   */
+  photoPublicId?: string;
 
   name: string;
   phone: string;
@@ -113,6 +122,7 @@ const studentSchema = new Schema<StudentDoc>(
     currentRollNumber: { type: String, trim: true },
     currentBatchId: { type: Schema.Types.ObjectId, ref: "Batch" },
     photoUrl: String,
+    photoPublicId: { type: String, select: false },
 
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true },

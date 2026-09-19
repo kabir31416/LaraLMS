@@ -8,9 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Pencil, Phone, Mail, MapPin, Trophy } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ArrowLeft, Pencil, Phone, Mail, MapPin, Trophy, Camera } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
+import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
 import { useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
@@ -26,13 +27,14 @@ import type { StudentMaterialHistoryRow } from "@/types/material";
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudent } = useStudents();
+  const { getStudent, uploadStudentPhoto, deleteStudentPhoto } = useStudents();
   const { getPayments } = usePayments();
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const { getByStudent, getResultsByStudent, listExams } = useAttendance();
   const { getSubject, getLecture, settings } = useAcademic();
   const [editOpen, setEditOpen] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
@@ -129,11 +131,22 @@ const StudentProfile = () => {
         <Card className="border-none shadow-sm">
           <CardContent className="p-6">
             <div className="flex flex-col sm:flex-row items-start gap-5">
-              <Avatar className="h-20 w-20">
-                <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">
-                  {student.name.charAt(0)}
-                </AvatarFallback>
-              </Avatar>
+              <button
+                type="button"
+                onClick={() => setPhotoOpen(true)}
+                className="relative group shrink-0"
+                title="ছবি পরিবর্তন করুন"
+              >
+                <Avatar className="h-20 w-20">
+                  {student.photo && <AvatarImage src={student.photo} alt={student.name} className="object-cover" />}
+                  <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">
+                    {student.name.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Camera className="h-5 w-5 text-white" />
+                </span>
+              </button>
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-3">
                   <h2 className="text-xl font-bold">{student.name}</h2>
@@ -551,6 +564,14 @@ const StudentProfile = () => {
         </Tabs>
 
         <AdmissionForm open={editOpen} onOpenChange={setEditOpen} editStudent={student} />
+        <StudentPhotoUploader
+          open={photoOpen}
+          onOpenChange={setPhotoOpen}
+          studentName={student.name}
+          currentPhotoUrl={student.photo}
+          onUpload={async (blob) => { await uploadStudentPhoto(student.id, blob); }}
+          onRemove={async () => { await deleteStudentPhoto(student.id); }}
+        />
       </div>
     </DashboardLayout>
   );

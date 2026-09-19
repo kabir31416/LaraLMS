@@ -80,7 +80,8 @@ export interface ResultSmsVariable {
 }
 
 export interface ResultSmsTemplateConfig {
-  scope: "director" | "admin-default";
+  /** Always "admin-default" — the Result SMS format is a single, system-wide setting editable only from the Admin dashboard. */
+  scope: "admin-default";
   effectiveTemplate: string;
   customTemplate?: string;
   isDefault: boolean;

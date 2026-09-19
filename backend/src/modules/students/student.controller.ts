@@ -73,3 +73,21 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   await service.remove(req, req.params.id);
   sendSuccess(res, { deleted: true });
 });
+
+/** multer's photoUpload.single("photo") (student.routes.ts) populates req.file — never trust a request that skipped it. */
+function requirePhotoFile(req: Request): Buffer {
+  if (!req.file?.buffer) throw ApiError.badRequest("কোনো ছবি পাওয়া যায়নি — আবার চেষ্টা করুন।");
+  return req.file.buffer;
+}
+
+export const uploadPhoto = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.uploadPhoto(req, req.params.id, requirePhotoFile(req))),
+);
+
+export const removePhoto = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.removePhoto(req, req.params.id)));
+
+export const uploadMyPhoto = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.uploadMyPhoto(req, requirePhotoFile(req))),
+);
+
+export const removeMyPhoto = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.removeMyPhoto(req)));
