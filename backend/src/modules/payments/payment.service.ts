@@ -69,10 +69,14 @@ export async function getReceipt(payment: PaymentDoc): Promise<Record<string, un
   // receipt once later payments are recorded (previousDue is this payment's
   // own immutable snapshot). A material payment never touches tuition due
   // at all (payment.service.ts's create()), so its "due" is simply
-  // unchanged from the snapshot.
+  // unchanged from the snapshot. A non-material payment's own `discount`
+  // permanently reduced totalFee at the time it was created (see create()
+  // above), on top of paidAmount reducing what's still owed — both must be
+  // subtracted here or an old receipt for a discounted payment would show a
+  // due higher than the student's real due ever was after it.
   const isMaterialPayment = payment.source === "material";
   const currentDue = typeof payment.previousDue === "number"
-    ? (isMaterialPayment ? payment.previousDue : payment.previousDue - payment.paidAmount)
+    ? (isMaterialPayment ? payment.previousDue : payment.previousDue - payment.paidAmount - payment.discount)
     : undefined;
 
   return { payment, student, batchName, currentDue, institution };
@@ -160,6 +164,18 @@ export async function create(
     // mutating Student directly instead of routing through another module's
     // private helpers.
     student.paid += paidAmount;
+    // A payment's own `discount` must permanently reduce the student's total
+    // fee the exact same way admission-time discount does (student.service.ts's
+    // computeFees/applyPatch) — everywhere else in this app, "discount" means
+    // "the real price is this much less," not "count less cash for this one
+    // receipt." Skipping this accumulation (the previous behavior) only
+    // subtracted `discount` from THIS payment's paidAmount, leaving
+    // student.discount — and therefore totalFee — unchanged; the discounted
+    // amount then reappeared in `due` on every subsequent view. This is what
+    // an imported student (whose discount was never captured at admission,
+    // since bulk import creates no payment at all) hits the very first time
+    // anyone tries to apply their real negotiated price via Add Payment.
+    if (data.discount > 0) student.discount += data.discount;
     const isOneTime = student.feeType === "এককালীন";
     const totalFee = isOneTime
       ? student.totalCourseFee + student.admissionFee - student.discount

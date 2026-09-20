@@ -121,7 +121,12 @@ const Batches = () => {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatBox label="মোট শিক্ষার্থী" value={String(openBatchStudents.length)} />
+            {/* Backend-computed total (studentCount, from /students/stats/batch-counts'
+                aggregation), never the roster fetch's own page length — the
+                roster itself is capped at limit=100, so this must not silently
+                double as a "how many are actually loaded" count once a batch
+                genuinely exceeds that. */}
+            <StatBox label="মোট শিক্ষার্থী" value={String(studentCount(openBatch.id))} />
             <StatBox label="দিন" value={openBatch.days.length ? openBatch.days.join(", ") : "—"} />
             <StatBox label="সময়" value={openBatch.batchTime} />
             <StatBox label="শুরু" value={openBatch.startDate} />

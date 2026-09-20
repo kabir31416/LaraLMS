@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { Types } from "mongoose";
 import { Student, StudentDoc, ProfileCompletion } from "./student.model";
 import { Course } from "../courses/course.model";
 import { getSettings } from "../settings/settings.service";
@@ -179,10 +180,18 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   // Fee Management's payment-history rows) and must resolve them in one
   // query instead of one `Student.findById` per row.
   if (typeof req.query.ids === "string" && req.query.ids.trim()) {
-    const ids = req.query.ids.split(",").map((s) => s.trim()).filter(Boolean);
-    filter._id = { $in: ids };
+    const ids = req.query.ids.split(",").map((s) => s.trim()).filter((s) => Types.ObjectId.isValid(s));
+    filter._id = { $in: ids.map((id) => new Types.ObjectId(id)) };
   }
   if (req.query.course) filter.course = req.query.course;
+  // The real Course reference (student.courseId -> Course._id), distinct
+  // from `course` above (a denormalized free-text name) — backs Batch
+  // Assignment's "eligible students" query, which must scope to the same
+  // Course as the Batch being assigned to (Batch.courseId), not every
+  // unassigned student regardless of course.
+  if (typeof req.query.courseId === "string" && Types.ObjectId.isValid(req.query.courseId)) {
+    filter.courseId = new Types.ObjectId(req.query.courseId);
+  }
   if (req.query.section) filter.section = req.query.section;
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
   // "Unassigned" must match both a genuinely absent currentBatchId (the
@@ -196,8 +205,24 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   // missing field as well as an explicit null) without needing `$or`, which
   // would otherwise collide with — and get overwritten by — the search
   // filter's own top-level `$or` below (Object.assign, not a merge).
+  // ROOT CAUSE of "Batch Details / Batch Assignment misses students that
+  // definitely exist": list()'s default (no explicit ?sortBy=) path runs
+  // this filter through pageIdsByRoll's aggregation ($match), not
+  // Model.find() — Mongoose only auto-casts query values to their schema
+  // type for find()-family calls, never for aggregate() pipeline stages.
+  // `req.query.batchId` is always a plain string (an Express query param),
+  // so an uncast `{currentBatchId: "<hex string>"}` in a $match compares a
+  // BSON string against the real BSON ObjectId stored on every Student
+  // document — which never matches, for any batch, every time this path is
+  // hit (i.e. every batch-scoped Batch Details / Batch Assignment request,
+  // since none of them pass sortBy). Casting explicitly here fixes both the
+  // aggregate() path and the find() path (which already worked, since it
+  // casts on its own) with one change, at the one place this filter is
+  // built for every caller (list(), exportList(), admissionRollStats()).
   if (req.query.batchId === "unassigned") filter.currentBatchId = null;
-  else if (req.query.batchId) filter.currentBatchId = req.query.batchId;
+  else if (typeof req.query.batchId === "string" && Types.ObjectId.isValid(req.query.batchId)) {
+    filter.currentBatchId = new Types.ObjectId(req.query.batchId);
+  }
 
   // dueStatus is the 3-state successor to the older boolean dueOnly (kept for
   // backward compatibility — nothing in this codebase currently sends it,

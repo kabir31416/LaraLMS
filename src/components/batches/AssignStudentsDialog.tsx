@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Search } from "lucide-react";
 import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -23,6 +24,7 @@ interface Props {
 export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
   const { refreshStudents } = useStudents();
   const { batches, enrollBulk } = useBatches();
+  const { getCourse } = useAcademic();
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
   const [picked, setPicked] = useState<string[]>([]);
@@ -45,12 +47,19 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
     setLoading(true);
     const qs = new URLSearchParams({ batchId: "unassigned", limit: "50" });
     if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
+    // Scoped to the Batch's own Course — the admin picked the Course once,
+    // when the Batch itself was created, so this dialog must not ask again
+    // or (worse) offer every unassigned student across every course. Only
+    // sent once `currentBatch` has actually loaded from BatchContext; if a
+    // Batch somehow has no courseId, falls back to the unscoped list rather
+    // than showing nothing.
+    if (currentBatch?.courseId) qs.set("courseId", currentBatch.courseId);
     api.get<ApiStudent[]>(`/students?${qs.toString()}`)
       .then((docs) => { if (!cancelled) setFiltered(docs.map(fromApi)); })
       .catch(() => { if (!cancelled) setFiltered([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, debouncedSearch]);
+  }, [open, debouncedSearch, currentBatch?.courseId]);
 
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -81,6 +90,11 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>শিক্ষার্থী যোগ করুন — {currentBatch?.name}</DialogTitle>
+          {currentBatch?.courseId && (
+            <p className="text-sm text-muted-foreground">
+              শুধুমাত্র <span className="font-medium text-foreground">{getCourse(currentBatch.courseId)?.name || "এই কোর্সের"}</span> কোর্সের অনির্ধারিত শিক্ষার্থীরা দেখানো হচ্ছে।
+            </p>
+          )}
         </DialogHeader>
         <div className="space-y-3 pt-2">
           <div className="relative">
