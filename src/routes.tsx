@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
 import Marksheet from "./pages/Marksheet";
 import StudentEntry from "./pages/StudentEntry";
+import NewStudentEntry from "./pages/NewStudentEntry";
 import NotFound from "./pages/NotFound";
 
 // Admin pages
@@ -54,6 +55,7 @@ export function AppRoutes() {
       <Route path="/info" element={<PublicInfo />} />
       <Route path="/marksheet" element={<Marksheet />} />
       <Route path="/studententry" element={<StudentEntry />} />
+      <Route path="/newstudententry" element={<NewStudentEntry />} />
 
       {/* Admin */}
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>
