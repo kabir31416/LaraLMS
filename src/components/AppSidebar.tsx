@@ -111,9 +111,9 @@ export function AppSidebar() {
           {!collapsed && (
             <div>
               <h1 className="text-base font-bold text-sidebar-primary-foreground leading-tight">
-                লারা এলএমএস
+                নিউরন এলএমএস
               </h1>
-              <p className="text-xs text-sidebar-foreground/60">কোচিং ম্যানেজমেন্ট</p>
+              <p className="text-xs text-sidebar-foreground/60">কোচিং ম্যানেজমেন্ট সিস্টেম</p>
             </div>
           )}
         </div>
