@@ -185,7 +185,18 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   if (req.query.course) filter.course = req.query.course;
   if (req.query.section) filter.section = req.query.section;
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
-  if (req.query.batchId === "unassigned") filter.currentBatchId = { $exists: false };
+  // "Unassigned" must match both a genuinely absent currentBatchId (the
+  // normal case — see enrollment.service.ts's withdraw, which $unsets it)
+  // AND one explicitly stored as null (a document written outside this
+  // app's own code paths, e.g. a direct import/migration, can have the key
+  // present with a null value) — {$exists:false} alone only matches the
+  // first case and would silently drop the second out of Batch Assignment's
+  // "available students" list even though the student has no batch. A plain
+  // equality match against `null` covers both in MongoDB (it matches a
+  // missing field as well as an explicit null) without needing `$or`, which
+  // would otherwise collide with — and get overwritten by — the search
+  // filter's own top-level `$or` below (Object.assign, not a merge).
+  if (req.query.batchId === "unassigned") filter.currentBatchId = null;
   else if (req.query.batchId) filter.currentBatchId = req.query.batchId;
 
   // dueStatus is the 3-state successor to the older boolean dueOnly (kept for
