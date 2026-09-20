@@ -2,6 +2,22 @@ import { Schema, model, Document, Types } from "mongoose";
 
 export interface OfflineExamDoc extends Document {
   batchId: Types.ObjectId; // -> Batch
+  /**
+   * The Course's assignment of the Subject this exam is under (Subject/
+   * Course Refactor) — the canonical link, resolved and validated at
+   * creation time (exam.service.ts's persistResult): the Lecture must
+   * belong to this CourseSubject, and this CourseSubject's courseId must
+   * match the Batch's own courseId.
+   */
+  courseSubjectId: Types.ObjectId; // -> CourseSubject
+  /**
+   * The underlying global Subject, denormalized from courseSubjectId at
+   * write time. Kept (rather than requiring every reader to hop through
+   * CourseSubject) so the SMS template, marksheet aggregation, and
+   * Result Management's Subject.findById lookups all keep working
+   * unchanged — a Subject's name/identity doesn't depend on which Course
+   * it's assigned to.
+   */
   subjectId: Types.ObjectId; // -> Subject
   lectureId: Types.ObjectId; // -> Lecture
   title: string;
@@ -40,6 +56,7 @@ export interface OfflineExamDoc extends Document {
 const offlineExamSchema = new Schema<OfflineExamDoc>(
   {
     batchId: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
+    courseSubjectId: { type: Schema.Types.ObjectId, ref: "CourseSubject", required: true },
     subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
     lectureId: { type: Schema.Types.ObjectId, ref: "Lecture", required: true },
     title: { type: String, required: true, trim: true },
@@ -53,12 +70,12 @@ const offlineExamSchema = new Schema<OfflineExamDoc>(
 );
 
 offlineExamSchema.index({ batchId: 1, date: -1 });
-// A result entry is conceptually unique per batch+subject+lecture+date —
+// A result entry is conceptually unique per batch+courseSubject+lecture+date —
 // exam.service.ts's create()/submitResult() enforce this with a
 // findOneAndUpdate(upsert) rather than a DB-level unique index, since a
 // hard unique index here could fail to build against any duplicate rows
 // that already exist from before this fix (Phase 5 §9/§19 — no destructive
 // migration on top of existing data).
-offlineExamSchema.index({ batchId: 1, subjectId: 1, lectureId: 1, date: 1 });
+offlineExamSchema.index({ batchId: 1, courseSubjectId: 1, lectureId: 1, date: 1 });
 
 export const OfflineExam = model<OfflineExamDoc>("OfflineExam", offlineExamSchema);

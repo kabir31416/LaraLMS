@@ -19,18 +19,30 @@ export interface Course {
   displayOrder: number;
 }
 
+/** Global, reusable catalog entry — no courseId. Create once ("বাংলা"), assign to as many Courses as needed via CourseSubject. */
 export interface Subject {
   id: string;
   name: string;
-  courseId: string;
+  code?: string;
   status: MasterDataStatus;
   displayOrder: number;
+}
+
+/** The Course → Subject assignment (Course → CourseSubject → Subject → Lecture). The same Subject can have a separate CourseSubject row — and therefore separate Lectures — in every Course it's assigned to. */
+export interface CourseSubject {
+  id: string;
+  courseId: string;
+  subjectId: string;
+  /** Display order of this Subject within its Course. */
+  order: number;
+  status: MasterDataStatus;
 }
 
 export interface Lecture {
   id: string;
   title: string;
-  subjectId: string;
+  /** References CourseSubject, never the global Subject directly — this is what keeps the same Subject's Lectures independent between Courses. */
+  courseSubjectId: string;
   lectureNumber: number;
   description?: string;
   status: MasterDataStatus;

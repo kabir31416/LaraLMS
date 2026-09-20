@@ -7,7 +7,7 @@ interface Props {
   kind: Kind;
   value?: string;
   onValueChange: (v: string) => void;
-  /** For subject: parent courseId. For lecture: parent subjectId. */
+  /** For subject: parent courseId. For lecture: parent courseSubjectId (a Subject's assignment to a specific Course — Lectures belong to that, not the Subject directly). */
   parentId?: string;
   /** Emit `name` instead of `id` (useful for legacy string fields). */
   emit?: "id" | "name";
@@ -23,7 +23,7 @@ export function AcademicSelect({
   kind, value, onValueChange, parentId, emit = "id",
   placeholder = "নির্বাচন করুন", disabled,
 }: Props) {
-  const { sessions, courses, subjects, lectures } = useAcademic();
+  const { sessions, courses, lectures, getSubjectsByCourse } = useAcademic();
 
   // Active-or-currently-selected (Settings §25): a new pick can only land on
   // an active row, but re-opening this form for an already-admitted/assigned
@@ -35,12 +35,12 @@ export function AcademicSelect({
   if (kind === "session") items = sessions.filter((s) => isSelectable(s.id, s.status)).map((s) => ({ id: s.id, label: s.name }));
   else if (kind === "course") items = courses.filter((c) => isSelectable(c.id, c.status)).map((c) => ({ id: c.id, label: c.name }));
   else if (kind === "subject" && parentId)
-    items = subjects
-      .filter((s) => s.courseId === parentId && isSelectable(s.id, s.status))
+    items = getSubjectsByCourse(parentId)
+      .filter((s) => isSelectable(s.id, s.status))
       .map((s) => ({ id: s.id, label: s.name }));
   else if (kind === "lecture" && parentId)
     items = lectures
-      .filter((l) => l.subjectId === parentId && isSelectable(l.id, l.status))
+      .filter((l) => l.courseSubjectId === parentId && isSelectable(l.id, l.status))
       .sort((a, b) => a.lectureNumber - b.lectureNumber)
       .map((l) => ({ id: l.id, label: `${l.lectureNumber}. ${l.title}` }));
 

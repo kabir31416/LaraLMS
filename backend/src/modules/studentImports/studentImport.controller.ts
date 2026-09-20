@@ -40,3 +40,11 @@ export const approveRow = asyncHandler(async (req: Request, res: Response) =>
 export const rejectRow = asyncHandler(async (req: Request, res: Response) =>
   sendSuccess(res, await service.rejectRow(req, req.params.sessionId, req.params.rowId, req.body.reason)),
 );
+
+export const bulkApprove = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.bulkApproveRows(req, req.params.sessionId, req.body.rowIds)),
+);
+
+export const listValidRowIds = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.listValidRowIds(req.params.sessionId)),
+);

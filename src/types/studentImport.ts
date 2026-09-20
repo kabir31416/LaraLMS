@@ -125,3 +125,35 @@ export interface StudentImportListMeta {
   total: number;
   totalPages: number;
 }
+
+/**
+ * Bulk Approval — mirrors backend/src/modules/studentImports/
+ * studentImport.service.ts's BulkApprovalOutcome/ResultItem/Summary exactly.
+ * One request approves an entire selection; the response always carries a
+ * full per-row breakdown so failed/skipped rows are never silently dropped.
+ */
+export const BULK_APPROVAL_OUTCOMES = ["APPROVED", "DUPLICATE", "INVALID", "FAILED", "SKIPPED"] as const;
+export type BulkApprovalOutcome = (typeof BULK_APPROVAL_OUTCOMES)[number];
+
+export interface BulkApprovalResultItem {
+  rowId: string;
+  rowNumber: number;
+  outcome: BulkApprovalOutcome;
+  studentId?: string;
+  reason?: string;
+}
+
+export interface BulkApprovalSummary {
+  total: number;
+  approved: number;
+  duplicate: number;
+  invalid: number;
+  failed: number;
+  skipped: number;
+  results: BulkApprovalResultItem[];
+}
+
+export interface ValidRowIdsResponse {
+  rowIds: string[];
+  count: number;
+}

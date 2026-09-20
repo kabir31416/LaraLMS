@@ -5,7 +5,7 @@ export const idParamSchema = z.object({ params: z.object({ id: z.string().length
 export const createExamSchema = z.object({
   body: z.object({
     batchId: z.string().length(24),
-    subjectId: z.string().length(24),
+    courseSubjectId: z.string().length(24),
     lectureId: z.string().length(24),
     title: z.string().trim().min(1),
     fullMarks: z.number().positive(),
@@ -18,6 +18,7 @@ export const listExamsQuerySchema = z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
     batchId: z.string().length(24).optional(),
+    courseSubjectId: z.string().length(24).optional(),
     subjectId: z.string().length(24).optional(),
     lectureId: z.string().length(24).optional(),
     date: z.string().optional(),
@@ -45,7 +46,7 @@ export const submitResultSchema = z.object({
   body: z
     .object({
       batchId: z.string().length(24),
-      subjectId: z.string().length(24),
+      courseSubjectId: z.string().length(24),
       lectureId: z.string().length(24),
       date: z.string().min(1),
       fullMarks: z.number().positive(),

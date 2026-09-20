@@ -13,6 +13,9 @@ export interface AttendanceEntry {
 export interface OfflineExam {
   id: string;
   batchId: string;
+  /** The Course's assignment of the Subject this exam is under (Course → CourseSubject → Subject → Lecture) — the canonical link, required when creating/saving a result. */
+  courseSubjectId: string;
+  /** The underlying global Subject, denormalized by the backend — safe to read directly for display (e.g. via useAcademic().getSubject) without resolving through courseSubjectId. */
   subjectId: string;
   lectureId: string;
   title: string;

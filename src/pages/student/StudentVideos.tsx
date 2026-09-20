@@ -10,7 +10,7 @@ import { Navigate } from "react-router-dom";
 
 export default function StudentVideos() {
   const { user, student } = useStudentSelf();
-  const { videos, subjects, lectures, courses, getSubjectsByCourse } = useAcademic();
+  const { videos, subjects, lectures, courses, getSubjectsByCourse, getCourseSubjectsForCourse, getCourseSubject } = useAcademic();
   const [subject, setSubject] = useState("all");
 
   if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
@@ -18,17 +18,18 @@ export default function StudentVideos() {
 
   const myCourse = courses.find((c) => c.name === student.course);
   const mySubjects = myCourse ? getSubjectsByCourse(myCourse.id) : subjects;
-  const subjectIds = new Set(mySubjects.map((s) => s.id));
-  const lectureIds = new Set(lectures.filter((l) => subjectIds.has(l.subjectId)).map((l) => l.id));
+  const myCourseSubjectIds = new Set((myCourse ? getCourseSubjectsForCourse(myCourse.id) : []).map((cs) => cs.id));
+  const lectureIds = new Set(lectures.filter((l) => !myCourse || myCourseSubjectIds.has(l.courseSubjectId)).map((l) => l.id));
 
   const filtered = useMemo(() => videos.filter((v) => {
     if (!lectureIds.has(v.lectureId)) return false;
     if (subject !== "all") {
       const lec = lectures.find((l) => l.id === v.lectureId);
-      if (lec?.subjectId !== subject) return false;
+      const lecSubjectId = lec ? getCourseSubject(lec.courseSubjectId)?.subjectId : undefined;
+      if (lecSubjectId !== subject) return false;
     }
     return true;
-  }), [videos, lectureIds, subject, lectures]);
+  }), [videos, lectureIds, subject, lectures, getCourseSubject]);
 
   return (
     <DashboardLayout>
@@ -46,7 +47,8 @@ export default function StudentVideos() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filtered.map((v) => {
               const lec = lectures.find((l) => l.id === v.lectureId);
-              const sub = subjects.find((s) => s.id === lec?.subjectId);
+              const subjectId = lec ? getCourseSubject(lec.courseSubjectId)?.subjectId : undefined;
+              const sub = subjects.find((s) => s.id === subjectId);
               return <Card key={v.id}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">{v.title}</CardTitle>

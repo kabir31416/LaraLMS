@@ -57,9 +57,9 @@ export async function update(req: Request, id: string, patch: Partial<Pick<Cours
 export async function remove(req: Request, id: string) {
   const doc = await Course.findById(id);
   if (!doc) throw ApiError.notFound("Course not found");
-  const { Subject } = await import("../subjects/subject.model");
-  if (await Subject.exists({ courseId: id })) {
-    throw ApiError.conflict("This course has subjects under it — remove or reassign them first");
+  const { CourseSubject } = await import("../courseSubjects/courseSubject.model");
+  if (await CourseSubject.exists({ courseId: id })) {
+    throw ApiError.conflict("This course has subjects assigned to it — remove or reassign them first");
   }
   await doc.deleteOne();
   await recordAudit({ req, action: "course.delete", module: "academic", targetCollection: "courses", targetId: id, before: doc.toObject() });

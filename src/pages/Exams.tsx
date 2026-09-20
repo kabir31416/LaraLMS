@@ -42,7 +42,7 @@ export default function Exams() {
   const [editExam, setEditExam] = useState<ClassExam | null>(null);
 
   const subjects = courseId ? getSubjectsByCourse(courseId) : [];
-  const lectures = subjectId ? getLecturesBySubject(subjectId) : [];
+  const lectures = courseId && subjectId ? getLecturesBySubject(courseId, subjectId) : [];
 
   const filteredExams = useMemo(() => {
     return visibleExams.filter((e) => {
@@ -143,17 +143,16 @@ export default function Exams() {
 }
 
 function ExamForm({ open, onOpenChange, editExam }: { open: boolean; onOpenChange: (v: boolean) => void; editExam: ClassExam | null }) {
-  const { courses, getSubjectsByCourse, getLecturesBySubject, getLecture, getSubject, addClassExam, updateClassExam, settings } = useAcademic();
+  const { courses, getSubjectsByCourse, getLecturesBySubject, getLecture, getCourseSubject, addClassExam, updateClassExam, settings } = useAcademic();
   const { batches } = useBatches();
 
-  const initialCourse = (() => {
-    if (!editExam) return "";
+  const initialCourseSubject = (() => {
+    if (!editExam) return undefined;
     const lec = getLecture(editExam.lectureId);
-    if (!lec) return "";
-    const sub = getSubject(lec.subjectId);
-    return sub?.courseId || "";
+    return lec ? getCourseSubject(lec.courseSubjectId) : undefined;
   })();
-  const initialSubject = editExam ? getLecture(editExam.lectureId)?.subjectId || "" : "";
+  const initialCourse = initialCourseSubject?.courseId || "";
+  const initialSubject = initialCourseSubject?.subjectId || "";
 
   const [courseId, setCourseId] = useState(initialCourse);
   const [subjectId, setSubjectId] = useState(initialSubject);
@@ -169,7 +168,7 @@ function ExamForm({ open, onOpenChange, editExam }: { open: boolean; onOpenChang
   });
 
   const subjects = courseId ? getSubjectsByCourse(courseId) : [];
-  const lectures = subjectId ? getLecturesBySubject(subjectId) : [];
+  const lectures = courseId && subjectId ? getLecturesBySubject(courseId, subjectId) : [];
 
   const submit = () => {
     if (!form.title || !form.lectureId || !form.date) { toast.error("সব ফিল্ড পূরণ করুন"); return; }

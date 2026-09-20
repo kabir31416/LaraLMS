@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,12 +15,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatCard } from "@/components/StatCard";
-import { ArrowLeft, CheckCircle2, ExternalLink, RotateCcw, Users, FileCheck2, AlertTriangle, Clock, XCircle, Ban } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ExternalLink, RotateCcw, Users, FileCheck2, AlertTriangle, Clock, XCircle, Ban, Loader2, X } from "lucide-react";
 import { useAuth, ApiClientError } from "@/contexts/AuthContext";
 import { useStudents } from "@/contexts/StudentContext";
 import { api } from "@/lib/apiClient";
 import { toast } from "sonner";
-import type { PopulatedStudentRef, StudentImportListMeta, StudentImportRow, StudentImportSession } from "@/types/studentImport";
+import type {
+  BulkApprovalOutcome, BulkApprovalSummary, PopulatedStudentRef, StudentImportListMeta,
+  StudentImportRow, StudentImportSession, ValidRowIdsResponse,
+} from "@/types/studentImport";
 
 /**
  * Bulk Student Upload — preview + individual row approval
@@ -53,6 +57,14 @@ function refName(ref?: string | PopulatedStudentRef): PopulatedStudentRef | unde
   return ref && typeof ref === "object" ? ref : undefined;
 }
 
+const BULK_OUTCOME_LABEL: Record<BulkApprovalOutcome, string> = {
+  APPROVED: "অনুমোদিত",
+  DUPLICATE: "ডুপ্লিকেট",
+  INVALID: "অবৈধ",
+  FAILED: "ব্যর্থ",
+  SKIPPED: "বাদ পড়েছে",
+};
+
 export default function StudentImportPreview() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { user } = useAuth();
@@ -71,6 +83,16 @@ export default function StudentImportPreview() {
   const [approveTarget, setApproveTarget] = useState<StudentImportRow | null>(null);
   const [rejectTarget, setRejectTarget] = useState<StudentImportRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+
+  // Bulk approval — selection persists across page turns (a Set of row IDs,
+  // not "current page only") so "Approve Selected" can act on a selection
+  // built across several pages, not just whatever 20 rows happen to be
+  // visible right now.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState<{ rowIds: string[]; label: string } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [fetchingValidIds, setFetchingValidIds] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<BulkApprovalSummary | null>(null);
 
   const loadSession = useCallback(async () => {
     if (!sessionId) return;
@@ -164,6 +186,92 @@ export default function StudentImportPreview() {
 
   const canApprove = (row: StudentImportRow) => row.importStatus === "PENDING" || row.importStatus === "FAILED";
   const canReject = (row: StudentImportRow) => row.importStatus === "PENDING" || row.importStatus === "FAILED";
+  // A row must be approvable AND not already known-invalid (validationStatus
+  // "ERROR" — missing required fields, an in-file duplicate, or a phone/roll
+  // that already matches an existing Student) to be selectable for bulk
+  // approval. "WARNING" rows (e.g. a new HSC institution, a roll-only
+  // in-file repeat) stay selectable — the single-row approve flow already
+  // allows approving those, this just extends the same rule to bulk.
+  const isSelectable = (row: StudentImportRow) => canApprove(row) && row.validationStatus !== "ERROR";
+
+  const selectableOnPage = rows.filter(isSelectable);
+  const selectedOnPageCount = selectableOnPage.filter((r) => selectedIds.has(r._id)).length;
+  const headerChecked: boolean | "indeterminate" =
+    selectableOnPage.length === 0 || selectedOnPageCount === 0
+      ? false
+      : selectedOnPageCount === selectableOnPage.length
+        ? true
+        : "indeterminate";
+
+  const toggleRow = (row: StudentImportRow, checked: boolean) => {
+    if (!isSelectable(row)) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(row._id); else next.delete(row._id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const r of selectableOnPage) {
+        if (checked) next.add(r._id); else next.delete(r._id);
+      }
+      return next;
+    });
+  };
+
+  const openApproveSelected = () => {
+    if (selectedIds.size === 0) return;
+    const rowIds = Array.from(selectedIds);
+    setBulkTarget({ rowIds, label: `নির্বাচিত ${rowIds.length.toLocaleString("bn-BD")} জন শিক্ষার্থী` });
+  };
+
+  const openApproveAllValid = async () => {
+    if (!sessionId) return;
+    setFetchingValidIds(true);
+    try {
+      const res = await api.get<ValidRowIdsResponse>(`/students/import/${sessionId}/rows/valid-ids`);
+      if (res.count === 0) {
+        toast.info("অনুমোদনযোগ্য কোনো সঠিক সারি নেই।");
+        return;
+      }
+      setBulkTarget({ rowIds: res.rowIds, label: `সকল সঠিক ${res.count.toLocaleString("bn-BD")} জন শিক্ষার্থী` });
+    } catch (err) {
+      toast.error(friendlyError(err, "সঠিক সারিগুলোর তালিকা আনা যায়নি।"));
+    } finally {
+      setFetchingValidIds(false);
+    }
+  };
+
+  const doBulkApprove = async () => {
+    if (!bulkTarget || !sessionId) return;
+    setBulkBusy(true);
+    try {
+      const summary = await api.post<BulkApprovalSummary>(`/students/import/${sessionId}/rows/bulk-approve`, { rowIds: bulkTarget.rowIds });
+      setBulkSummary(summary);
+      setSelectedIds(new Set());
+      if (summary.approved > 0) {
+        // Same reason as the single-row approve flow above — bulk-created
+        // Students bypass StudentContext entirely, so it must be told
+        // explicitly or they'd stay invisible elsewhere until a reload.
+        refreshStudents().catch(() => {});
+      }
+      // Refresh in place — re-fetches only this page's rows + the session's
+      // own counters, never a full app reload (§"update Preview state in
+      // place").
+      loadSession();
+      loadRows();
+    } catch (err) {
+      toast.error(friendlyError(err, "বাল্ক অনুমোদন ব্যর্থ হয়েছে।"));
+    } finally {
+      setBulkBusy(false);
+      setBulkTarget(null);
+    }
+  };
+
+  const bulkProblemRows = bulkSummary?.results.filter((r) => r.outcome !== "APPROVED") ?? [];
 
   return (
     <DashboardLayout>
@@ -204,18 +312,57 @@ export default function StudentImportPreview() {
         )}
 
         <Card className="border-none shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
-            <CardTitle className="text-base">সারিসমূহ</CardTitle>
-            <Select value={importStatusFilter} onValueChange={(v) => { setImportStatusFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">সকল স্ট্যাটাস</SelectItem>
-                <SelectItem value="PENDING">অপেক্ষমাণ</SelectItem>
-                <SelectItem value="APPROVED">অনুমোদিত</SelectItem>
-                <SelectItem value="REJECTED">বাতিল</SelectItem>
-                <SelectItem value="FAILED">ব্যর্থ</SelectItem>
-              </SelectContent>
-            </Select>
+          <CardHeader className="flex flex-col gap-3">
+            <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
+              <CardTitle className="text-base">সারিসমূহ</CardTitle>
+              <Select value={importStatusFilter} onValueChange={(v) => { setImportStatusFilter(v); setPage(1); }}>
+                <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল স্ট্যাটাস</SelectItem>
+                  <SelectItem value="PENDING">অপেক্ষমাণ</SelectItem>
+                  <SelectItem value="APPROVED">অনুমোদিত</SelectItem>
+                  <SelectItem value="REJECTED">বাতিল</SelectItem>
+                  <SelectItem value="FAILED">ব্যর্থ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-3 flex-wrap rounded-lg border bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2 text-sm">
+                {selectedIds.size > 0 ? (
+                  <>
+                    <span className="font-medium">{selectedIds.size.toLocaleString("bn-BD")} টি নির্বাচিত</span>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
+                      onClick={() => setSelectedIds(new Set())}
+                      disabled={bulkBusy}
+                    >
+                      <X className="h-3.5 w-3.5" /> নির্বাচন বাতিল
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">কোনো সারি নির্বাচিত নয়</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {bulkBusy && bulkTarget ? (
+                  <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> {bulkTarget.rowIds.length.toLocaleString("bn-BD")} জন শিক্ষার্থী অনুমোদন হচ্ছে... পাতাটি বন্ধ করবেন না।
+                  </span>
+                ) : (
+                  <>
+                    <Button size="sm" variant="outline" disabled={selectedIds.size === 0 || bulkBusy} onClick={openApproveSelected}>
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> নির্বাচিত অনুমোদন করুন
+                    </Button>
+                    <Button size="sm" disabled={bulkBusy || fetchingValidIds} onClick={openApproveAllValid}>
+                      {fetchingValidIds ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5 mr-1" />}
+                      সকল সঠিক অনুমোদন করুন
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {rowsLoading ? (
@@ -227,6 +374,14 @@ export default function StudentImportPreview() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={headerChecked}
+                          onCheckedChange={(v) => toggleSelectAllOnPage(v === true)}
+                          disabled={selectableOnPage.length === 0 || bulkBusy}
+                          aria-label="এই পাতার সকল অনুমোদনযোগ্য সারি নির্বাচন করুন"
+                        />
+                      </TableHead>
                       <TableHead>সারি</TableHead>
                       <TableHead>রোল/রেজিস্ট্রেশন</TableHead>
                       <TableHead>নাম</TableHead>
@@ -247,8 +402,18 @@ export default function StudentImportPreview() {
                       const createdRef = refName(row.createdStudentId);
                       const existingRef = refName(row.matchesExistingStudentId);
                       const busy = busyRowId === row._id;
+                      const selectable = isSelectable(row);
                       return (
                         <TableRow key={row._id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedIds.has(row._id)}
+                              onCheckedChange={(v) => toggleRow(row, v === true)}
+                              disabled={!selectable || bulkBusy}
+                              title={selectable ? undefined : "এই সারিটি বাল্ক অনুমোদনের জন্য প্রস্তুত নয়"}
+                              aria-label={`সারি ${row.rowNumber} নির্বাচন করুন`}
+                            />
+                          </TableCell>
                           <TableCell className="text-sm">{row.rowNumber}</TableCell>
                           <TableCell className="text-sm whitespace-nowrap">{p.rollNumber || "—"}</TableCell>
                           <TableCell className="text-sm font-medium whitespace-nowrap">{p.name || "—"}</TableCell>
@@ -358,6 +523,62 @@ export default function StudentImportPreview() {
             <Button variant="destructive" onClick={doReject} disabled={!!busyRowId || !rejectReason.trim()}>
               {busyRowId ? "প্রসেস হচ্ছে..." : "নিশ্চিত করে বাতিল করুন"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!bulkTarget} onOpenChange={(o) => !o && !bulkBusy && setBulkTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{bulkTarget?.label} অনুমোদন করবেন?</AlertDialogTitle>
+            <AlertDialogDescription>
+              অনুমোদনের সাথে সাথেই সিস্টেমে {bulkTarget?.rowIds.length.toLocaleString("bn-BD")} জন স্থায়ী শিক্ষার্থী তৈরি হবে (কোর্স: {session?.courseName || "—"})। যেসব সারিতে সমস্যা দেখা দেবে (ডুপ্লিকেট/অবৈধ) সেগুলো বাদ দিয়ে বাকিরা সফলভাবে যুক্ত হবে — এই কাজটি বাতিল করা যাবে না।
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkBusy}>বাতিল</AlertDialogCancel>
+            <AlertDialogAction onClick={doBulkApprove} disabled={bulkBusy}>
+              {bulkTarget ? `${bulkTarget.rowIds.length.toLocaleString("bn-BD")} জন শিক্ষার্থী অনুমোদন করুন` : "অনুমোদন করুন"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!bulkSummary} onOpenChange={(o) => !o && setBulkSummary(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>বাল্ক অনুমোদনের ফলাফল</DialogTitle>
+          </DialogHeader>
+          {bulkSummary && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard title="অনুমোদিত" value={bulkSummary.approved.toLocaleString("bn-BD")} icon={CheckCircle2} variant="success" />
+                <StatCard title="ডুপ্লিকেট" value={bulkSummary.duplicate.toLocaleString("bn-BD")} icon={Ban} variant="warning" />
+                <StatCard title="অবৈধ" value={bulkSummary.invalid.toLocaleString("bn-BD")} icon={AlertTriangle} variant="warning" />
+                <StatCard title="ব্যর্থ" value={bulkSummary.failed.toLocaleString("bn-BD")} icon={XCircle} variant="warning" />
+                <StatCard title="বাদ পড়েছে" value={bulkSummary.skipped.toLocaleString("bn-BD")} icon={Clock} variant="info" />
+                <StatCard title="মোট" value={bulkSummary.total.toLocaleString("bn-BD")} icon={Users} variant="primary" />
+              </div>
+              {bulkProblemRows.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-1.5">যেসব সারি অনুমোদিত হয়নি:</p>
+                  <div className="max-h-52 overflow-y-auto rounded-md border divide-y text-sm">
+                    {bulkProblemRows.map((r) => (
+                      <div key={r.rowId} className="flex items-start justify-between gap-3 p-2">
+                        <span className="whitespace-nowrap text-muted-foreground">সারি {r.rowNumber}</span>
+                        <span className="text-right">
+                          <Badge variant="outline" className="mb-0.5">{BULK_OUTCOME_LABEL[r.outcome]}</Badge>
+                          {r.reason && <span className="block text-xs text-muted-foreground max-w-[260px]">{r.reason}</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setBulkSummary(null)}>বন্ধ করুন</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

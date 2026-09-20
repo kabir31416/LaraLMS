@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type {
-  Session, Course, Subject, Lecture, ClassExam, VideoClass, Question, AcademicSettings, PaymentMethod,
+  Session, Course, Subject, CourseSubject, Lecture, ClassExam, VideoClass, Question, AcademicSettings, PaymentMethod,
 } from "@/types/academic";
 import { api } from "@/lib/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -50,13 +50,17 @@ function withId<T extends { _id: string }>(doc: T): Omit<T, "_id"> & { id: strin
 interface Ctx extends MockState {
   sessions: Session[];
   courses: Course[];
+  /** GLOBAL Subject catalog — no courseId. Which Courses a Subject belongs to is `courseSubjects`, not this list. */
   subjects: Subject[];
+  /** Raw Course↔Subject assignment rows (Course → CourseSubject → Subject → Lecture). */
+  courseSubjects: CourseSubject[];
   lectures: Lecture[];
   paymentMethods: PaymentMethod[];
   /** Same lists, filtered to status "সক্রিয়" (plus whatever is currently selected, so an edit form never blanks out an inactive value) — use these for every "pick one to admit/assign/create" dropdown (Settings §25). */
   activeSessions: Session[];
   activeCourses: Course[];
   activeSubjects: Subject[];
+  activeCourseSubjects: CourseSubject[];
   activePaymentMethods: PaymentMethod[];
   settings: AcademicSettings;
   loading: boolean;
@@ -68,11 +72,15 @@ interface Ctx extends MockState {
   addCourse: (c: Omit<Course, "id">) => Promise<Course>;
   updateCourse: (id: string, c: Partial<Course>) => Promise<Course>;
   deleteCourse: (id: string) => Promise<void>;
-  // Subjects
+  // Subjects (global catalog — create/edit/deactivate/delete never touches any Course assignment)
   addSubject: (s: Omit<Subject, "id">) => Promise<Subject>;
   updateSubject: (id: string, s: Partial<Subject>) => Promise<Subject>;
   deleteSubject: (id: string) => Promise<void>;
-  // Lectures
+  // Course ↔ Subject assignment
+  addCourseSubject: (courseId: string, subjectId: string, order?: number) => Promise<CourseSubject>;
+  updateCourseSubject: (courseId: string, id: string, patch: Partial<Pick<CourseSubject, "order" | "status">>) => Promise<CourseSubject>;
+  removeCourseSubject: (courseId: string, id: string) => Promise<void>;
+  // Lectures (each belongs to a CourseSubject, never directly to a Subject)
   addLecture: (l: Omit<Lecture, "id">) => Promise<Lecture>;
   updateLecture: (id: string, l: Partial<Lecture>) => Promise<Lecture>;
   deleteLecture: (id: string) => Promise<void>;
@@ -95,8 +103,17 @@ interface Ctx extends MockState {
   updateSettings: (s: Partial<AcademicSettings>) => Promise<void>;
   // Helpers
   getCoursesBySession: (sessionId: string) => Course[];
+  /** The GLOBAL Subjects assigned to this Course (joined through courseSubjects), in Course-specific display order. */
   getSubjectsByCourse: (courseId: string) => Subject[];
-  getLecturesBySubject: (subjectId: string) => Lecture[];
+  /** Raw CourseSubject rows for one Course, in display order — used by the Course management UI (reorder/remove/manage-lectures). */
+  getCourseSubjectsForCourse: (courseId: string) => CourseSubject[];
+  getCourseSubject: (id: string) => CourseSubject | undefined;
+  /** The specific CourseSubject row for (courseId, subjectId), if that Subject is assigned to that Course — the id Lectures/Exams key off. */
+  getCourseSubjectId: (courseId: string, subjectId: string) => string | undefined;
+  /** A Lecture's underlying global Subject (resolved through its CourseSubject) — for display only. */
+  getSubjectForCourseSubject: (courseSubjectId: string) => Subject | undefined;
+  /** Lectures under one specific (course, subject) combination — resolves the CourseSubject internally, so lectures never leak across Courses even when they share the same global Subject. */
+  getLecturesBySubject: (courseId: string, subjectId: string) => Lecture[];
   getClassExamsByLecture: (lectureId: string) => ClassExam[];
   getVideosByLecture: (lectureId: string) => VideoClass[];
   getCourse: (id: string) => Course | undefined;
@@ -115,6 +132,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [courseSubjects, setCourseSubjects] = useState<CourseSubject[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [settings, setSettings] = useState<AcademicSettings>(DEFAULT_SETTINGS);
@@ -126,10 +144,11 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   }, [mock]);
 
   const refreshAll = useCallback(async () => {
-    const [s, c, sub, lec, pm, set] = await Promise.all([
+    const [s, c, sub, cs, lec, pm, set] = await Promise.all([
       api.get<{ _id: string }[]>(`/sessions${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/courses${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/subjects${LIST_LIMIT}`),
+      api.get<{ _id: string }[]>(`/course-subjects`),
       api.get<{ _id: string }[]>(`/lectures${LIST_LIMIT}`),
       api.get<{ _id: string }[]>(`/payment-methods${LIST_LIMIT}`),
       api.get<AcademicSettings>("/settings"),
@@ -137,6 +156,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     setSessions(s.map(withId) as Session[]);
     setCourses(c.map(withId) as Course[]);
     setSubjects(sub.map(withId) as Subject[]);
+    setCourseSubjects(cs.map(withId) as CourseSubject[]);
     setLectures(lec.map(withId) as Lecture[]);
     setPaymentMethods(pm.map(withId) as PaymentMethod[]);
     setSettings(set);
@@ -205,6 +225,22 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const deleteSubject = useCallback(async (id: string) => {
     await api.del(`/subjects/${id}`);
     setSubjects((p) => p.filter((x) => x.id !== id));
+  }, []);
+
+  // -------------------- Course ↔ Subject assignment --------------------
+  const addCourseSubject = useCallback(async (courseId: string, subjectId: string, order?: number) => {
+    const created = withId(await api.post<{ _id: string }>(`/courses/${courseId}/subjects`, { subjectId, order })) as CourseSubject;
+    setCourseSubjects((p) => [...p, created]);
+    return created;
+  }, []);
+  const updateCourseSubject = useCallback(async (courseId: string, id: string, patch: Partial<Pick<CourseSubject, "order" | "status">>) => {
+    const updated = withId(await api.patch<{ _id: string }>(`/courses/${courseId}/subjects/${id}`, patch)) as CourseSubject;
+    setCourseSubjects((p) => p.map((x) => (x.id === id ? updated : x)));
+    return updated;
+  }, []);
+  const removeCourseSubject = useCallback(async (courseId: string, id: string) => {
+    await api.del(`/courses/${courseId}/subjects/${id}`);
+    setCourseSubjects((p) => p.filter((x) => x.id !== id));
   }, []);
 
   // -------------------- Lectures --------------------
@@ -295,41 +331,75 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const activeSessions = useMemo(() => sessions.filter((s) => s.status !== "নিষ্ক্রিয়"), [sessions]);
   const activeCourses = useMemo(() => courses.filter((c) => c.status !== "নিষ্ক্রিয়"), [courses]);
   const activeSubjects = useMemo(() => subjects.filter((s) => s.status !== "নিষ্ক্রিয়"), [subjects]);
+  const activeCourseSubjects = useMemo(() => courseSubjects.filter((cs) => cs.status !== "নিষ্ক্রিয়"), [courseSubjects]);
   const activePaymentMethods = useMemo(() => paymentMethods.filter((p) => p.status !== "নিষ্ক্রিয়"), [paymentMethods]);
 
   // -------------------- Helpers --------------------
   const getCoursesBySession = useCallback((sid: string) => courses.filter((c) => c.sessionId === sid), [courses]);
-  const getSubjectsByCourse = useCallback((cid: string) => subjects.filter((s) => s.courseId === cid), [subjects]);
-  const getLecturesBySubject = useCallback((sid: string) => lectures.filter((l) => l.subjectId === sid).sort((a, b) => a.lectureNumber - b.lectureNumber), [lectures]);
+  const getSubject = useCallback((id: string) => subjects.find((s) => s.id === id), [subjects]);
+  const getCourseSubject = useCallback((id: string) => courseSubjects.find((cs) => cs.id === id), [courseSubjects]);
+  const getCourseSubjectsForCourse = useCallback(
+    (cid: string) => courseSubjects.filter((cs) => cs.courseId === cid).sort((a, b) => a.order - b.order),
+    [courseSubjects],
+  );
+  const getCourseSubjectId = useCallback(
+    (cid: string, subjectId: string) => courseSubjects.find((cs) => cs.courseId === cid && cs.subjectId === subjectId)?.id,
+    [courseSubjects],
+  );
+  const getSubjectForCourseSubject = useCallback(
+    (courseSubjectId: string) => {
+      const cs = courseSubjects.find((x) => x.id === courseSubjectId);
+      return cs ? subjects.find((s) => s.id === cs.subjectId) : undefined;
+    },
+    [courseSubjects, subjects],
+  );
+  const getSubjectsByCourse = useCallback(
+    (cid: string) =>
+      getCourseSubjectsForCourse(cid)
+        .map((cs) => subjects.find((s) => s.id === cs.subjectId))
+        .filter((s): s is Subject => Boolean(s)),
+    [getCourseSubjectsForCourse, subjects],
+  );
+  const getLecturesBySubject = useCallback(
+    (cid: string, subjectId: string) => {
+      const courseSubjectId = getCourseSubjectId(cid, subjectId);
+      if (!courseSubjectId) return [];
+      return lectures.filter((l) => l.courseSubjectId === courseSubjectId).sort((a, b) => a.lectureNumber - b.lectureNumber);
+    },
+    [getCourseSubjectId, lectures],
+  );
   const getClassExamsByLecture = useCallback((lid: string) => mock.classExams.filter((c) => c.lectureId === lid), [mock.classExams]);
   const getVideosByLecture = useCallback((lid: string) => mock.videos.filter((v) => v.lectureId === lid), [mock.videos]);
   const getCourse = useCallback((id: string) => courses.find((c) => c.id === id), [courses]);
-  const getSubject = useCallback((id: string) => subjects.find((s) => s.id === id), [subjects]);
   const getLecture = useCallback((id: string) => lectures.find((l) => l.id === id), [lectures]);
 
   const value = useMemo<Ctx>(() => ({
-    sessions, courses, subjects, lectures, paymentMethods, settings, loading,
-    activeSessions, activeCourses, activeSubjects, activePaymentMethods,
+    sessions, courses, subjects, courseSubjects, lectures, paymentMethods, settings, loading,
+    activeSessions, activeCourses, activeSubjects, activeCourseSubjects, activePaymentMethods,
     classExams: mock.classExams, videos: mock.videos,
     addSession, updateSession, deleteSession,
     addCourse, updateCourse, deleteCourse,
     addSubject, updateSubject, deleteSubject,
+    addCourseSubject, updateCourseSubject, removeCourseSubject,
     addLecture, updateLecture, deleteLecture,
     addPaymentMethod, updatePaymentMethod, deletePaymentMethod,
     addClassExam, updateClassExam, deleteClassExam,
     addQuestions, updateQuestion, deleteQuestion,
     addVideo, updateVideo, deleteVideo,
     updateSettings,
-    getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
+    getCoursesBySession, getSubjectsByCourse, getCourseSubjectsForCourse, getCourseSubject, getCourseSubjectId,
+    getSubjectForCourseSubject, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
     getCourse, getSubject, getLecture,
-  }), [sessions, courses, subjects, lectures, paymentMethods, settings, loading, mock,
-    activeSessions, activeCourses, activeSubjects, activePaymentMethods,
+  }), [sessions, courses, subjects, courseSubjects, lectures, paymentMethods, settings, loading, mock,
+    activeSessions, activeCourses, activeSubjects, activeCourseSubjects, activePaymentMethods,
     addSession, updateSession, deleteSession, addCourse, updateCourse, deleteCourse,
-    addSubject, updateSubject, deleteSubject, addLecture, updateLecture, deleteLecture,
+    addSubject, updateSubject, deleteSubject, addCourseSubject, updateCourseSubject, removeCourseSubject,
+    addLecture, updateLecture, deleteLecture,
     addPaymentMethod, updatePaymentMethod, deletePaymentMethod,
     addClassExam, updateClassExam, deleteClassExam, addQuestions, updateQuestion, deleteQuestion,
     addVideo, updateVideo, deleteVideo, updateSettings,
-    getCoursesBySession, getSubjectsByCourse, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
+    getCoursesBySession, getSubjectsByCourse, getCourseSubjectsForCourse, getCourseSubject, getCourseSubjectId,
+    getSubjectForCourseSubject, getLecturesBySubject, getClassExamsByLecture, getVideosByLecture,
     getCourse, getSubject, getLecture]);
 
   return <AcademicContext.Provider value={value}>{children}</AcademicContext.Provider>;

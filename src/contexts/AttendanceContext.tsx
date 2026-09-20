@@ -29,6 +29,7 @@ function entryFromApi(doc: ApiAttendanceEntry): AttendanceEntry {
 interface ApiOfflineExam {
   _id: string;
   batchId: string;
+  courseSubjectId: string;
   subjectId: string;
   lectureId: string;
   title: string;
@@ -38,7 +39,7 @@ interface ApiOfflineExam {
 }
 
 function examFromApi(doc: ApiOfflineExam): OfflineExam {
-  return { id: doc._id, batchId: doc.batchId, subjectId: doc.subjectId, lectureId: doc.lectureId, title: doc.title, fullMarks: doc.fullMarks, date: doc.date, createdAt: doc.createdAt };
+  return { id: doc._id, batchId: doc.batchId, courseSubjectId: doc.courseSubjectId, subjectId: doc.subjectId, lectureId: doc.lectureId, title: doc.title, fullMarks: doc.fullMarks, date: doc.date, createdAt: doc.createdAt };
 }
 
 interface ApiOfflineResult {
@@ -93,15 +94,15 @@ interface Ctx {
   getByBatchDate: (batchId: string, date: string) => Promise<AttendanceEntry[]>;
   getByStudent: (studentId: string) => Promise<AttendanceEntry[]>;
   addExam: (exam: Omit<OfflineExam, "id" | "createdAt">) => Promise<OfflineExam>;
-  listExams: (params?: { batchId?: string; subjectId?: string; lectureId?: string; date?: string }) => Promise<OfflineExam[]>;
+  listExams: (params?: { batchId?: string; courseSubjectId?: string; subjectId?: string; lectureId?: string; date?: string }) => Promise<OfflineExam[]>;
   saveResults: (examId: string, items: { studentId: string; marks: number | null }[]) => Promise<void>;
   getResultsByExam: (examId: string) => Promise<OfflineResult[]>;
   getResultsByExams: (examIds: string[]) => Promise<OfflineResult[]>;
   getResultsByStudent: (studentId: string) => Promise<OfflineResult[]>;
   /** "Save Result" — saves marks + attendance only, never calls the SMS gateway. Safe to click repeatedly. */
-  saveResult: (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<{ examId: string; resultsSaved: number }>;
+  saveResult: (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<{ examId: string; resultsSaved: number }>;
   /** "Send Result" — saves first, then texts guardians using the caller's Result SMS template. */
-  submitResult: (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
+  submitResult: (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
   resendSms: (examId: string, studentIds: string[]) => Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">>;
   getResultSmsTemplate: () => Promise<ResultSmsTemplateConfig>;
   updateResultSmsTemplate: (template: string) => Promise<ResultSmsTemplateConfig>;
@@ -143,9 +144,10 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     return examFromApi(await api.post<ApiOfflineExam>("/exams", exam));
   }, []);
 
-  const listExams = useCallback(async (params?: { batchId?: string; subjectId?: string; lectureId?: string; date?: string }): Promise<OfflineExam[]> => {
+  const listExams = useCallback(async (params?: { batchId?: string; courseSubjectId?: string; subjectId?: string; lectureId?: string; date?: string }): Promise<OfflineExam[]> => {
     const qs = new URLSearchParams({ limit: "100", sortBy: "date", sortOrder: "desc" });
     if (params?.batchId) qs.set("batchId", params.batchId);
+    if (params?.courseSubjectId) qs.set("courseSubjectId", params.courseSubjectId);
     if (params?.subjectId) qs.set("subjectId", params.subjectId);
     if (params?.lectureId) qs.set("lectureId", params.lectureId);
     if (params?.date) qs.set("date", params.date);
@@ -157,11 +159,11 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     await api.post(`/exams/${examId}/results`, { items });
   }, []);
 
-  const saveResult = useCallback(async (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<{ examId: string; resultsSaved: number }> => {
+  const saveResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<{ examId: string; resultsSaved: number }> => {
     return api.post("/exams/save-result", data);
   }, []);
 
-  const submitResult = useCallback(async (data: { batchId: string; subjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
+  const submitResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
     return api.post<SubmitResultSummary>("/exams/submit-result", data);
   }, []);
 

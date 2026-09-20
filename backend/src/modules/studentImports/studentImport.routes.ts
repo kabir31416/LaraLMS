@@ -7,6 +7,7 @@ import { ApiError } from "../../common/utils/ApiError";
 import { PERMISSIONS } from "../rbac/permissions";
 import * as controller from "./studentImport.controller";
 import {
+  bulkApproveSchema,
   listRowsQuerySchema,
   listSessionsQuerySchema,
   rejectRowSchema,
@@ -49,6 +50,9 @@ router.post("/upload", canImport, upload.single("file"), controller.upload);
 
 router.get("/:sessionId", canImport, validate(sessionIdParamSchema), controller.getSession);
 router.get("/:sessionId/rows", canImport, validate(listRowsQuerySchema), controller.listRows);
+// Fixed segments ("bulk-approve"/"valid-ids") before the "/:rowId/..." param routes, same ordering rule as above.
+router.get("/:sessionId/rows/valid-ids", canImport, validate(sessionIdParamSchema), controller.listValidRowIds);
+router.post("/:sessionId/rows/bulk-approve", canImport, validate(bulkApproveSchema), controller.bulkApprove);
 router.post("/:sessionId/rows/:rowId/approve", canImport, validate(rowActionParamSchema), controller.approveRow);
 router.post("/:sessionId/rows/:rowId/reject", canImport, validate(rejectRowSchema), controller.rejectRow);
 

@@ -33,7 +33,7 @@ const EMPTY_FORM = {
 
 /** Add/Edit Material (§1) — opening stock is only editable while creating; afterward, stock changes only happen through Add Stock / Adjustment so every change stays auditable. */
 export function MaterialFormDialog({ open, onOpenChange, editMaterial, onSaved }: Props) {
-  const { activeCourses, subjects } = useAcademic();
+  const { activeCourses, getSubjectsByCourse } = useAcademic();
   const { activeMaterialTypes, addMaterial, updateMaterial, materialSettings } = useMaterials();
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -57,7 +57,7 @@ export function MaterialFormDialog({ open, onOpenChange, editMaterial, onSaved }
     }
   }, [open, editMaterial, materialSettings.defaultMinimumStock]);
 
-  const subjectsForCourse = subjects.filter((s) => s.courseId === form.courseId);
+  const subjectsForCourse = form.courseId ? getSubjectsByCourse(form.courseId) : [];
 
   const submit = async () => {
     if (!form.name.trim()) { toast.error("নাম আবশ্যক"); return; }
