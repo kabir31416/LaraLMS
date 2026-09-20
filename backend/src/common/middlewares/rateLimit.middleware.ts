@@ -59,3 +59,19 @@ export const studentEntryVerifyLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many attempts — try again later" } },
 });
+
+/**
+ * The public /newstudententry quick-admission form (publicNewStudentEntry
+ * module) — a real write (creates a Student), unlike the read-only public
+ * lookups above, so it gets its own limiter rather than reusing one of
+ * those. Same window/limit as authLimiter: generous enough for a genuine
+ * front-desk enrolling several real students back-to-back from one IP, tight
+ * enough to bound spam/abuse of a public, unauthenticated creation endpoint.
+ */
+export const publicNewStudentEntryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: "TOO_MANY_REQUESTS", message: "Too many attempts — try again later" } },
+});

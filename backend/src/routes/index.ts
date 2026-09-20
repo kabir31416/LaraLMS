@@ -31,6 +31,7 @@ import noticeRoutes from "../modules/notices/notice.routes";
 import publicInfoRoutes from "../modules/publicInfo/publicInfo.routes";
 import publicResultsRoutes from "../modules/publicResults/publicResults.routes";
 import publicStudentEntryRoutes from "../modules/publicStudentEntry/publicStudentEntry.routes";
+import publicNewStudentEntryRoutes from "../modules/publicNewStudentEntry/publicNewStudentEntry.routes";
 import auditLogRoutes from "../audit/auditLog.routes";
 import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
 
@@ -79,6 +80,7 @@ router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
 router.use("/public/results", publicResultsRoutes);
 router.use("/public/student-entry", publicStudentEntryRoutes);
+router.use("/public/new-student-entry", publicNewStudentEntryRoutes);
 router.use("/audit-logs", auditLogRoutes);
 router.use("/admission-results", admissionResultRoutes);
 
