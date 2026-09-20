@@ -58,6 +58,34 @@ async function main() {
   console.log(`\n=== Student Data Integrity Audit ===`);
   console.log(`মোট student ডকুমেন্ট: ${total}\n`);
 
+  // --- Live proof of the ObjectId-casting bug (student.service.ts's
+  // buildStudentFilter, now fixed) against your ACTUAL data: picks one real
+  // Batch with at least one enrolled student and runs the exact same $match
+  // aggregation pageIdsByRoll uses, once with the batchId as a raw string
+  // (the old, broken behavior) and once cast to ObjectId (the fix). If your
+  // MongoDB driver behaves the way every Mongoose release has documented,
+  // the "raw string" line below will read 0 regardless of how many students
+  // are actually enrolled in that batch — that gap IS the bug, demonstrated
+  // against your own database rather than argued from documentation.
+  const batchWithStudents = await Student.findOne({ currentBatchId: { $exists: true, $ne: null } }).select("currentBatchId");
+  if (batchWithStudents?.currentBatchId) {
+    const batchId = String(batchWithStudents.currentBatchId);
+    const [uncastCount, castCount] = await Promise.all([
+      rawStudents.countDocuments({ currentBatchId: batchId }),
+      rawStudents.countDocuments({ currentBatchId: new mongoose.Types.ObjectId(batchId) }),
+    ]);
+    console.log(`০. ObjectId-cast বাগের সরাসরি প্রমাণ (batchId=${batchId} ব্যবহার করে):`);
+    console.log(`    filter হিসেবে raw string পাঠালে মিলে: ${uncastCount}টি student (এটাই আগের বাগ — সবসময় ০ বা ভুল)`);
+    console.log(`    filter হিসেবে সঠিক ObjectId পাঠালে মিলে: ${castCount}টি student (এটাই সঠিক, ফিক্সের পরের আচরণ)`);
+    if (uncastCount !== castCount) {
+      console.log(`    ⚠️  পার্থক্য নিশ্চিত করে যে এই বাগটি বাস্তবে আপনার ডেটাতে ঘটছিল/ঘটতো।\n`);
+    } else {
+      console.log(`    (এই দুটো সংখ্যা মিলে গেলে বোঝাবে আপনার MongoDB ড্রাইভার/সংস্করণ ভিন্নভাবে আচরণ করছে — কোড ফিক্সটি তবুও নিরাপদ ও সঠিক থাকে।)\n`);
+    }
+  } else {
+    console.log(`০. ObjectId-cast বাগের প্রমাণ দেখানো যায়নি — কোনো student-এর currentBatchId সেট নেই (কেউই কোনো ব্যাচে যুক্ত নেই)।\n`);
+  }
+
   // --- registrationId ---
   const missingRegId = await Student.find({ $or: [{ registrationId: { $exists: false } }, { registrationId: "" }] }).select("registrationId name");
   flag(missingRegId);

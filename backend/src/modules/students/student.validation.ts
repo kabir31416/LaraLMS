@@ -162,6 +162,8 @@ export const listStudentsQuerySchema = z.object({
     search: z.string().optional(),
     ids: z.string().optional(), // comma-separated _ids — batched "these exact students" lookup
     course: z.string().optional(),
+    courseId: z.string().optional(), // real Course _id — scopes Batch Assignment to the Batch's own Course
+
     section: z.string().optional(),
     batchId: z.string().optional(), // also accepts "unassigned"
     directorId: z.string().optional(),
