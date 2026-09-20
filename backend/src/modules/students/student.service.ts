@@ -174,10 +174,29 @@ async function buildSearchFilterWithGuardian(search: unknown): Promise<Record<st
 
 async function buildStudentFilter(req: Request): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};
+  // Batched "these exact students" lookup (comma-separated _ids) — backs
+  // read views that already know which specific students they need (e.g.
+  // Fee Management's payment-history rows) and must resolve them in one
+  // query instead of one `Student.findById` per row.
+  if (typeof req.query.ids === "string" && req.query.ids.trim()) {
+    const ids = req.query.ids.split(",").map((s) => s.trim()).filter(Boolean);
+    filter._id = { $in: ids };
+  }
   if (req.query.course) filter.course = req.query.course;
   if (req.query.section) filter.section = req.query.section;
   if (req.query.profileStatus) filter["profileCompletion.status"] = req.query.profileStatus;
-  if (req.query.batchId === "unassigned") filter.currentBatchId = { $exists: false };
+  // "Unassigned" must match both a genuinely absent currentBatchId (the
+  // normal case — see enrollment.service.ts's withdraw, which $unsets it)
+  // AND one explicitly stored as null (a document written outside this
+  // app's own code paths, e.g. a direct import/migration, can have the key
+  // present with a null value) — {$exists:false} alone only matches the
+  // first case and would silently drop the second out of Batch Assignment's
+  // "available students" list even though the student has no batch. A plain
+  // equality match against `null` covers both in MongoDB (it matches a
+  // missing field as well as an explicit null) without needing `$or`, which
+  // would otherwise collide with — and get overwritten by — the search
+  // filter's own top-level `$or` below (Object.assign, not a merge).
+  if (req.query.batchId === "unassigned") filter.currentBatchId = null;
   else if (req.query.batchId) filter.currentBatchId = req.query.batchId;
 
   // dueStatus is the 3-state successor to the older boolean dueOnly (kept for
@@ -231,6 +250,10 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
     const { Batch } = await import("../batches/batch.model");
     const batchIds = await Batch.find({ directorId: req.query.directorId }).distinct("_id");
     filter.currentBatchId = { $in: batchIds };
+  }
+
+  if (typeof req.query.feeType === "string" && req.query.feeType.trim()) {
+    filter.feeType = req.query.feeType;
   }
   return filter;
 }
@@ -347,6 +370,45 @@ export async function admissionRollStats(req: Request): Promise<{ total: number;
     Student.countDocuments({ ...filter, admissionRoll: { $exists: true, $ne: "" } }),
   ]);
   return { total, added, missing: total - added };
+}
+
+/**
+ * Fee Management's due-list summary cards (মোট/প্যাকেজ/মাসিক বকেয়া) — a
+ * global aggregate across every student with a due balance, computed once in
+ * the database instead of the frontend loading the entire due-student
+ * population just to sum three numbers client-side. Honors the exact same
+ * filter/search a caller's due-list fetch is using, same reasoning as
+ * admissionRollStats above.
+ */
+export async function dueStats(req: Request): Promise<{ totalDue: number; packageDue: number; monthlyDue: number }> {
+  const filter = await buildStudentFilter(req);
+  Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
+  const [row] = await Student.aggregate<{ totalDue: number; packageDue: number; monthlyDue: number }>([
+    { $match: filter },
+    {
+      $group: {
+        _id: null,
+        totalDue: { $sum: "$due" },
+        packageDue: { $sum: { $cond: [{ $eq: ["$feeType", "এককালীন"] }, "$due", 0] } },
+        monthlyDue: { $sum: { $cond: [{ $eq: ["$feeType", "মাসিক"] }, "$due", 0] } },
+      },
+    },
+  ]);
+  return row ? { totalDue: row.totalDue, packageDue: row.packageDue, monthlyDue: row.monthlyDue } : { totalDue: 0, packageDue: 0, monthlyDue: 0 };
+}
+
+/**
+ * One student-count per Batch, in a single aggregation — backs Batches.tsx's
+ * per-row roster count without either an N-requests-per-batch waterfall or
+ * filtering StudentContext's own (deliberately capped) global list, which
+ * silently undercounts once total students exceed that cap.
+ */
+export async function batchStudentCounts(): Promise<Record<string, number>> {
+  const rows = await Student.aggregate<{ _id: unknown; count: number }>([
+    { $match: { currentBatchId: { $exists: true } } },
+    { $group: { _id: "$currentBatchId", count: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.count]));
 }
 
 /**

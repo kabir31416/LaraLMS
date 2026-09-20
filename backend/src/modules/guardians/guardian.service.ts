@@ -7,8 +7,19 @@ export async function listByStudent(studentId: string): Promise<GuardianDoc[]> {
   return Guardian.find({ studentId }).sort({ isPrimary: -1, createdAt: 1 });
 }
 
+/**
+ * Falls back to ANY guardian record if none is flagged isPrimary — a
+ * Guardian document created outside the normal admission/import path (a
+ * direct DB write, an older import, a manual fix) can exist without that
+ * flag set. Previously written as `Guardian.findOne(...) ||
+ * Guardian.findOne(...)`: a Mongoose Query object is a plain object, never
+ * falsy, so that `||` always short-circuited to the first query and the
+ * second `findOne` never ran — a student whose only guardian record lacked
+ * isPrimary silently showed no guardian info at all (Student Profile,
+ * public self-entry, and the exam-result guardian SMS all read this).
+ */
 export async function getPrimary(studentId: string): Promise<GuardianDoc | null> {
-  return Guardian.findOne({ studentId, isPrimary: true }) || Guardian.findOne({ studentId });
+  return (await Guardian.findOne({ studentId, isPrimary: true })) || (await Guardian.findOne({ studentId }));
 }
 
 export async function create(req: Request, studentId: string, data: Pick<GuardianDoc, "name" | "relation" | "phone" | "occupation" | "address" | "isPrimary">) {

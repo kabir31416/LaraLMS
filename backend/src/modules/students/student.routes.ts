@@ -6,6 +6,7 @@ import { photoUpload } from "../../common/middlewares/imageUpload.middleware";
 import {
   admissionRollStatsQuerySchema,
   createStudentSchema,
+  dueStatsQuerySchema,
   idParamSchema,
   listStudentsQuerySchema,
   quickCreateStudentSchema,
@@ -53,6 +54,21 @@ router.get(
   requirePermission(PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH),
   validate(listStudentsQuerySchema),
   controller.exportList,
+);
+
+// Fee Management's due-list summary cards — must also precede "/:id".
+router.get(
+  "/stats/due",
+  requirePermission(PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH),
+  validate(dueStatsQuerySchema),
+  controller.dueStats,
+);
+
+// Batches page's per-row roster count — must also precede "/:id".
+router.get(
+  "/stats/batch-counts",
+  requirePermission(PERMISSIONS.STUDENTS_READ, PERMISSIONS.STUDENTS_READ_OWN_BATCH),
+  controller.batchStudentCounts,
 );
 
 router.get(

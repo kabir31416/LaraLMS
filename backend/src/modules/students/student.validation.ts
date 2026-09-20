@@ -160,6 +160,7 @@ export const listStudentsQuerySchema = z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
     search: z.string().optional(),
+    ids: z.string().optional(), // comma-separated _ids — batched "these exact students" lookup
     course: z.string().optional(),
     section: z.string().optional(),
     batchId: z.string().optional(), // also accepts "unassigned"
@@ -174,6 +175,7 @@ export const listStudentsQuerySchema = z.object({
     birthdayToday: z.enum(["true", "false"]).optional(),
     profileStatus: z.enum(["incomplete", "complete"]).optional(),
     admissionRollStatus: z.enum(["added", "missing"]).optional(),
+    feeType: z.enum(FEE_TYPES).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
   }),
@@ -184,5 +186,15 @@ export const admissionRollStatsQuerySchema = z.object({
     course: z.string().optional(),
     batchId: z.string().optional(),
     directorId: z.string().optional(),
+  }),
+});
+
+export const dueStatsQuerySchema = z.object({
+  query: z.object({
+    search: z.string().optional(),
+    course: z.string().optional(),
+    batchId: z.string().optional(),
+    directorId: z.string().optional(),
+    feeType: z.enum(FEE_TYPES).optional(),
   }),
 });

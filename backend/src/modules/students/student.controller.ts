@@ -49,6 +49,15 @@ export const admissionRollStats = asyncHandler(async (req: Request, res: Respons
   sendSuccess(res, await service.admissionRollStats(req));
 });
 
+/** Fee Management's due-list summary cards — same server-enforced batch scope as list(). */
+export const dueStats = asyncHandler(async (req: Request, res: Response) => {
+  scopeToOwnBatchIfNeeded(req);
+  sendSuccess(res, await service.dueStats(req));
+});
+
+/** Batches page's per-row roster count — Admin/Director-only surface (Batch management), no per-caller scoping needed beyond the route's own permission gate. */
+export const batchStudentCounts = asyncHandler(async (_req: Request, res: Response) => sendSuccess(res, await service.batchStudentCounts()));
+
 export const updateAdmissionRoll = asyncHandler(async (req: Request, res: Response) =>
   sendSuccess(res, await service.updateAdmissionRoll(req, req.params.id, req.body.admissionRoll)),
 );

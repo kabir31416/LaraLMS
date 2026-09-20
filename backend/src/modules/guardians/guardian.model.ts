@@ -29,5 +29,10 @@ const guardianSchema = new Schema<GuardianDoc>(
 );
 
 guardianSchema.index({ studentId: 1 });
+// Student List's free-text search and its dedicated guardianMobile filter
+// (student.service.ts's buildSearchFilterWithGuardian/buildStudentFilter)
+// both run a `Guardian.find({ phone: regex })` on every debounced keystroke
+// — without this, that's a full collection scan every time.
+guardianSchema.index({ phone: 1 });
 
 export const Guardian = model<GuardianDoc>("Guardian", guardianSchema);

@@ -370,7 +370,10 @@ export async function getStats(req: Request) {
   // active (falls back to every student in scope).
   const scope = await resolveBatchScope(req);
   const studentFilter: Record<string, unknown> = {};
-  if (req.query.batchId === "unassigned") studentFilter.currentBatchId = { $exists: false };
+  // See student.service.ts's buildStudentFilter for why a plain `null`
+  // match (not {$exists:false}) is required here — it also matches a
+  // currentBatchId explicitly stored as null, not just a missing field.
+  if (req.query.batchId === "unassigned") studentFilter.currentBatchId = null;
   else if (req.query.batchId) studentFilter.currentBatchId = req.query.batchId;
   if (scope) studentFilter.currentBatchId = studentFilter.currentBatchId && scope.includes(String(studentFilter.currentBatchId)) ? studentFilter.currentBatchId : { $in: scope };
   if (req.query.programName) studentFilter.course = req.query.programName;

@@ -1,15 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search } from "lucide-react";
-import { useStudents } from "@/contexts/StudentContext";
+import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
-import { matchesStudentQuery, studentIdentifierLabel, compareByRoll } from "@/lib/studentDisplay";
+import { studentIdentifierLabel } from "@/lib/studentDisplay";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { api } from "@/lib/apiClient";
+import type { Student } from "@/types/student";
 
 interface Props {
   open: boolean;
@@ -18,24 +21,36 @@ interface Props {
 }
 
 export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
-  const { students, refreshStudents } = useStudents();
+  const { refreshStudents } = useStudents();
   const { batches, enrollBulk } = useBatches();
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [picked, setPicked] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const currentBatch = batches.find((b) => b.id === batchId);
 
   // Only students with no current batch can be enrolled here — a student
-  // already in another batch needs Transfer instead (Phase 1 §14).
-  const filtered = useMemo(() => {
-    return students
-      .filter((s) => {
-        if (s.batchId) return false;
-        return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
-      })
-      .sort(compareByRoll);
-  }, [students, search]);
+  // already in another batch needs Transfer instead (Phase 1 §14). Searched
+  // directly against the server (batchId=unassigned + search, both filters
+  // student.service.ts's list() already supports) instead of filtering
+  // StudentContext's own capped ≤100-row list, which would silently hide any
+  // unassigned student outside that cap once total students grow past it.
+  const [filtered, setFiltered] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    const qs = new URLSearchParams({ batchId: "unassigned", limit: "50" });
+    if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
+    api.get<ApiStudent[]>(`/students?${qs.toString()}`)
+      .then((docs) => { if (!cancelled) setFiltered(docs.map(fromApi)); })
+      .catch(() => { if (!cancelled) setFiltered([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, debouncedSearch]);
 
   const toggle = (id: string) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
@@ -74,7 +89,9 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
           </div>
           <ScrollArea className="h-[400px] border rounded-lg">
             <div className="p-2 space-y-1">
-              {filtered.length === 0 ? (
+              {loading ? (
+                <div className="text-center text-muted-foreground py-10">লোড হচ্ছে...</div>
+              ) : filtered.length === 0 ? (
                 <div className="text-center text-muted-foreground py-10">কোনো শিক্ষার্থী পাওয়া যায়নি</div>
               ) : (
                 filtered.map((s) => (

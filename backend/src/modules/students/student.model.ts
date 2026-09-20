@@ -215,4 +215,11 @@ studentSchema.index({ currentRollNumber: 1 });
 // scope-dependent checks (Admission Result feature §8).
 studentSchema.index({ admissionRoll: 1 });
 
+// Student List's course filter (student.service.ts's buildStudentFilter) is
+// an exact-match filter used on nearly every course-scoped view (course
+// tabs, reports) — a genuinely frequent query pattern, unlike the other
+// list() filters (hscInstitution/division/district/gender/birthdayToday),
+// which are regex/low-selectivity and not worth indexing at this scale.
+studentSchema.index({ course: 1 });
+
 export const Student = model<StudentDoc>("Student", studentSchema);
