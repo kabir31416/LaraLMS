@@ -8,10 +8,12 @@
  *   work without ever putting a long-lived token somewhere JS can read it back.
  */
 
-export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || "http://neuron-raj.vercel.app/api/v1";
-
-
-
+// Vercel always serves over HTTPS — a plain "http://" fallback here gets
+// silently blocked as mixed content by every browser once the frontend
+// itself is served over HTTPS (which every real host, Vercel included,
+// does), making every API call (including public pages like /marksheet
+// and /info) fail with no visible error.
+export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || "https://neuron-raj.vercel.app/api/v1";
 
 export class ApiClientError extends Error {
   code: string;

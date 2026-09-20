@@ -12,7 +12,16 @@ function setRefreshCookie(res: Response, token: string) {
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
     secure: isProd,
-    sameSite: "lax",
+    // Frontend and backend are deployed as separate origins in production
+    // (see app.ts's CORS_ORIGIN allow-list, already set up for
+    // credentials:true cross-site requests) — a "lax" cookie is never sent
+    // on a cross-site fetch/XHR, only on a top-level navigation, so
+    // POST /auth/refresh would silently never receive it there, logging
+    // Admin sessions out on every reload. "none" (paired with secure:true,
+    // which isProd already guarantees) is required for a cross-site cookie
+    // to be sent at all; "lax" is kept for local dev, where secure:false
+    // would make sameSite:"none" cookies rejected outright by the browser.
+    sameSite: isProd ? "none" : "lax",
     maxAge: parseDurationToMs(env.JWT_REFRESH_EXPIRES_IN),
     path: "/api/v1/auth",
   });
