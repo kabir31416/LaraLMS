@@ -15,13 +15,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Settings2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
-import { useStudents } from "@/contexts/StudentContext";
+import { fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useAttendance, ResultSmsTemplateConfig } from "@/contexts/AttendanceContext";
 import type { AttendanceStatus } from "@/types/attendance";
+import type { Student } from "@/types/student";
 import { toast } from "@/hooks/use-toast";
-import { ApiClientError } from "@/lib/apiClient";
-import { compareByRoll } from "@/lib/studentDisplay";
+import { ApiClientError, api } from "@/lib/apiClient";
 
 /**
  * Result Entry — the single place marks and attendance are recorded
@@ -47,7 +47,6 @@ const DirectorResults = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
   const { batches } = useBatches();
-  const { students } = useStudents();
   const { courses, getSubjectsByCourse, getCourseSubjectId, lectures } = useAcademic();
   const { listExams, getResultsByExam, getByBatchDate, saveResult, submitResult, resendSms, getResultSmsTemplate, updateResultSmsTemplate } = useAttendance();
 
@@ -90,7 +89,20 @@ const DirectorResults = () => {
   const [fullMarks, setFullMarks] = useState<number>(50);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const batchStudents = useMemo(() => students.filter((s) => s.batchId === batch?.id).sort(compareByRoll), [students, batch]);
+  // This batch's own roster — fetched fresh, scoped by batchId
+  // (`/students?batchId=`, already roll-sorted server-side) whenever the
+  // selected batch changes, instead of filtering StudentContext's own
+  // capped ≤100-row global list, which would silently omit any of this
+  // batch's students who fall outside that cap once total students grow.
+  const [batchStudents, setBatchStudents] = useState<Student[]>([]);
+  useEffect(() => {
+    if (!batch) { setBatchStudents([]); return; }
+    let cancelled = false;
+    api.get<ApiStudent[]>(`/students?batchId=${batch.id}&limit=100`)
+      .then((docs) => { if (!cancelled) setBatchStudents(docs.map(fromApi)); })
+      .catch(() => { if (!cancelled) setBatchStudents([]); });
+    return () => { cancelled = true; };
+  }, [batch]);
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [existingExamId, setExistingExamId] = useState<string | null>(null);

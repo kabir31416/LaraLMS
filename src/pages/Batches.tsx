@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Plus, Pencil, Trash2, MoreVertical, UserPlus, Search, ArrowLeft, X, ArrowRightLeft } from "lucide-react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
-import { useStudents } from "@/contexts/StudentContext";
+import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import type { Batch } from "@/types/batch";
 import type { Student } from "@/types/student";
@@ -21,12 +21,12 @@ import { BatchForm } from "@/components/batches/BatchForm";
 import { AssignStudentsDialog } from "@/components/batches/AssignStudentsDialog";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
-import { compareByRoll } from "@/lib/studentDisplay";
+import { api } from "@/lib/apiClient";
 
 const Batches = () => {
   const { batches, deleteBatch } = useBatches();
   const { staff, getStaff } = useStaff();
-  const { students, withdrawStudent } = useStudents();
+  const { withdrawStudent } = useStudents();
   const { getCourse } = useAcademic();
   const [search, setSearch] = useState("");
   const [filterDirector, setFilterDirector] = useState("all");
@@ -38,7 +38,34 @@ const Batches = () => {
 
   const directors = staff.filter((s) => s.staffType === "Batch Director");
   const courseName = (id?: string) => getCourse(id || "")?.name || "—";
-  const studentCount = (batchId: string) => students.filter((s) => s.batchId === batchId).length;
+
+  // Per-batch roster counts — one aggregate query across every Batch instead
+  // of filtering StudentContext's own capped ≤100-row list (which silently
+  // undercounts once total students exceed that cap) or an N-requests
+  // waterfall (one per batch row).
+  const [batchCounts, setBatchCounts] = useState<Record<string, number>>({});
+  const loadBatchCounts = useCallback(() => {
+    api.get<Record<string, number>>("/students/stats/batch-counts").then(setBatchCounts).catch(() => {});
+  }, []);
+  useEffect(() => { loadBatchCounts(); }, [loadBatchCounts]);
+  const studentCount = (batchId: string) => batchCounts[batchId] ?? 0;
+
+  // One specific batch's full roster — fetched fresh, scoped to that batch
+  // (`/students?batchId=`), whenever it's opened, rather than filtering the
+  // global capped list, which the roll-order pipeline already sorts server-side.
+  const [openBatchStudents, setOpenBatchStudents] = useState<Student[]>([]);
+  const [openBatchLoading, setOpenBatchLoading] = useState(false);
+  const loadOpenBatchStudents = useCallback((batchId: string) => {
+    setOpenBatchLoading(true);
+    api.get<ApiStudent[]>(`/students?batchId=${batchId}&limit=100`)
+      .then((docs) => setOpenBatchStudents(docs.map(fromApi)))
+      .catch(() => setOpenBatchStudents([]))
+      .finally(() => setOpenBatchLoading(false));
+  }, []);
+  useEffect(() => {
+    if (openBatchId) loadOpenBatchStudents(openBatchId);
+    else setOpenBatchStudents([]);
+  }, [openBatchId, loadOpenBatchStudents]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -65,13 +92,14 @@ const Batches = () => {
     try {
       await withdrawStudent(studentId);
       toast.success("শিক্ষার্থী সরানো হয়েছে");
+      if (openBatchId) loadOpenBatchStudents(openBatchId);
+      loadBatchCounts();
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "সরাতে ব্যর্থ হয়েছে");
     }
   };
 
   const openBatch = batches.find((b) => b.id === openBatchId);
-  const openBatchStudents = openBatch ? students.filter((s) => s.batchId === openBatch.id).sort(compareByRoll) : [];
 
   if (openBatch) {
     return (
@@ -112,7 +140,9 @@ const Batches = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {openBatchStudents.length === 0 ? (
+                {openBatchLoading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">লোড হচ্ছে...</TableCell></TableRow>
+                ) : openBatchStudents.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">কোনো শিক্ষার্থী যোগ করা হয়নি</TableCell></TableRow>
                 ) : (
                   openBatchStudents.map((s) => (
@@ -149,8 +179,16 @@ const Batches = () => {
             </Table>
           </Card>
 
-          <AssignStudentsDialog open={!!assignFor} onOpenChange={(v) => !v && setAssignFor(null)} batchId={openBatch.id} />
-          <TransferDialog student={transferStudent} onOpenChange={(v) => !v && setTransferStudentTarget(null)} currentBatchId={openBatch.id} />
+          <AssignStudentsDialog
+            open={!!assignFor}
+            onOpenChange={(v) => { if (!v) { setAssignFor(null); loadOpenBatchStudents(openBatch.id); loadBatchCounts(); } }}
+            batchId={openBatch.id}
+          />
+          <TransferDialog
+            student={transferStudent}
+            onOpenChange={(v) => { if (!v) { setTransferStudentTarget(null); loadOpenBatchStudents(openBatch.id); loadBatchCounts(); } }}
+            currentBatchId={openBatch.id}
+          />
         </div>
       </DashboardLayout>
     );
@@ -236,7 +274,11 @@ const Batches = () => {
         </Card>
 
         <BatchForm open={open} onOpenChange={setOpen} editBatch={editBatch} />
-        <AssignStudentsDialog open={!!assignFor} onOpenChange={(v) => !v && setAssignFor(null)} batchId={assignFor || ""} />
+        <AssignStudentsDialog
+          open={!!assignFor}
+          onOpenChange={(v) => { if (!v) { setAssignFor(null); loadBatchCounts(); } }}
+          batchId={assignFor || ""}
+        />
       </div>
     </DashboardLayout>
   );

@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { useStudents } from "@/contexts/StudentContext";
+import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -12,13 +13,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Pencil, Phone, Mail, MapPin, Trophy, Camera } from "lucide-react";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { gradeFor } from "@/lib/grading";
+import type { Student } from "@/types/student";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 import { api } from "@/lib/apiClient";
 import type { ChanceResult } from "@/types/chanceResult";
@@ -27,7 +29,7 @@ import type { StudentMaterialHistoryRow } from "@/types/material";
 const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudent, uploadStudentPhoto, deleteStudentPhoto } = useStudents();
+  const { uploadStudentPhoto, deleteStudentPhoto } = useStudents();
   const { getPayments } = usePayments();
   const { batches } = useBatches();
   const { getStaff } = useStaff();
@@ -35,20 +37,55 @@ const StudentProfile = () => {
   const { getSubject, getLecture, settings } = useAcademic();
   const [editOpen, setEditOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("basic");
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
   const [admissionHistory, setAdmissionHistory] = useState<ChanceResult[]>([]);
   const [materialHistory, setMaterialHistory] = useState<StudentMaterialHistoryRow[]>([]);
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false);
+  const [admissionLoaded, setAdmissionLoaded] = useState(false);
+  const [materialsLoaded, setMaterialsLoaded] = useState(false);
 
-  const student = getStudent(id || "");
+  // Core profile info is loaded on its own, directly by ID — never by
+  // pulling it out of StudentContext's ≤100-row global list (that list
+  // exists for dropdown/typeahead use, see StudentContext.tsx, and a
+  // student outside that cap would incorrectly show as "not found" here).
+  const [student, setStudent] = useState<Student | undefined>(undefined);
+  const [studentLoading, setStudentLoading] = useState(true);
+
+  const loadStudent = useCallback(async () => {
+    if (!id) { setStudentLoading(false); return; }
+    try {
+      const doc = await api.get<ApiStudent>(`/students/${id}`);
+      setStudent(fromApi(doc));
+    } catch {
+      setStudent(undefined);
+    } finally {
+      setStudentLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    setStudentLoading(true);
+    loadStudent();
+  }, [loadStudent]);
+
+  // Secondary tab data is lazy — fetched only once its own tab is actually
+  // opened, not eagerly on mount, so opening a profile never pays for
+  // attendance+results+admission-history+material-history data nobody asked
+  // to see. Each flag latches "fetch started" so switching back and forth
+  // between tabs doesn't refetch every time.
 
   // Real Attendance/Offline-Result data (Modules 18-20) — the same
   // per-student API the Student Portal itself reads, so a mark/attendance
   // entry a Batch Director saves on Result Entry shows up here too, not
-  // just on the student's own dashboard.
+  // just on the student's own dashboard. Backs both the "উপস্থিতি" and
+  // "ফলাফল" tabs, so either one opening triggers it.
   useEffect(() => {
-    if (!student) return;
+    if (!student || attendanceLoaded) return;
+    if (activeTab !== "attendance" && activeTab !== "results") return;
+    setAttendanceLoaded(true);
     let cancelled = false;
     Promise.all([
       getByStudent(student.id),
@@ -61,31 +98,48 @@ const StudentProfile = () => {
       setExams(e);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [student, getByStudent, getResultsByStudent, listExams]);
+  }, [student, activeTab, attendanceLoaded, getByStudent, getResultsByStudent, listExams]);
 
   // Chance Result (Admission Result Management) history — a small,
   // single-student endpoint with no other list-wide consumer, so a direct
   // call here is proportionate rather than growing a global Context for it
   // (same reasoning as the attendance/results fetch above, just simpler).
   useEffect(() => {
-    if (!student) return;
+    if (!student || admissionLoaded || activeTab !== "admission") return;
+    setAdmissionLoaded(true);
     let cancelled = false;
     api.get<{ history: ChanceResult[] }>(`/admission-results/student/${student.id}`)
       .then((res) => { if (!cancelled) setAdmissionHistory(res.history); })
       .catch(() => { if (!cancelled) setAdmissionHistory([]); });
     return () => { cancelled = true; };
-  }, [student]);
+  }, [student, activeTab, admissionLoaded]);
 
   // Coaching Material Inventory distribution history — same direct-call
   // reasoning as the Chance Result fetch above.
   useEffect(() => {
-    if (!student) return;
+    if (!student || materialsLoaded || activeTab !== "materials") return;
+    setMaterialsLoaded(true);
     let cancelled = false;
     api.get<StudentMaterialHistoryRow[]>(`/materials/students/${student.id}/history`)
       .then((rows) => { if (!cancelled) setMaterialHistory(rows); })
       .catch(() => { if (!cancelled) setMaterialHistory([]); });
     return () => { cancelled = true; };
-  }, [student]);
+  }, [student, activeTab, materialsLoaded]);
+
+  if (studentLoading) {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <Skeleton className="h-7 w-40" />
+          </div>
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (!student) {
     return (
@@ -190,7 +244,7 @@ const StudentProfile = () => {
         </Card>
 
         {/* Tabs */}
-        <Tabs defaultValue="basic" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="bg-card border">
             <TabsTrigger value="basic">মূল তথ্য</TabsTrigger>
             <TabsTrigger value="fees">ফি তথ্য</TabsTrigger>
@@ -563,14 +617,18 @@ const StudentProfile = () => {
           </TabsContent>
         </Tabs>
 
-        <AdmissionForm open={editOpen} onOpenChange={setEditOpen} editStudent={student} />
+        <AdmissionForm
+          open={editOpen}
+          onOpenChange={(open) => { setEditOpen(open); if (!open) loadStudent(); }}
+          editStudent={student}
+        />
         <StudentPhotoUploader
           open={photoOpen}
           onOpenChange={setPhotoOpen}
           studentName={student.name}
           currentPhotoUrl={student.photo}
-          onUpload={async (blob) => { await uploadStudentPhoto(student.id, blob); }}
-          onRemove={async () => { await deleteStudentPhoto(student.id); }}
+          onUpload={async (blob) => { await uploadStudentPhoto(student.id, blob); await loadStudent(); }}
+          onRemove={async () => { await deleteStudentPhoto(student.id); await loadStudent(); }}
         />
       </div>
     </DashboardLayout>

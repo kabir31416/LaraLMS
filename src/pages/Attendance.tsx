@@ -10,14 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Users, UserCheck, UserX } from "lucide-react";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
-import { useStudents } from "@/contexts/StudentContext";
+import { fromApi, type ApiStudent } from "@/contexts/StudentContext";
+import { api } from "@/lib/apiClient";
+import type { Student } from "@/types/student";
 
 type Range = "today" | "week" | "month" | "custom";
 
 const Attendance = () => {
   const { getStats, attendancePercentages } = useAttendance();
   const { batches } = useBatches();
-  const { students } = useStudents();
 
   const [batchFilter, setBatchFilter] = useState("all");
   const [range, setRange] = useState<Range>("month");
@@ -63,18 +64,29 @@ const Attendance = () => {
     return () => { cancelled = true; };
   }, [batchId, rangeBounds, getStats]);
 
-  // Top 10 students by attendance % within the range
+  // Top 10 students by attendance % within the range — enriched with each
+  // one's own direct-by-ID fetch (bounded to exactly these ≤10 students),
+  // never a lookup against StudentContext's capped ≤100-row global list,
+  // which would silently show "—" for a top student outside that cap.
   const [topStudents, setTopStudents] = useState<{ studentId: string; pct: number }[]>([]);
+  const [topStudentDetails, setTopStudentDetails] = useState<Record<string, Student>>({});
   useEffect(() => {
     let cancelled = false;
     attendancePercentages({ batchId }, rangeBounds.from, rangeBounds.to)
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         const rows = Object.entries(data)
           .map(([studentId, pct]) => ({ studentId, pct }))
           .sort((a, b) => b.pct - a.pct)
           .slice(0, 10);
         setTopStudents(rows);
+        const details = await Promise.all(
+          rows.map((r) => api.get<ApiStudent>(`/students/${r.studentId}`).then(fromApi).catch(() => null)),
+        );
+        if (cancelled) return;
+        const map: Record<string, Student> = {};
+        rows.forEach((r, i) => { const d = details[i]; if (d) map[r.studentId] = d; });
+        setTopStudentDetails(map);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -179,7 +191,7 @@ const Attendance = () => {
                   {topStudents.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">কোনো ডাটা নেই</TableCell></TableRow>
                   ) : topStudents.map((x, i) => {
-                    const student = students.find((s) => s.id === x.studentId);
+                    const student = topStudentDetails[x.studentId];
                     return (
                       <TableRow key={x.studentId}>
                         <TableCell className="font-medium">{i + 1}</TableCell>

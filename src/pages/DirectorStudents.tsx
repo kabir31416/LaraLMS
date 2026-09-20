@@ -1,55 +1,98 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Search, Cake } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
-import { useStudents } from "@/contexts/StudentContext";
+import { fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { isBirthdayToday } from "@/lib/date";
-import { matchesStudentQuery, compareByRoll } from "@/lib/studentDisplay";
+import { api } from "@/lib/apiClient";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import type { Student } from "@/types/student";
 
+const PAGE_SIZE = 20;
+
+interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/**
+ * "আমার শিক্ষার্থী" (my students) — server-paginated and server-scoped
+ * directly against `/students`, never StudentContext's own capped ≤100-row
+ * global list (a Director's students, filtered client-side over that list,
+ * would silently drop any of their own students who fall outside the cap
+ * once total students across the whole institution grow). The backend
+ * itself force-scopes this to the caller's own batches for a Director-only
+ * permission holder (student.controller.ts's scopeToOwnBatchIfNeeded), so
+ * no explicit directorId needs to be sent — it's already enforced server-side.
+ */
 const DirectorStudents = () => {
   const { user } = useAuth();
   const { batches } = useBatches();
-  const { students } = useStudents();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [batchFilter, setBatchFilter] = useState("all");
   const [birthdayOnly, setBirthdayOnly] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const [list, setList] = useState<Student[]>([]);
+  const [meta, setMeta] = useState<ListMeta | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const myBatches = useMemo(
     () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
     [batches, user],
   );
-  const myBatchIds = useMemo(() => new Set(myBatches.map((b) => b.id)), [myBatches]);
 
-  const list = useMemo(() => {
-    return students
-      .filter((s) => s.batchId && myBatchIds.has(s.batchId))
-      .filter((s) => batchFilter === "all" || s.batchId === batchFilter)
-      .filter((s) => !birthdayOnly || isBirthdayToday(s.dob))
-      .filter((s) => matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }))
-      .sort(compareByRoll);
-  }, [students, myBatchIds, search, batchFilter, birthdayOnly]);
+  const load = useCallback(() => {
+    setLoading(true);
+    const qs = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+    if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
+    if (batchFilter !== "all") qs.set("batchId", batchFilter);
+    if (birthdayOnly) qs.set("birthdayToday", "true");
+    api.getWithMeta<ApiStudent[]>(`/students?${qs.toString()}`)
+      .then((res) => {
+        setList(res.data.map(fromApi));
+        setMeta((res.meta as unknown as ListMeta) ?? null);
+      })
+      .catch(() => { setList([]); setMeta(null); })
+      .finally(() => setLoading(false));
+  }, [page, debouncedSearch, batchFilter, birthdayOnly]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, batchFilter, birthdayOnly]);
 
   if (!user || user.role !== "Batch Director") {
     return <Navigate to="/login" replace />;
   }
 
-  const batchOf = (sid: string) => myBatches.find((b) => b.id === students.find((s) => s.id === sid)?.batchId);
+  const batchOf = (batchId?: string) => myBatches.find((b) => b.id === batchId);
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold">আমার শিক্ষার্থী</h1>
-          <p className="text-sm text-muted-foreground">মোট {list.length} জন</p>
+          <p className="text-sm text-muted-foreground">মোট {meta?.total ?? 0} জন</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -91,11 +134,17 @@ const DirectorStudents = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell>
+                  </TableRow>
+                ))
+              ) : list.length === 0 ? (
                 <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-10">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
               ) : (
                 list.map((s) => {
-                  const b = batchOf(s.id);
+                  const b = batchOf(s.batchId);
                   const isBirthday = isBirthdayToday(s.dob);
                   return (
                     <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/students/${s.id}`)}>
@@ -129,6 +178,35 @@ const DirectorStudents = () => {
             </TableBody>
           </Table>
         </Card>
+
+        {meta && meta.totalPages > 1 && (
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className={meta.page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                />
+              </PaginationItem>
+              {Array.from({ length: meta.totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === meta.totalPages || Math.abs(p - meta.page) <= 1)
+                .map((p, idx, arr) => (
+                  <PaginationItem key={p}>
+                    {idx > 0 && arr[idx - 1] !== p - 1 ? <span className="px-2 text-muted-foreground">…</span> : null}
+                    <PaginationLink isActive={p === meta.page} onClick={() => setPage(p)} className="cursor-pointer">
+                      {p}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
+                  className={meta.page >= meta.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
       </div>
     </DashboardLayout>
   );

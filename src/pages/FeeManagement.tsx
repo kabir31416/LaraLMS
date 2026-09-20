@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { formatStudentLabel, matchesStudentQuery, studentIdentifierLabel, compareByRoll } from "@/lib/studentDisplay";
-import { useStudents } from "@/contexts/StudentContext";
+import { formatStudentLabel, studentIdentifierLabel } from "@/lib/studentDisplay";
+import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -36,6 +37,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { CalendarIcon, Plus, Search, DollarSign, AlertCircle, TrendingUp, Package, Check, ChevronsUpDown, Printer, Receipt as ReceiptIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -45,6 +54,7 @@ import { FEE_TYPES } from "@/types/student";
 import type { Student, Payment } from "@/types/student";
 import { StatCard } from "@/components/StatCard";
 import { api } from "@/lib/apiClient";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Command,
   CommandEmpty,
@@ -54,31 +64,84 @@ import {
   CommandList,
 } from "@/components/ui/command";
 
+const DUE_PAGE_SIZE = 20;
+
+interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 const FeeManagement = () => {
   const navigate = useNavigate();
-  const { students, refreshStudents } = useStudents();
+  const { refreshStudents } = useStudents();
   const { payments, addPayment } = usePayments();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [filterFeeType, setFilterFeeType] = useState("all");
+  const [duePage, setDuePage] = useState(1);
 
-  // Stats
-  const totalDue = students.reduce((sum, s) => sum + s.due, 0);
-  const packageDue = students.filter((s) => s.feeType === "এককালীন").reduce((sum, s) => sum + s.due, 0);
-  const monthlyDue = students.filter((s) => s.feeType === "মাসিক").reduce((sum, s) => sum + s.due, 0);
   const today = format(new Date(), "yyyy-MM-dd");
   const todayCollection = payments
     .filter((p) => p.date === today)
     .reduce((sum, p) => sum + p.paidAmount, 0);
 
-  const dueStudents = students
-    .filter((s) => s.due > 0)
-    .filter((s) => {
-      if (filterFeeType !== "all" && s.feeType !== filterFeeType) return false;
-      if (search) return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile });
-      return true;
-    })
-    .sort(compareByRoll);
+  // Due-list summary cards — a global aggregate over EVERY due student
+  // (not just the current page), computed server-side in one query
+  // (GET /students/stats/due) instead of summing StudentContext's own
+  // capped ≤100-row list, which would silently under-report totalDue/
+  // packageDue/monthlyDue once total students exceed that cap.
+  const [dueStats, setDueStats] = useState({ totalDue: 0, packageDue: 0, monthlyDue: 0 });
+  const buildDueParams = useCallback(() => {
+    const qs = new URLSearchParams({ dueStatus: "has" });
+    if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
+    if (filterFeeType !== "all") qs.set("feeType", filterFeeType);
+    return qs;
+  }, [debouncedSearch, filterFeeType]);
+
+  useEffect(() => {
+    const qs = buildDueParams();
+    api.get<typeof dueStats>(`/students/stats/due?${qs.toString()}`).then(setDueStats).catch(() => {});
+  }, [buildDueParams]);
+
+  // Due-list table — server-paginated, same filter the stats call above uses.
+  const [dueStudents, setDueStudents] = useState<Student[]>([]);
+  const [dueMeta, setDueMeta] = useState<ListMeta | null>(null);
+  const [dueLoading, setDueLoading] = useState(true);
+  const loadDueStudents = useCallback(() => {
+    setDueLoading(true);
+    const qs = buildDueParams();
+    qs.set("page", String(duePage));
+    qs.set("limit", String(DUE_PAGE_SIZE));
+    api.getWithMeta<ApiStudent[]>(`/students?${qs.toString()}`)
+      .then((res) => { setDueStudents(res.data.map(fromApi)); setDueMeta((res.meta as unknown as ListMeta) ?? null); })
+      .catch(() => { setDueStudents([]); setDueMeta(null); })
+      .finally(() => setDueLoading(false));
+  }, [buildDueParams, duePage]);
+  useEffect(() => { loadDueStudents(); }, [loadDueStudents]);
+  useEffect(() => { setDuePage(1); }, [debouncedSearch, filterFeeType]);
+
+  // Payment History tab's per-row student name — one batched lookup for
+  // every distinct studentId already present in `payments` (PaymentContext's
+  // own most-recent-100 list), instead of one `students.find()` per row
+  // against StudentContext's separately-capped list.
+  const [paymentStudents, setPaymentStudents] = useState<Record<string, Student>>({});
+  useEffect(() => {
+    const ids = Array.from(new Set(payments.map((p) => p.studentId))).filter(Boolean);
+    if (ids.length === 0) { setPaymentStudents({}); return; }
+    let cancelled = false;
+    api.get<ApiStudent[]>(`/students?ids=${ids.join(",")}&limit=100`)
+      .then((docs) => {
+        if (cancelled) return;
+        const map: Record<string, Student> = {};
+        for (const doc of docs) map[doc._id] = fromApi(doc);
+        setPaymentStudents(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [payments]);
 
   return (
     <DashboardLayout>
@@ -95,9 +158,9 @@ const FeeManagement = () => {
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard title="মোট বকেয়া" value={`৳ ${totalDue.toLocaleString()}`} icon={AlertCircle} variant="warning" />
-          <StatCard title="প্যাকেজ বকেয়া" value={`৳ ${packageDue.toLocaleString()}`} icon={Package} variant="info" />
-          <StatCard title="মাসিক বকেয়া" value={`৳ ${monthlyDue.toLocaleString()}`} icon={TrendingUp} variant="primary" />
+          <StatCard title="মোট বকেয়া" value={`৳ ${dueStats.totalDue.toLocaleString()}`} icon={AlertCircle} variant="warning" />
+          <StatCard title="প্যাকেজ বকেয়া" value={`৳ ${dueStats.packageDue.toLocaleString()}`} icon={Package} variant="info" />
+          <StatCard title="মাসিক বকেয়া" value={`৳ ${dueStats.monthlyDue.toLocaleString()}`} icon={TrendingUp} variant="primary" />
           <StatCard title="আজকের আদায়" value={`৳ ${todayCollection.toLocaleString()}`} icon={DollarSign} variant="success" />
         </div>
 
@@ -147,7 +210,11 @@ const FeeManagement = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {dueStudents.length === 0 ? (
+                    {dueLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                      ))
+                    ) : dueStudents.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                           কোনো বকেয়া শিক্ষার্থী নেই
@@ -173,6 +240,36 @@ const FeeManagement = () => {
                     )}
                   </TableBody>
                 </Table>
+                {dueMeta && dueMeta.totalPages > 1 && (
+                  <div className="flex items-center justify-end p-4 border-t">
+                    <Pagination className="mx-0 w-auto">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            className={dueMeta.page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            onClick={() => dueMeta.page > 1 && setDuePage(dueMeta.page - 1)}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: dueMeta.totalPages }, (_, i) => i + 1)
+                          .filter((p) => p === 1 || p === dueMeta.totalPages || Math.abs(p - dueMeta.page) <= 1)
+                          .map((p, idx, arr) => (
+                            <PaginationItem key={p}>
+                              {idx > 0 && arr[idx - 1] !== p - 1 ? <span className="px-2 text-muted-foreground">…</span> : null}
+                              <PaginationLink isActive={p === dueMeta.page} className="cursor-pointer" onClick={() => setDuePage(p)}>
+                                {p}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            className={dueMeta.page >= dueMeta.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            onClick={() => dueMeta.page < dueMeta.totalPages && setDuePage(dueMeta.page + 1)}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -203,7 +300,7 @@ const FeeManagement = () => {
                       </TableRow>
                     ) : (
                       [...payments].sort((a, b) => b.date.localeCompare(a.date)).map((p) => {
-                        const student = students.find((s) => s.id === p.studentId);
+                        const student = paymentStudents[p.studentId];
                         return (
                           <TableRow key={p.id}>
                             <TableCell className="font-mono text-xs">{p.receiptNo}</TableCell>
@@ -239,7 +336,6 @@ const FeeManagement = () => {
         <PaymentDialog
           open={paymentOpen}
           onOpenChange={setPaymentOpen}
-          students={students}
           addPayment={addPayment}
           onSuccess={(p) => { refreshStudents(); navigate(`/payments/${p.id}/receipt`); }}
         />
@@ -251,20 +347,39 @@ const FeeManagement = () => {
 function PaymentDialog({
   open,
   onOpenChange,
-  students,
   addPayment,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  students: Student[];
   addPayment: (p: Omit<Payment, "id" | "receiptNo"> & { idempotencyKey?: string }) => Promise<Payment>;
   onSuccess?: (p: Payment) => void;
 }) {
   const { batches } = useBatches();
   const { activePaymentMethods } = useAcademic();
   const [studentId, setStudentId] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentPickerOpen, setStudentPickerOpen] = useState(false);
+  // Searched directly against the server (GET /students?search=), never
+  // filtered from StudentContext's own capped ≤100-row global list — a
+  // student outside that cap would otherwise be impossible to select here
+  // at all, which is a hard block on collecting their payment, not just slow.
+  const [pickerSearch, setPickerSearch] = useState("");
+  const debouncedPickerSearch = useDebouncedValue(pickerSearch, 300);
+  const [pickerOptions, setPickerOptions] = useState<Student[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  useEffect(() => {
+    if (!studentPickerOpen) return;
+    let cancelled = false;
+    setPickerLoading(true);
+    const qs = new URLSearchParams({ limit: "20" });
+    if (debouncedPickerSearch.trim()) qs.set("search", debouncedPickerSearch.trim());
+    api.get<ApiStudent[]>(`/students?${qs.toString()}`)
+      .then((docs) => { if (!cancelled) setPickerOptions(docs.map(fromApi)); })
+      .catch(() => { if (!cancelled) setPickerOptions([]); })
+      .finally(() => { if (!cancelled) setPickerLoading(false); });
+    return () => { cancelled = true; };
+  }, [studentPickerOpen, debouncedPickerSearch]);
   const [feeType, setFeeType] = useState<string>("এককালীন");
   const [amount, setAmount] = useState(0);
   const [discount, setDiscount] = useState(0);
@@ -289,7 +404,6 @@ function PaymentDialog({
   }, [open]);
 
   const paidAmount = amount - discount + fine;
-  const selectedStudent = students.find((s) => s.id === studentId);
 
   const handleSubmit = async () => {
     // Synchronous guard: React's `submitting` state won't disable the
@@ -321,6 +435,7 @@ function PaymentDialog({
       onSuccess?.(created);
       // Reset
       setStudentId("");
+      setSelectedStudent(null);
       setAmount(0);
       setDiscount(0);
       setFine(0);
@@ -366,36 +481,44 @@ function PaymentDialog({
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[--radix-popover-trigger-width] max-w-[calc(100vw-2rem)] p-0 bg-popover" align="start">
-                <Command
-                  filter={(value, search) => {
-                    const s = students.find((st) => st.id === value);
-                    if (!s) return 0;
-                    return matchesStudentQuery(search, { name: s.name, rollNumber: s.rollNumber, systemId: s.studentId, mobile: s.mobile }) ? 1 : 0;
-                  }}
-                >
-                  <CommandInput placeholder="আইডি, রোল, নাম বা মোবাইল দিয়ে খুঁজুন..." />
+                {/* shouldFilter=false — the list below is already exactly the
+                    server's own search result (GET /students?search=), so
+                    cmdk must not re-filter it client-side against whatever
+                    partial/older set happens to be in `pickerOptions`. */}
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="আইডি, রোল, নাম বা মোবাইল দিয়ে খুঁজুন..."
+                    value={pickerSearch}
+                    onValueChange={setPickerSearch}
+                  />
                   <CommandList className="max-h-[40vh]">
-                    <CommandEmpty>কোনো শিক্ষার্থী পাওয়া যায়নি</CommandEmpty>
-                    <CommandGroup>
-                      {[...students].sort(compareByRoll).map((s) => (
-                        <CommandItem
-                          key={s.id}
-                          value={s.id}
-                          onSelect={(v) => {
-                            setStudentId(v);
-                            const st = students.find((x) => x.id === v);
-                            if (st) setFeeType(st.feeType);
-                            setStudentPickerOpen(false);
-                          }}
-                        >
-                          <Check className={cn("mr-2 h-4 w-4 shrink-0", studentId === s.id ? "opacity-100" : "opacity-0")} />
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })})</span></span>
-                            <span className="text-xs text-muted-foreground truncate">{s.mobile} • বকেয়া: ৳{s.due.toLocaleString()}</span>
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    {pickerLoading ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">খোঁজা হচ্ছে...</p>
+                    ) : (
+                      <>
+                        <CommandEmpty>কোনো শিক্ষার্থী পাওয়া যায়নি</CommandEmpty>
+                        <CommandGroup>
+                          {pickerOptions.map((s) => (
+                            <CommandItem
+                              key={s.id}
+                              value={s.id}
+                              onSelect={(v) => {
+                                setStudentId(v);
+                                const st = pickerOptions.find((x) => x.id === v);
+                                if (st) { setSelectedStudent(st); setFeeType(st.feeType); }
+                                setStudentPickerOpen(false);
+                              }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4 shrink-0", studentId === s.id ? "opacity-100" : "opacity-0")} />
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-medium truncate">{s.name} <span className="text-xs text-muted-foreground font-mono">({studentIdentifierLabel({ rollNumber: s.rollNumber, systemId: s.studentId })})</span></span>
+                                <span className="text-xs text-muted-foreground truncate">{s.mobile} • বকেয়া: ৳{s.due.toLocaleString()}</span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </>
+                    )}
                   </CommandList>
                 </Command>
               </PopoverContent>
