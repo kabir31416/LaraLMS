@@ -106,6 +106,8 @@ export interface Payment {
   note?: string;
   /** The student's due immediately before this payment (payment.model.ts) — the receipt's "পূর্ববর্তী বকেয়া"/"বর্তমান বকেয়া" are derived from this + paidAmount, not from the student's live (possibly since-changed) due. */
   previousDue?: number;
+  /** "admission" marks the one payment auto-created alongside a new Student; "material" marks one from a paid Material distribution — everything else is a regular Fee Management transaction (payment.model.ts). */
+  source?: "admission" | "regular" | "material";
   /** "cancelled" (Fees/Payment audit §7) is a soft flag — the row stays for the audit trail, but is excluded from every default financial total. Missing/undefined means "active" (every payment before this field existed). */
   status?: "active" | "cancelled";
   cancelledAt?: string;

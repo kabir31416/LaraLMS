@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { formatStudentLabel, studentIdentifierLabel } from "@/lib/studentDisplay";
 import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
-import { usePayments } from "@/contexts/PaymentContext";
+import { usePayments, fromApi as paymentFromApi, type ApiPayment } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useAuth, ApiClientError, hasPermission } from "@/contexts/AuthContext";
@@ -89,7 +89,7 @@ const FeeManagement = () => {
   const { user } = useAuth();
   const canCancelPayments = hasPermission(user, PAYMENTS_DELETE);
   const { refreshStudents } = useStudents();
-  const { courses } = useAcademic();
+  const { courses, activePaymentMethods } = useAcademic();
   const { batches } = useBatches();
   const { payments, addPayment, cancelPayment } = usePayments();
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -176,8 +176,8 @@ const FeeManagement = () => {
     const qs = buildHistoryParams();
     qs.set("page", String(historyPage));
     qs.set("limit", "20");
-    api.getWithMeta<Payment[]>(`/payments?${qs.toString()}`)
-      .then((res) => { setHistoryItems(res.data); setHistoryMeta((res.meta as unknown as ListMeta) ?? null); })
+    api.getWithMeta<ApiPayment[]>(`/payments?${qs.toString()}`)
+      .then((res) => { setHistoryItems(res.data.map(paymentFromApi)); setHistoryMeta((res.meta as unknown as ListMeta) ?? null); })
       .catch(() => { setHistoryItems([]); setHistoryMeta(null); })
       .finally(() => setHistoryLoading(false));
   }, [buildHistoryParams, historyPage]);
