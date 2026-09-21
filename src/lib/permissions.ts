@@ -73,7 +73,14 @@ export interface SidebarModule {
 export const SIDEBAR_MODULES: SidebarModule[] = [
   { key: "students", label: "শিক্ষার্থী ও ভর্তি", permissions: [STUDENTS_READ, STUDENTS_CREATE, STUDENTS_UPDATE, STUDENTS_DELETE, STUDENTS_MANAGE_ROLL], urls: ["/students", "/admission"] },
   { key: "admission-result", label: "অ্যাডমিশন রেজাল্ট", permissions: [ADMISSION_RESULTS_MANAGE], urls: ["/admission-result"] },
-  { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, PAYMENTS_DELETE, RECEIPTS_READ], urls: ["/fees"] },
+  // PAYMENTS_DELETE (payment cancellation) is deliberately NOT required here —
+  // this list is AND-ed (AppSidebar.tsx's every()) to decide whether the whole
+  // Fees page shows at all, and a staff member already granted this module
+  // before payment cancellation existed would otherwise have the entire page
+  // vanish from their sidebar the moment this key is added, since their
+  // persisted permission set predates it. The Cancel button itself is
+  // separately gated by PAYMENTS_DELETE inline in FeeManagement.tsx.
+  { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, RECEIPTS_READ], urls: ["/fees"] },
   { key: "attendance", label: "উপস্থিতি", permissions: [ATTENDANCE_MARK, ATTENDANCE_READ], urls: ["/attendance"] },
   { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry"] },
   { key: "videos", label: "ভিডিও ক্লাস", permissions: [VIDEOS_MANAGE], urls: ["/videos"] },
