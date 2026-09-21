@@ -123,7 +123,7 @@ const DirectorResults = () => {
   // the director sees what's already there before they touch anything).
   useEffect(() => {
     setSummary(null);
-    if (!batch || !courseSubjectId || !lectureId || !date) {
+    if (!batch || !courseSubjectId || !date) {
       setMarks({});
       setAttendance({});
       setExistingExamId(null);
@@ -133,8 +133,16 @@ const DirectorResults = () => {
     setLoadingExisting(true);
     (async () => {
       try {
-        const exams = await listExams({ batchId: batch.id, courseSubjectId, lectureId, date });
-        const exam = exams[0];
+        // Fetched without a lectureId filter and matched client-side against
+        // the current selection (Result Entry Lecture-optional audit §11) —
+        // "no lecture chosen" and "a specific lecture chosen" are two
+        // distinct exam identities for the same batch+courseSubject+date
+        // (mirroring the backend's own `lectureId ?? { $exists: false }`
+        // upsert filter), so a plain query-param filter that's simply
+        // omitted when empty would incorrectly match a different exam that
+        // does have a lecture.
+        const exams = await listExams({ batchId: batch.id, courseSubjectId, date });
+        const exam = exams.find((e) => (e.lectureId || undefined) === (lectureId || undefined));
         if (cancelled) return;
         if (!exam) {
           setMarks({});
@@ -175,10 +183,16 @@ const DirectorResults = () => {
     if (!checked) setMarks((p) => ({ ...p, [sid]: "" }));
   };
 
-  /** Shared validation + payload build for both Save Result and Send Result — identical save step either way. */
-  const buildPayload = (): { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: { studentId: string; marks: number | null; attendance: AttendanceStatus }[] } | null => {
-    if (!batch || !courseSubjectId || !lectureId) {
-      toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ, সাবজেক্ট ও লেকচার নির্বাচন করুন।" });
+  /**
+   * Shared validation + payload build for both Save Result and Send Result
+   * — identical save step either way. `lectureId` is optional (Result Entry
+   * Lecture-optional audit §11) — omitted from the payload entirely when
+   * empty, rather than sent as `""`, so the backend never has to treat an
+   * empty string as "no lecture" on its own.
+   */
+  const buildPayload = (): { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: { studentId: string; marks: number | null; attendance: AttendanceStatus }[] } | null => {
+    if (!batch || !courseSubjectId) {
+      toast({ title: "তথ্য অসম্পূর্ণ", description: "ব্যাচ ও সাবজেক্ট নির্বাচন করুন।" });
       return null;
     }
     if (!fullMarks || fullMarks <= 0) {
@@ -213,7 +227,7 @@ const DirectorResults = () => {
       return { studentId: s.id, marks: num, attendance: status };
     });
 
-    return { batchId: batch.id, courseSubjectId, lectureId, date, fullMarks, items };
+    return { batchId: batch.id, courseSubjectId, lectureId: lectureId || undefined, date, fullMarks, items };
   };
 
   const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiClientError ? err.message : fallback);
@@ -348,12 +362,13 @@ const DirectorResults = () => {
               )}
             </div>
             <div>
-              <Label>লেকচার</Label>
-              <Select value={lectureId} onValueChange={setLectureId} disabled={!subjectId || subjectLectures.length === 0}>
+              <Label>লেকচার (ঐচ্ছিক)</Label>
+              <Select value={lectureId || "none"} onValueChange={(v) => setLectureId(v === "none" ? "" : v)} disabled={!subjectId}>
                 <SelectTrigger>
-                  <SelectValue placeholder={subjectId && subjectLectures.length === 0 ? "লেকচার নেই" : "নির্বাচন"} />
+                  <SelectValue placeholder="লেকচার নির্বাচন করুন (ঐচ্ছিক)" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">— কোনো লেকচার নয় —</SelectItem>
                   {subjectLectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.lectureNumber}. {l.title}</SelectItem>)}
                 </SelectContent>
               </Select>

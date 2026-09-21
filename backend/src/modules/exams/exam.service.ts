@@ -80,16 +80,26 @@ async function resolveCourseSubject(
  */
 export async function create(
   req: Request,
-  data: { batchId: string; courseSubjectId: string; lectureId: string; title: string; fullMarks: number; date: string },
+  data: { batchId: string; courseSubjectId: string; lectureId?: string; title: string; fullMarks: number; date: string },
 ): Promise<OfflineExamDoc> {
   await assertCanActOnBatch(req, data.batchId);
   const batch = await Batch.findById(data.batchId);
   if (!batch) throw ApiError.notFound("Batch not found");
   const { subject } = await resolveCourseSubject(data.courseSubjectId, batch.courseId);
 
+  // Result Entry Lecture-optional audit §11 — "no lecture" is its own
+  // identity (matched via `$exists: false`, never a client-supplied empty
+  // string), so exams with and without a lecture never collide with each
+  // other for the same batch+courseSubject+date.
+  const lectureId = data.lectureId || undefined;
+  const setFields: Record<string, unknown> = { title: data.title, fullMarks: data.fullMarks, subjectId: subject._id };
+  const update: Record<string, unknown> = { $set: setFields };
+  if (lectureId) setFields.lectureId = lectureId;
+  else update.$unset = { lectureId: "" };
+
   const doc = await OfflineExam.findOneAndUpdate(
-    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, lectureId: data.lectureId, date: data.date },
-    { $set: { title: data.title, fullMarks: data.fullMarks, subjectId: subject._id } },
+    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, date: data.date, lectureId: lectureId ?? { $exists: false } },
+    update,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
   await recordAudit({ req, action: "exam.create", module: "exams", targetCollection: "offlineexams", targetId: String(doc._id), after: doc.toObject() });
@@ -197,7 +207,8 @@ export function computeGrade(percentage: number, gradeScale: { minPercent: numbe
 async function buildResultSmsVariables(input: {
   student: StudentDoc;
   subject: SubjectDoc;
-  lecture: LectureDoc;
+  /** May be null (Result Entry Lecture-optional audit §11) — unused below (there is no dedicated lecture SMS placeholder; `exam.title` already carries the lecture name when one exists). */
+  lecture: LectureDoc | null;
   exam: OfflineExamDoc;
   batchName: string;
   marks: number | null;
@@ -284,7 +295,8 @@ export interface SubmitResultSummary {
 interface PersistedResult {
   exam: OfflineExamDoc;
   subject: SubjectDoc;
-  lecture: LectureDoc;
+  /** null when the result was saved with no Lecture selected (Result Entry Lecture-optional audit §11). */
+  lecture: LectureDoc | null;
   batch: InstanceType<typeof Batch>;
   studentById: Map<string, StudentDoc>;
 }
@@ -299,18 +311,22 @@ interface PersistedResult {
  */
 async function persistResult(
   req: Request,
-  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<PersistedResult> {
   await assertCanActOnBatch(req, data.batchId);
 
   const batch = await Batch.findById(data.batchId);
   if (!batch) throw ApiError.notFound("Batch not found");
+  // Result Entry Lecture-optional audit §11 — `lectureId` may be absent
+  // entirely; Lecture.findById is only ever called with a real id (never
+  // `undefined`, which would otherwise build a `{ _id: undefined }` filter).
+  const lectureId = data.lectureId || undefined;
   const [{ subject }, lecture] = await Promise.all([
     resolveCourseSubject(data.courseSubjectId, batch.courseId),
-    Lecture.findById(data.lectureId),
+    lectureId ? Lecture.findById(lectureId) : Promise.resolve(null),
   ]);
-  if (!lecture) throw ApiError.badRequest("Invalid lecture");
-  if (String(lecture.courseSubjectId) !== String(data.courseSubjectId)) throw ApiError.badRequest("This lecture does not belong to the selected subject");
+  if (lectureId && !lecture) throw ApiError.badRequest("Invalid lecture");
+  if (lecture && String(lecture.courseSubjectId) !== String(data.courseSubjectId)) throw ApiError.badRequest("This lecture does not belong to the selected subject");
 
   // Every student in the submission must actually belong to this batch —
   // the frontend's own student list is already scoped this way, but a
@@ -325,10 +341,14 @@ async function persistResult(
     }
   }
 
-  const title = `${subject.name} - ${lecture.title}`;
+  const title = lecture ? `${subject.name} - ${lecture.title}` : subject.name;
+  const setFields: Record<string, unknown> = { title, fullMarks: data.fullMarks, subjectId: subject._id };
+  const update: Record<string, unknown> = { $set: setFields };
+  if (lectureId) setFields.lectureId = lectureId;
+  else update.$unset = { lectureId: "" };
   const exam = await OfflineExam.findOneAndUpdate(
-    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, lectureId: data.lectureId, date: data.date },
-    { $set: { title, fullMarks: data.fullMarks, subjectId: subject._id } },
+    { batchId: data.batchId, courseSubjectId: data.courseSubjectId, date: data.date, lectureId: lectureId ?? { $exists: false } },
+    update,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
@@ -372,7 +392,7 @@ async function persistResult(
  */
 export async function saveResult(
   req: Request,
-  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<{ examId: string; resultsSaved: number }> {
   const { exam } = await persistResult(req, data);
   return { examId: String(exam._id), resultsSaved: data.items.length };
@@ -396,7 +416,7 @@ export async function saveResult(
  */
 export async function submitResult(
   req: Request,
-  data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] },
+  data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] },
 ): Promise<SubmitResultSummary> {
   const { exam, subject, lecture, batch, studentById } = await persistResult(req, data);
 
@@ -468,12 +488,16 @@ export async function resendSms(req: Request, examId: string, studentIds: string
   const exam = await getById(examId);
   await assertCanActOnBatch(req, String(exam.batchId));
 
+  // Result Entry Lecture-optional audit §11 — exam.lectureId may be absent;
+  // Lecture.findById must never be called with `undefined` (that would
+  // build a filter with no `_id` constraint at all), and a missing lecture
+  // is expected/valid here, not a notFound condition.
   const [subject, lecture, batch] = await Promise.all([
     Subject.findById(exam.subjectId),
-    Lecture.findById(exam.lectureId),
+    exam.lectureId ? Lecture.findById(exam.lectureId) : Promise.resolve(null),
     Batch.findById(exam.batchId),
   ]);
-  if (!subject || !lecture || !batch) throw ApiError.notFound("Subject, lecture, or batch not found");
+  if (!subject || !batch) throw ApiError.notFound("Subject or batch not found");
 
   const { AttendanceEntry } = await import("../attendance/attendance.model");
   // Scoped to this exam's own batch — a crafted studentIds array must never

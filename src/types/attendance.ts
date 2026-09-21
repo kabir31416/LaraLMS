@@ -17,7 +17,8 @@ export interface OfflineExam {
   courseSubjectId: string;
   /** The underlying global Subject, denormalized by the backend — safe to read directly for display (e.g. via useAcademic().getSubject) without resolving through courseSubjectId. */
   subjectId: string;
-  lectureId: string;
+  /** Optional (Result Entry Lecture-optional audit §11) — a result can be saved/sent with no Lecture chosen. */
+  lectureId?: string;
   title: string;
   fullMarks: number;
   date: string;

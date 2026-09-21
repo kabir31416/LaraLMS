@@ -3,6 +3,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ADMISSION_RESULTS_MANAGE, REPORTS_READ } from "@/lib/permissions";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
+import PublicStudentSearch from "./pages/PublicStudentSearch";
 import Marksheet from "./pages/Marksheet";
 import StudentEntry from "./pages/StudentEntry";
 import NewStudentEntry from "./pages/NewStudentEntry";
@@ -53,6 +54,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/info" element={<PublicInfo />} />
+      <Route path="/info/search" element={<PublicStudentSearch />} />
       <Route path="/marksheet" element={<Marksheet />} />
       <Route path="/studententry" element={<StudentEntry />} />
       <Route path="/newstudententry" element={<NewStudentEntry />} />

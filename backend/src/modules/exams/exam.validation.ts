@@ -6,7 +6,8 @@ export const createExamSchema = z.object({
   body: z.object({
     batchId: z.string().length(24),
     courseSubjectId: z.string().length(24),
-    lectureId: z.string().length(24),
+    /** Optional (Result Entry Lecture-optional audit §11) — matches submitResultSchema/saveResultSchema below. */
+    lectureId: z.string().length(24).optional().or(z.literal("")),
     title: z.string().trim().min(1),
     fullMarks: z.number().positive(),
     date: z.string().min(1),
@@ -47,7 +48,14 @@ export const submitResultSchema = z.object({
     .object({
       batchId: z.string().length(24),
       courseSubjectId: z.string().length(24),
-      lectureId: z.string().length(24),
+      /**
+       * Optional (Result Entry Lecture-optional audit §11) — a Batch
+       * Director can Save/Send a result with no Lecture chosen. Accepts
+       * an empty string too, since the frontend's Select's "cleared" state
+       * is `""`, not `undefined`; exam.service.ts treats both the same way
+       * (never passed to Lecture.findById).
+       */
+      lectureId: z.string().length(24).optional().or(z.literal("")),
       date: z.string().min(1),
       fullMarks: z.number().positive(),
       items: z

@@ -473,9 +473,10 @@ export async function updateResultMark(req: Request, resultId: string, marks: nu
     after: { marks: result.marks, studentId: String(result.studentId), examId: String(exam._id) },
   });
 
+  // Result Entry Lecture-optional audit §11 — exam.lectureId may be absent; never call findById(undefined).
   const [subject, lecture, batch, settings] = await Promise.all([
     Subject.findById(exam.subjectId).select("name"),
-    Lecture.findById(exam.lectureId).select("title"),
+    exam.lectureId ? Lecture.findById(exam.lectureId).select("title") : Promise.resolve(null),
     Batch.findById(exam.batchId).select("name"),
     getSettings(),
   ]);

@@ -118,7 +118,8 @@ interface Ctx extends MockState {
   getVideosByLecture: (lectureId: string) => VideoClass[];
   getCourse: (id: string) => Course | undefined;
   getSubject: (id: string) => Subject | undefined;
-  getLecture: (id: string) => Lecture | undefined;
+  /** Accepts `undefined` (Result Entry Lecture-optional audit §11) — an OfflineExam saved with no Lecture has no id to look up, so callers reading `exam.lectureId` straight through need this to resolve to "no lecture" rather than a type error. */
+  getLecture: (id: string | undefined) => Lecture | undefined;
 }
 
 const AcademicContext = createContext<Ctx | null>(null);
@@ -371,7 +372,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   const getClassExamsByLecture = useCallback((lid: string) => mock.classExams.filter((c) => c.lectureId === lid), [mock.classExams]);
   const getVideosByLecture = useCallback((lid: string) => mock.videos.filter((v) => v.lectureId === lid), [mock.videos]);
   const getCourse = useCallback((id: string) => courses.find((c) => c.id === id), [courses]);
-  const getLecture = useCallback((id: string) => lectures.find((l) => l.id === id), [lectures]);
+  const getLecture = useCallback((id: string | undefined) => (id ? lectures.find((l) => l.id === id) : undefined), [lectures]);
 
   const value = useMemo<Ctx>(() => ({
     sessions, courses, subjects, courseSubjects, lectures, paymentMethods, settings, loading,

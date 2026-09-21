@@ -6,6 +6,7 @@ import { OfflineExam } from "../exams/exam.model";
 import { ApiError } from "../../common/utils/ApiError";
 import { buildSearchFilter } from "../../common/utils/pagination";
 import * as settingsService from "../settings/settings.service";
+import { normalizePhoneForLookup } from "../auth/auth.service";
 
 const SEARCH_METHODS = ["registrationId", "phone", "name"] as const;
 type SearchMethod = (typeof SEARCH_METHODS)[number];
@@ -82,9 +83,17 @@ async function toPublicView(doc: StudentDoc, visibleFields: string[]): Promise<R
   return view;
 }
 
+/**
+ * Student Search Mobile-only audit §1 — phone lookups now normalize the
+ * input the same way Student Portal login does (auth.service.ts's
+ * normalizePhoneForLookup), so "+8801XXXXXXXXX" / "8801XXXXXXXXX" /
+ * "01XXXXXXXXX" all match the local-form value every Student record
+ * actually stores. Reused as-is, not reimplemented — registrationId/name
+ * search are untouched.
+ */
 function buildFilter(method: SearchMethod, q: string): Record<string, unknown> {
   if (method === "registrationId") return { registrationId: q };
-  if (method === "phone") return { phone: q };
+  if (method === "phone") return { phone: normalizePhoneForLookup(q) };
   return buildSearchFilter(q, ["name"]);
 }
 

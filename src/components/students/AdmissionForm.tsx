@@ -316,7 +316,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                অভিভাবকের পেশা, ঠিকানার বিস্তারিত, HSC-এর বাকি তথ্য (বোর্ড/সাল/গ্রুপ/জিপিএ), SSC তথ্য ও ছবি — ভর্তির পর শিক্ষার্থী নিজে স্টুডেন্ট পোর্টাল থেকে যোগ করতে পারবে।
+                ঠিকানার বিস্তারিত, HSC-এর বাকি তথ্য (বোর্ড/সাল/বিভাগ/জিপিএ), SSC তথ্য ও ছবি — ভর্তির পর শিক্ষার্থী নিজে স্টুডেন্ট পোর্টাল থেকে যোগ করতে পারবে।
               </p>
             </section>
 

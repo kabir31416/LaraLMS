@@ -49,11 +49,15 @@ interface ApiMyProfile {
   hscPassingYear?: string;
   hscGroup?: string;
   hscGpa?: string;
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
   sscInstitution?: string;
   sscBoard?: string;
   sscPassingYear?: string;
   sscGroup?: string;
   sscGpa?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
   courseId?: string;
   course?: string;
   section?: string;
@@ -105,11 +109,15 @@ function studentFromApi(doc: ApiMyProfile): Student {
     hscPassingYear: doc.hscPassingYear,
     hscGroup: doc.hscGroup,
     hscGpa: doc.hscGpa,
+    hscRoll: doc.hscRoll,
+    hscRegistrationNumber: doc.hscRegistrationNumber,
     sscInstitution: doc.sscInstitution,
     sscBoard: doc.sscBoard,
     sscPassingYear: doc.sscPassingYear,
     sscGroup: doc.sscGroup,
     sscGpa: doc.sscGpa,
+    sscRoll: doc.sscRoll,
+    sscRegistrationNumber: doc.sscRegistrationNumber,
     courseId: doc.courseId,
     course: doc.course,
     section: doc.section,
@@ -136,7 +144,13 @@ function studentFromApi(doc: ApiMyProfile): Student {
   };
 }
 
-/** Exactly the student-editable allow-list the backend's updateSelfSchema accepts — see student.validation.ts (Phase 4). */
+/**
+ * Exactly the student-editable allow-list the backend's updateSelfSchema
+ * accepts — see student.validation.ts (Phase 4). `guardianOccupation`/
+ * `guardianAddress` were removed here (Guardian পেশা/ঠিকানা audit §9) — the
+ * backend schema no longer accepts them on this route either, though any
+ * value a student previously saved stays in the database untouched.
+ */
 export interface SelfEditableFields {
   photoUrl?: string;
   presentAddress?: string;
@@ -146,15 +160,17 @@ export interface SelfEditableFields {
   hscPassingYear?: string;
   hscGroup?: string;
   hscGpa?: string;
+  hscRoll?: string;
+  hscRegistrationNumber?: string;
   sscInstitution?: string;
   sscBoard?: string;
   sscPassingYear?: string;
   sscGroup?: string;
   sscGpa?: string;
+  sscRoll?: string;
+  sscRegistrationNumber?: string;
   guardianName?: string;
   guardianRelation?: string;
-  guardianOccupation?: string;
-  guardianAddress?: string;
 }
 
 interface StudentSelfContextType {
