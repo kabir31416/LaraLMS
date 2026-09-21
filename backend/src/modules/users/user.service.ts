@@ -5,7 +5,7 @@ import { ApiError } from "../../common/utils/ApiError";
 import { hashPassword, generateTempPassword, normalizeIdentifier } from "../../common/utils/password";
 import { recordAudit } from "../../audit/auditLog.service";
 import { parsePagination, buildMeta, buildSearchFilter } from "../../common/utils/pagination";
-import { sendSms } from "../../common/utils/sms";
+import { sendSms } from "../sms/sms.service";
 import { logger } from "../../logger/logger";
 
 /**
@@ -23,7 +23,10 @@ async function notifyStudentCredential(identifier: string, plainPassword: string
     const student = await Student.findById(linkedStudentId, { name: 1 });
     const name = student?.name ? `${student.name}, ` : "";
     const message = `${name}আপনার LaraLMS Student Portal লগইন — মোবাইল: ${identifier}, পাসওয়ার্ড: ${plainPassword}`;
-    await sendSms(identifier, message);
+    // "login" is not one of the 4 configurable events (SMS Provider Upgrade
+    // §4) — it always sends, same unconditional behavior as before this
+    // module existed, just now going through whichever provider is active.
+    await sendSms({ to: identifier, message, eventType: "login", studentId: String(linkedStudentId) });
   } catch (err) {
     logger.warn({ err }, "failed to send student login-credential SMS — continuing without blocking");
   }

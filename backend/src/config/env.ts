@@ -55,6 +55,17 @@ const envSchema = z.object({
   SMS_API_URL: z.string().optional().default("http://bulksmsbd.net/api/smsapi"),
   /** Closing signature line on the Result Entry guardian SMS (exams/exam.service.ts's buildResultSms) — the coaching centre's own name, not a gateway credential. */
   SMS_SIGNATURE: z.string().optional().default("LaraLMS"),
+  /**
+   * Shared secret for Vercel Cron's daily hit to POST /sms/cron/birthday
+   * (Birthday SMS §8) — Vercel Cron carries no user session/JWT, so this
+   * header-compared secret is what proves the request actually came from
+   * the configured cron job rather than an arbitrary caller. Left blank,
+   * the route always 403s (fails closed, never open) — nothing else in
+   * this app depends on it, so an install that only ever runs server.ts's
+   * long-lived process (whose own setInterval doesn't need this at all)
+   * can simply leave it unset.
+   */
+  CRON_SECRET: z.string().optional().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

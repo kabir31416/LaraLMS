@@ -12,7 +12,7 @@ import { getSettings, updateSettings } from "../settings/settings.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, parsePagination } from "../../common/utils/pagination";
-import { sendSms } from "../../common/utils/sms";
+import { isEventEnabled, sendSms } from "../sms/sms.service";
 import { PERMISSIONS } from "../rbac/permissions";
 import { RESULT_SMS_VARIABLES, ResultSmsVariable, renderTemplate, validateTemplatePlaceholders } from "./exam.smsTemplate";
 
@@ -420,6 +420,13 @@ export async function submitResult(
 ): Promise<SubmitResultSummary> {
   const { exam, subject, lecture, batch, studentById } = await persistResult(req, data);
 
+  // SMS Provider Upgrade §4/§9/§17 — "Result SMS" is one of the 4 backend-
+  // enforced toggles: when off, the result itself is still saved above
+  // (persistResult already ran), only the guardian SMS phase is skipped.
+  if (!(await isEventEnabled("result"))) {
+    return { examId: String(exam._id), resultsSaved: data.items.length, smsSent: 0, smsFailed: 0, failedStudents: [] };
+  }
+
   const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
   const claimed = await OfflineExam.findOneAndUpdate(
     { _id: exam._id, $or: [{ smsSendingLockedAt: { $exists: false } }, { smsSendingLockedAt: { $lt: staleBefore } }] },
@@ -458,7 +465,7 @@ export async function submitResult(
         highestMark,
       });
       const message = renderTemplate(template, variables);
-      const res = await sendSms(guardian.phone, message);
+      const res = await sendSms({ to: guardian.phone, message, eventType: "result", studentId: item.studentId });
       if (res.ok) {
         smsSent++;
         await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });
@@ -536,7 +543,7 @@ export async function resendSms(req: Request, examId: string, studentIds: string
       highestMark,
     });
     const message = renderTemplate(template, variables);
-    const res = await sendSms(guardian.phone, message);
+    const res = await sendSms({ to: guardian.phone, message, eventType: "result", studentId: sid });
     if (res.ok) {
       smsSent++;
       await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });

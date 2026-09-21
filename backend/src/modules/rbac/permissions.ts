@@ -87,6 +87,8 @@ export const PERMISSIONS = {
   REPORTS_READ: "reports:read",
   PUBLIC_INFO_MANAGE: "public-info:manage",
   PUBLIC_RESULTS_MANAGE: "public-results:manage",
+  /** SMS Provider Upgrade §18 — provider config, event toggles, templates, test SMS and history are all Admin/Super Admin only (Admin already holds this via the "*" wildcard). */
+  SMS_MANAGE: "sms:manage",
 
   // Settings-adjacent master data & platform controls
   PAYMENT_METHODS_MANAGE: "payment-methods:manage",

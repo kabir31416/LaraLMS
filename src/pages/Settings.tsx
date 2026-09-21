@@ -21,6 +21,7 @@ import { MaterialsTab } from "@/components/settings/MaterialsTab";
 import { ResultSettingsTab } from "@/components/settings/ResultSettingsTab";
 import { StudentSettingsTab } from "@/components/settings/StudentSettingsTab";
 import { AuditLogTab } from "@/components/settings/AuditLogTab";
+import { SmsSettingsTab } from "@/components/settings/SmsSettingsTab";
 
 /**
  * Settings — the ERP's central configuration/master-data hub. Grouped into
@@ -28,7 +29,7 @@ import { AuditLogTab } from "@/components/settings/AuditLogTab";
  * (প্রতিষ্ঠান/শিক্ষার্থী/ফলাফল/পাবলিক/অডিট) sections behind a left-hand
  * category nav, per the "don't make one giant settings page" requirement.
  */
-type Section = "institution" | "academic" | "student" | "result" | "finance" | "materials" | "classExams" | "public" | "audit";
+type Section = "institution" | "academic" | "student" | "result" | "finance" | "materials" | "classExams" | "public" | "sms" | "audit";
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: "institution", label: "প্রতিষ্ঠান" },
@@ -39,6 +40,7 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: "materials", label: "ম্যাটেরিয়াল" },
   { key: "classExams", label: "ক্লাস / এক্সাম" },
   { key: "public", label: "পাবলিক" },
+  { key: "sms", label: "SMS" },
   { key: "audit", label: "অডিট লগ" },
 ];
 
@@ -103,6 +105,7 @@ export default function Settings() {
             {section === "finance" && <FinanceTab />}
             {section === "materials" && <MaterialsTab />}
             {section === "classExams" && <ClassExamsTab />}
+            {section === "sms" && <SmsSettingsTab />}
             {section === "audit" && <AuditLogTab />}
 
             {section === "academic" && (

@@ -12,6 +12,9 @@ import { toAsciiDigits } from "../../common/utils/digits";
 import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import * as guardianService from "../guardians/guardian.service";
 import { uploadStudentPhoto, deleteCloudinaryAsset } from "../../common/utils/cloudinaryService";
+import { sendSms, getSmsSettingsForApi } from "../sms/sms.service";
+import { renderTemplate } from "../sms/sms.template";
+import { logger } from "../../logger/logger";
 
 /**
  * `hscInstitution` mirrors HscInstitution master data by name, same
@@ -609,6 +612,45 @@ export async function quickCreate(req: Request, data: { rollNumber: string; name
  * in Payment History/Fee Management, and a receipt number is generated
  * exactly the way every other payment gets one.
  */
+/**
+ * Admission SMS (SMS Provider Upgrade §6) — best-effort, fires after the
+ * student (and any admission-time payment) has already been fully created;
+ * never throws, so an SMS gateway problem can never turn a successful
+ * admission into a reported failure (§17). Goes to the guardian's phone,
+ * the same recipient convention Result SMS already uses (guardianService.
+ * getPrimary) — never a new/invented recipient field. The active provider
+ * and the admission on/off toggle are both resolved by sendSms() itself, so
+ * this function never needs to know which gateway is active.
+ */
+async function sendAdmissionSms(studentId: string): Promise<void> {
+  try {
+    const student = await Student.findById(studentId);
+    if (!student) return;
+    const guardian = await guardianService.getPrimary(studentId);
+    if (!guardian?.phone) return;
+
+    let batchName = "";
+    if (student.currentBatchId) {
+      const { Batch } = await import("../batches/batch.model");
+      const batch = await Batch.findById(student.currentBatchId).select("name");
+      batchName = batch?.name || "";
+    }
+
+    const settings = await getSmsSettingsForApi();
+    const message = renderTemplate(settings.templates.admission, {
+      studentName: student.name,
+      registrationId: student.registrationId,
+      roll: student.currentRollNumber || "",
+      courseName: student.course || "",
+      batchName,
+      guardianName: guardian.name || "",
+    });
+    await sendSms({ to: guardian.phone, message, eventType: "admission", studentId });
+  } catch (err) {
+    logger.warn({ err }, "Admission SMS failed — continuing without blocking admission");
+  }
+}
+
 export async function create(req: Request, body: Record<string, unknown> & GuardianInline): Promise<Record<string, unknown>> {
   const course = await resolveCourseOrThrow(String(body.courseId));
   const settings = await getSettings();
@@ -672,6 +714,13 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
   }
 
   const fresh = await getDocOrThrow(String(doc._id));
+  // Admission SMS §6 — fires only after the student (and any admission-time
+  // payment above) is fully committed; never awaited-to-block the response
+  // in spirit (it IS awaited so a slow gateway doesn't race the caller
+  // reading the freshly-created student, but sendAdmissionSms() itself
+  // never throws, so a gateway failure can never surface as an admission
+  // failure).
+  await sendAdmissionSms(String(doc._id));
   return withGuardian(fresh);
 }
 

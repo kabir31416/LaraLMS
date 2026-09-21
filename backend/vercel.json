@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "api/index.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/sms/cron/birthday",
+      "schedule": "0 0 * * *"
+    }
   ]
 }

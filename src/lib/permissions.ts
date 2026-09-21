@@ -40,6 +40,7 @@ export const SETTINGS_MANAGE = "settings:manage";
 export const PUBLIC_INFO_MANAGE = "public-info:manage";
 export const PUBLIC_RESULTS_MANAGE = "public-results:manage";
 export const PAYMENT_METHODS_MANAGE = "payment-methods:manage";
+export const SMS_MANAGE = "sms:manage";
 
 export interface SidebarModule {
   /** Stable key — used as the React key and as the StaffForm checkbox id, never shown to the user. */
@@ -99,5 +100,5 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
     urls: ["/books"],
   },
   { key: "accounts", label: "হিসাব", permissions: [ACCOUNTS_MANAGE, BRANCH_LEDGER_MANAGE], urls: ["/accounts"] },
-  { key: "settings", label: "সেটিংস", permissions: [SETTINGS_MANAGE, PUBLIC_INFO_MANAGE, PUBLIC_RESULTS_MANAGE, PAYMENT_METHODS_MANAGE], urls: ["/settings"] },
+  { key: "settings", label: "সেটিংস", permissions: [SETTINGS_MANAGE, PUBLIC_INFO_MANAGE, PUBLIC_RESULTS_MANAGE, PAYMENT_METHODS_MANAGE, SMS_MANAGE], urls: ["/settings"] },
 ];
