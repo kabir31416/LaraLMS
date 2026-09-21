@@ -20,6 +20,14 @@ export const updateAlphaSettingsSchema = z.object({
   }),
 });
 
+/** Same "blank keeps existing" convention as Alpha's own schema above — senderid here is BulkSMSBD's Approved Sender ID (their docs call it senderid), required by BulkSMSBD's own API but optional here since a DB-unset value simply falls back to the SMS_SENDER_ID env var. */
+export const updateBulkSmsBdSettingsSchema = z.object({
+  body: z.object({
+    apiKey: z.string().trim().max(200).optional(),
+    senderId: z.string().trim().max(20).optional().or(z.literal("")),
+  }),
+});
+
 export const updateEventsSchema = z.object({
   body: z.object({
     admission: z.boolean().optional(),

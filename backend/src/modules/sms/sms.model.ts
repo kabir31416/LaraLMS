@@ -14,6 +14,18 @@ import { SMS_EVENT_TYPES, SMS_PROVIDERS, SmsEventType, SmsProviderName, DEFAULT_
  */
 export interface SmsSettingsDoc extends Document {
   activeProvider: SmsProviderName;
+  /**
+   * Optional DB override of the env-var-configured BulkSMSBD credentials
+   * (SMS_API_KEY/SMS_SENDER_ID) — added so Admin can change/rotate them from
+   * Settings without a redeploy, matching Alpha SMS's UX. Left unset, the
+   * provider falls back to the env vars exactly as before this field
+   * existed (sms.service.ts's resolveActiveProvider) — a pre-existing
+   * env-var-only deployment keeps working unchanged.
+   */
+  bulksmsbd: {
+    apiKey?: string;
+    senderId?: string;
+  };
   alpha: {
     apiKey?: string;
     senderId?: string;
@@ -33,6 +45,10 @@ export interface SmsSettingsDoc extends Document {
 const smsSettingsSchema = new Schema<SmsSettingsDoc>(
   {
     activeProvider: { type: String, enum: SMS_PROVIDERS, default: "bulksmsbd" },
+    bulksmsbd: {
+      apiKey: { type: String, select: false },
+      senderId: { type: String, trim: true },
+    },
     alpha: {
       apiKey: { type: String, select: false },
       senderId: { type: String, trim: true },

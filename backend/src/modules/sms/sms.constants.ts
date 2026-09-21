@@ -104,3 +104,37 @@ export const ALPHA_SMS_ERROR_MESSAGES: Record<number, string> = {
 export function alphaErrorMessage(code: number): string {
   return ALPHA_SMS_ERROR_MESSAGES[code] ?? "Alpha SMS পাঠাতে ব্যর্থ হয়েছে";
 }
+
+/**
+ * BulkSMSBD's own response-code table (bulksmsbd.net/api/smsapi) — 202 is
+ * success, everything else below is a documented failure code. Same "safe
+ * internal message" treatment as Alpha SMS: the raw code is kept in SmsLog
+ * for debugging, this text is what's safe to show an Admin.
+ */
+export const BULKSMSBD_SUCCESS_CODE = 202;
+
+export const BULKSMSBD_ERROR_MESSAGES: Record<number, string> = {
+  1001: "মোবাইল নম্বরটি সঠিক নয়",
+  1002: "Sender ID সঠিক নয় অথবা নিষ্ক্রিয়",
+  1003: "প্রয়োজনীয় তথ্য অনুপস্থিত",
+  1005: "BulkSMSBD সার্ভারে অভ্যন্তরীণ ত্রুটি",
+  1006: "ব্যালেন্সের মেয়াদ নেই",
+  1007: "BulkSMSBD ব্যালেন্স অপর্যাপ্ত",
+  1011: "User ID পাওয়া যায়নি",
+  1012: "মাস্কিং SMS অবশ্যই বাংলায় পাঠাতে হবে",
+  1013: "এই API Key দিয়ে Sender ID-এর কোনো গেটওয়ে পাওয়া যায়নি",
+  1014: "এই Sender ID-এর Sender Type তথ্য পাওয়া যায়নি",
+  1015: "এই API Key দিয়ে Sender ID-এর কোনো বৈধ গেটওয়ে পাওয়া যায়নি",
+  1016: "এই Sender ID-এর সক্রিয় মূল্য তথ্য পাওয়া যায়নি",
+  1017: "এই Sender ID-এর মূল্য তথ্য পাওয়া যায়নি",
+  1018: "এই অ্যাকাউন্টের মালিক নিষ্ক্রিয় করা হয়েছে",
+  1019: "এই অ্যাকাউন্টের মূল্য নিষ্ক্রিয় করা হয়েছে",
+  1020: "এই অ্যাকাউন্টের প্যারেন্ট পাওয়া যায়নি",
+  1021: "এই অ্যাকাউন্টের প্যারেন্টের সক্রিয় মূল্য পাওয়া যায়নি",
+  1031: "অ্যাকাউন্ট ভেরিফাই করা হয়নি — অ্যাডমিনিস্ট্রেটরের সাথে যোগাযোগ করুন",
+  1032: "IP হোয়াইটলিস্ট করা নেই",
+};
+
+export function bulksmsbdErrorMessage(code: number): string {
+  return BULKSMSBD_ERROR_MESSAGES[code] ?? "BulkSMSBD পাঠাতে ব্যর্থ হয়েছে";
+}

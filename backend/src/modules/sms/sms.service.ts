@@ -7,7 +7,7 @@ import {
   SmsProviderName,
   SmsTemplatedEvent,
 } from "./sms.constants";
-import { bulkSmsBdProvider } from "./providers/bulksmsbd.provider";
+import { createBulkSmsBdProvider } from "./providers/bulksmsbd.provider";
 import { createAlphaProvider, getAlphaReport } from "./providers/alpha.provider";
 import { SmsProvider } from "./providers/types";
 import { validateTemplatePlaceholders } from "./sms.template";
@@ -16,6 +16,7 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { buildMeta, parsePagination } from "../../common/utils/pagination";
 import { logger } from "../../logger/logger";
+import { env } from "../../config/env";
 
 // -------------------- Settings (safe read / writes) --------------------
 
@@ -23,9 +24,9 @@ async function getSettingsDoc(): Promise<SmsSettingsDoc> {
   return getOrCreateSingleton(SmsSettings, {} as SmsSettingsDoc);
 }
 
-/** Includes the real Alpha API key — ONLY for internal use (resolving a provider to actually send, or building the masked preview below). Never returned from a controller. */
+/** Includes the real BulkSMSBD/Alpha API keys — ONLY for internal use (resolving a provider to actually send, or building the masked preview below). Never returned from a controller. */
 async function getSettingsWithSecret(): Promise<SmsSettingsDoc> {
-  let doc = await SmsSettings.findOne().select("+alpha.apiKey");
+  let doc = await SmsSettings.findOne().select("+alpha.apiKey +bulksmsbd.apiKey");
   if (!doc) doc = await SmsSettings.create({});
   return doc;
 }
@@ -44,6 +45,7 @@ function maskApiKey(key?: string): string | undefined {
  */
 export async function getSmsSettingsForApi(): Promise<{
   activeProvider: SmsProviderName;
+  bulksmsbd: { apiKeyConfigured: boolean; apiKeyMasked?: string; senderId?: string; usingEnvFallback: boolean };
   alpha: { apiKeyConfigured: boolean; apiKeyMasked?: string; senderId?: string; contentId?: string };
   events: Record<SmsEventType, boolean>;
   templates: { admission: string; payment: string; birthday: string };
@@ -51,6 +53,15 @@ export async function getSmsSettingsForApi(): Promise<{
   const doc = await getSettingsWithSecret();
   return {
     activeProvider: doc.activeProvider,
+    bulksmsbd: {
+      apiKeyConfigured: Boolean(doc.bulksmsbd?.apiKey || env.SMS_API_KEY),
+      apiKeyMasked: maskApiKey(doc.bulksmsbd?.apiKey || env.SMS_API_KEY),
+      senderId: doc.bulksmsbd?.senderId || env.SMS_SENDER_ID,
+      // True when nothing is saved in Settings and the env vars are what's
+      // actually in effect — lets the UI say so instead of implying an
+      // Admin-entered value that was never actually entered.
+      usingEnvFallback: !doc.bulksmsbd?.apiKey && Boolean(env.SMS_API_KEY),
+    },
     alpha: {
       apiKeyConfigured: Boolean(doc.alpha?.apiKey),
       apiKeyMasked: maskApiKey(doc.alpha?.apiKey),
@@ -62,13 +73,15 @@ export async function getSmsSettingsForApi(): Promise<{
   };
 }
 
-/** Redacts the one secret field before it's ever handed to recordAudit — AuditLog stores before/after verbatim and is readable by anyone with AUDIT_READ, so the raw key must never reach it (Security §18). */
-function redactedAlphaSnapshot(doc: SmsSettingsDoc): Record<string, unknown> {
+/** Redacts both providers' secret fields before ever handing the doc to recordAudit — AuditLog stores before/after verbatim and is readable by anyone with AUDIT_READ, so a raw key must never reach it (Security §18). */
+function redactedSettingsSnapshot(doc: SmsSettingsDoc): Record<string, unknown> {
   const obj = doc.toObject() as Record<string, unknown>;
-  const alpha = obj.alpha as Record<string, unknown> | undefined;
-  if (alpha && "apiKey" in alpha) {
-    return { ...obj, alpha: { ...alpha, apiKey: alpha.apiKey ? "[REDACTED]" : undefined } };
-  }
+  const redactNested = (key: "alpha" | "bulksmsbd") => {
+    const nested = obj[key] as Record<string, unknown> | undefined;
+    if (nested && "apiKey" in nested) obj[key] = { ...nested, apiKey: nested.apiKey ? "[REDACTED]" : undefined };
+  };
+  redactNested("alpha");
+  redactNested("bulksmsbd");
   return obj;
 }
 
@@ -85,7 +98,7 @@ export async function updateAlphaSettings(
   patch: { apiKey?: string; senderId?: string; contentId?: string },
 ): Promise<void> {
   const doc = await getSettingsWithSecret();
-  const before = redactedAlphaSnapshot(doc);
+  const before = redactedSettingsSnapshot(doc);
   if (typeof patch.apiKey === "string" && patch.apiKey.trim()) doc.alpha.apiKey = patch.apiKey.trim();
   if (patch.senderId !== undefined) doc.alpha.senderId = patch.senderId.trim() || undefined;
   if (patch.contentId !== undefined) doc.alpha.contentId = patch.contentId.trim() || undefined;
@@ -97,7 +110,31 @@ export async function updateAlphaSettings(
     targetCollection: "smssettings",
     targetId: String(doc._id),
     before,
-    after: redactedAlphaSnapshot(doc),
+    after: redactedSettingsSnapshot(doc),
+  });
+}
+
+/**
+ * BulkSMSBD credentials, DB-editable to match Alpha SMS's UX (an Admin can
+ * rotate the key/sender from Settings without a redeploy). Blank/omitted
+ * `apiKey` keeps whatever is already saved — same "leave blank to keep
+ * existing" convention as Alpha's own update below. Clearing both fields
+ * back to nothing simply falls back to the env vars again (resolveActiveProvider).
+ */
+export async function updateBulkSmsBdSettings(req: Request, patch: { apiKey?: string; senderId?: string }): Promise<void> {
+  const doc = await getSettingsWithSecret();
+  const before = redactedSettingsSnapshot(doc);
+  if (typeof patch.apiKey === "string" && patch.apiKey.trim()) doc.bulksmsbd.apiKey = patch.apiKey.trim();
+  if (patch.senderId !== undefined) doc.bulksmsbd.senderId = patch.senderId.trim() || undefined;
+  await doc.save();
+  await recordAudit({
+    req,
+    action: "sms.bulksmsbd-settings.update",
+    module: "sms",
+    targetCollection: "smssettings",
+    targetId: String(doc._id),
+    before,
+    after: redactedSettingsSnapshot(doc),
   });
 }
 
@@ -139,7 +176,17 @@ async function resolveActiveProvider(): Promise<{ provider: SmsProvider; name: S
       name: "alpha",
     };
   }
-  return { provider: bulkSmsBdProvider, name: "bulksmsbd" };
+  // DB-stored credentials win when set (Admin-edited from Settings); an
+  // install that has only ever configured the env vars falls back to those
+  // unchanged — this is what keeps a pre-existing env-var-only deployment
+  // working exactly as before this DB override existed.
+  return {
+    provider: createBulkSmsBdProvider({
+      apiKey: doc.bulksmsbd?.apiKey || env.SMS_API_KEY,
+      senderId: doc.bulksmsbd?.senderId || env.SMS_SENDER_ID,
+    }),
+    name: "bulksmsbd",
+  };
 }
 
 /** Exported so a caller with an expensive per-recipient loop (exam.service.ts's submitResult) can skip the whole loop up front instead of discovering "disabled" one guardian lookup at a time — sendSms() below still checks this itself too, so it's always enforced even for a caller that doesn't. */
