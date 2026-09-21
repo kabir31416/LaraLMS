@@ -39,6 +39,7 @@ export const PERMISSIONS = {
   PAYMENTS_CREATE: "payments:create",
   PAYMENTS_READ: "payments:read",
   PAYMENTS_READ_OWN: "payments:read:own",
+  PAYMENTS_DELETE: "payments:delete",
   RECEIPTS_READ: "receipts:read",
   ACCOUNTS_MANAGE: "accounts:manage",
   BRANCH_LEDGER_MANAGE: "branch-ledger:manage",

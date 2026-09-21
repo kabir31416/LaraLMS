@@ -77,6 +77,7 @@ const StaffPage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[60px]">ছবি</TableHead>
+                  <TableHead>স্টাফ আইডি</TableHead>
                   <TableHead>নাম</TableHead>
                   <TableHead>টাইপ</TableHead>
                   <TableHead>মোবাইল</TableHead>
@@ -89,7 +90,7 @@ const StaffPage = () => {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-10">কোনো স্টাফ পাওয়া যায়নি</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-10">কোনো স্টাফ পাওয়া যায়নি</TableCell></TableRow>
                 ) : (
                   filtered.map((s) => {
                     // Only the original Super Admin may edit/remove an Admin
@@ -104,6 +105,7 @@ const StaffPage = () => {
                           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{s.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                       </TableCell>
+                      <TableCell className="font-mono text-xs">{s.staffId || "—"}</TableCell>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{STAFF_TYPE_LABELS[s.staffType]}</Badge>

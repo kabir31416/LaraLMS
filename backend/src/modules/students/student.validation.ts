@@ -75,6 +75,16 @@ export const createStudentSchema = z.object({
     courseDuration: z.number().default(0),
     monthlyFee: z.number().default(0),
     discount: z.number().min(0).default(0),
+    /**
+     * The admin's "the student actually agreed to pay this much for the
+     * course" figure (Fees/Payment audit §1) — when present, the service
+     * layer DERIVES `discount` from Course Fee minus this instead of using
+     * the raw `discount` above, so the client never sends a discount value
+     * directly through the Admission/Edit form anymore. Optional so every
+     * other existing caller (bulk import, quickCreate, publicNewStudentEntry)
+     * that never sends it is completely unaffected.
+     */
+    totalFee: z.number().min(0).optional(),
     paid: z.number().min(0).default(0),
     /** Only meaningful when paid > 0 — the admission-time Payment record's method (Phase 4). Validated against real PaymentMethod master data server-side, not a hard-coded enum. */
     paymentMethod: z.string().trim().min(1).max(40).optional(),
@@ -195,8 +205,11 @@ export const dueStatsQuerySchema = z.object({
   query: z.object({
     search: z.string().optional(),
     course: z.string().optional(),
+    /** The Due List's course filter (Fees/Payment audit §6) sends the real Course ref, matching listStudentsQuerySchema's own courseId — the legacy `course` (free-text name) param above is unrelated and still supported separately. */
+    courseId: z.string().optional(),
     batchId: z.string().optional(),
     directorId: z.string().optional(),
     feeType: z.enum(FEE_TYPES).optional(),
+    dueStatus: z.enum(["all", "has", "none"]).optional(),
   }),
 });

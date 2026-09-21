@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Users, UserCheck, UserX } from "lucide-react";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useBatches } from "@/contexts/BatchContext";
+import { useAcademic } from "@/contexts/AcademicContext";
 import { fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { api } from "@/lib/apiClient";
 import type { Student } from "@/types/student";
@@ -19,7 +20,9 @@ type Range = "today" | "week" | "month" | "custom";
 const Attendance = () => {
   const { getStats, attendancePercentages } = useAttendance();
   const { batches } = useBatches();
+  const { courses } = useAcademic();
 
+  const [courseFilter, setCourseFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
   const [range, setRange] = useState<Range>("month");
   const [from, setFrom] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
@@ -37,32 +40,45 @@ const Attendance = () => {
     return { from, to };
   }, [range, from, to, today, weekStart, monthStart]);
 
+  // Attendance has no courseId of its own (batch-scoped only) — a Course
+  // filter resolves to every Batch under that course and passes them as
+  // batchIds (attendance.service.ts's stats() already supports this).
+  // A specific Batch selection narrows further/instead.
+  const batchesForCourse = useMemo(
+    () => (courseFilter === "all" ? batches : batches.filter((b) => b.courseId === courseFilter)),
+    [batches, courseFilter],
+  );
   const batchId = batchFilter === "all" ? undefined : batchFilter;
+  const batchIds = !batchId && courseFilter !== "all" ? batchesForCourse.map((b) => b.id) : undefined;
 
-  // Fixed-window stat cards (today/yesterday/week/month), independent of the range picker below.
-  const [quickPct, setQuickPct] = useState({ today: 0, yesterday: 0, week: 0, month: 0 });
+  // Fixed-window stat cards (today/yesterday/week/month), independent of the
+  // range picker below — real Present/Absent counts from actual attendance
+  // records (attendance.service.ts's stats() aggregation), never estimated
+  // from student counts (Attendance Dashboard audit §11).
+  const emptyWindow = { present: 0, absent: 0, pct: 0 };
+  const [quickStats, setQuickStats] = useState({ today: emptyWindow, yesterday: emptyWindow, week: emptyWindow, month: emptyWindow });
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      getStats({ batchId, from: today, to: today }),
-      getStats({ batchId, from: yesterday, to: yesterday }),
-      getStats({ batchId, from: weekStart, to: today }),
-      getStats({ batchId, from: monthStart, to: today }),
+      getStats({ batchId, batchIds, from: today, to: today }),
+      getStats({ batchId, batchIds, from: yesterday, to: yesterday }),
+      getStats({ batchId, batchIds, from: weekStart, to: today }),
+      getStats({ batchId, batchIds, from: monthStart, to: today }),
     ])
-      .then(([t, y, w, m]) => { if (!cancelled) setQuickPct({ today: t.pct, yesterday: y.pct, week: w.pct, month: m.pct }); })
+      .then(([t, y, w, m]) => { if (!cancelled) setQuickStats({ today: t, yesterday: y, week: w, month: m }); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [batchId, today, yesterday, weekStart, monthStart, getStats]);
+  }, [batchId, batchIds, today, yesterday, weekStart, monthStart, getStats]);
 
   // Daily breakdown table for the selected range
   const [dailyRows, setDailyRows] = useState<{ date: string; batchId: string; present: number; absent: number }[]>([]);
   useEffect(() => {
     let cancelled = false;
-    getStats({ batchId, from: rangeBounds.from, to: rangeBounds.to })
+    getStats({ batchId, batchIds, from: rangeBounds.from, to: rangeBounds.to })
       .then((data) => { if (!cancelled) setDailyRows(data.daily); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [batchId, rangeBounds, getStats]);
+  }, [batchId, batchIds, rangeBounds, getStats]);
 
   // Top 10 students by attendance % within the range — enriched with each
   // one's own direct-by-ID fetch (bounded to exactly these ≤10 students),
@@ -72,7 +88,7 @@ const Attendance = () => {
   const [topStudentDetails, setTopStudentDetails] = useState<Record<string, Student>>({});
   useEffect(() => {
     let cancelled = false;
-    attendancePercentages({ batchId }, rangeBounds.from, rangeBounds.to)
+    attendancePercentages({ batchId, batchIds }, rangeBounds.from, rangeBounds.to)
       .then(async (data) => {
         if (cancelled) return;
         const rows = Object.entries(data)
@@ -90,7 +106,7 @@ const Attendance = () => {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [batchId, rangeBounds, attendancePercentages]);
+  }, [batchId, batchIds, rangeBounds, attendancePercentages]);
 
   return (
     <DashboardLayout>
@@ -102,12 +118,22 @@ const Attendance = () => {
           </div>
           <div className="flex flex-wrap gap-2 items-end">
             <div>
+              <Label className="text-xs">কোর্স</Label>
+              <Select value={courseFilter} onValueChange={(v) => { setCourseFilter(v); setBatchFilter("all"); }}>
+                <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল কোর্স</SelectItem>
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs">ব্যাচ</Label>
               <Select value={batchFilter} onValueChange={setBatchFilter}>
                 <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">সকল ব্যাচ</SelectItem>
-                  {batches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                  {batchesForCourse.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -133,10 +159,10 @@ const Attendance = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${quickPct.today}%`} />
-          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="গতকালের উপস্থিতি" value={`${quickPct.yesterday}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="এই সপ্তাহ" value={`${quickPct.week}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="এই মাস" value={`${quickPct.month}%`} />
+          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${quickStats.today.pct}%`} sub={`উপ. ${quickStats.today.present} • অনুপ. ${quickStats.today.absent}`} />
+          <StatCard icon={<CalendarDays className="h-5 w-5" />} label="গতকালের উপস্থিতি" value={`${quickStats.yesterday.pct}%`} sub={`উপ. ${quickStats.yesterday.present} • অনুপ. ${quickStats.yesterday.absent}`} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="এই সপ্তাহ" value={`${quickStats.week.pct}%`} sub={`উপ. ${quickStats.week.present} • অনুপ. ${quickStats.week.absent}`} />
+          <StatCard icon={<Users className="h-5 w-5" />} label="এই মাস" value={`${quickStats.month.pct}%`} sub={`উপ. ${quickStats.month.present} • অনুপ. ${quickStats.month.absent}`} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -216,14 +242,15 @@ const Attendance = () => {
   );
 };
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
   return (
     <Card className="border-none shadow-sm">
       <CardContent className="p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">{icon}</div>
-        <div>
+        <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">{icon}</div>
+        <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="text-xl font-bold">{value}</p>
+          {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
         </div>
       </CardContent>
     </Card>

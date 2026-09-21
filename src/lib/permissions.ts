@@ -12,6 +12,7 @@ export const STUDENTS_DELETE = "students:delete";
 export const STUDENTS_MANAGE_ROLL = "students:manage-roll";
 export const PAYMENTS_READ = "payments:read";
 export const PAYMENTS_CREATE = "payments:create";
+export const PAYMENTS_DELETE = "payments:delete";
 export const RECEIPTS_READ = "receipts:read";
 export const ATTENDANCE_MARK = "attendance:mark";
 export const ATTENDANCE_READ = "attendance:read";
@@ -72,7 +73,7 @@ export interface SidebarModule {
 export const SIDEBAR_MODULES: SidebarModule[] = [
   { key: "students", label: "শিক্ষার্থী ও ভর্তি", permissions: [STUDENTS_READ, STUDENTS_CREATE, STUDENTS_UPDATE, STUDENTS_DELETE, STUDENTS_MANAGE_ROLL], urls: ["/students", "/admission"] },
   { key: "admission-result", label: "অ্যাডমিশন রেজাল্ট", permissions: [ADMISSION_RESULTS_MANAGE], urls: ["/admission-result"] },
-  { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, RECEIPTS_READ], urls: ["/fees"] },
+  { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, PAYMENTS_DELETE, RECEIPTS_READ], urls: ["/fees"] },
   { key: "attendance", label: "উপস্থিতি", permissions: [ATTENDANCE_MARK, ATTENDANCE_READ], urls: ["/attendance"] },
   { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry"] },
   { key: "videos", label: "ভিডিও ক্লাস", permissions: [VIDEOS_MANAGE], urls: ["/videos"] },

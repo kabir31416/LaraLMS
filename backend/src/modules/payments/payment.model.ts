@@ -47,6 +47,19 @@ export interface PaymentDoc extends Document {
    * don't need one. See payment.service.ts's create().
    */
   idempotencyKey?: string;
+  /**
+   * A payment is still never edited (Phase 1 §6) — cancellation is the one
+   * exception, and it's a soft flag rather than a hard delete (Fees/Payment
+   * audit §7): the row and its receipt stay put for audit purposes, but
+   * every read that sums money (list totals, dashboard collection, reports)
+   * excludes a cancelled payment by default, and payment.service.ts's
+   * cancel() reverses exactly what create() applied to the student's
+   * paid/discount/totalFee/due.
+   */
+  status: "active" | "cancelled";
+  cancelledAt?: Date;
+  cancelledBy?: Types.ObjectId; // -> User
+  cancelReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +85,10 @@ const paymentSchema = new Schema<PaymentDoc>(
     previousDue: { type: Number },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     idempotencyKey: { type: String },
+    status: { type: String, enum: ["active", "cancelled"], default: "active" },
+    cancelledAt: { type: Date },
+    cancelledBy: { type: Schema.Types.ObjectId, ref: "User" },
+    cancelReason: { type: String, trim: true },
   },
   { timestamps: true },
 );

@@ -88,9 +88,16 @@ export async function getAdminSummary() {
   }>([
     {
       $facet: {
-        todayCollection: [{ $match: { date: today } }, { $group: { _id: null, total: { $sum: "$paidAmount" } } }],
+        // status:{$ne:"cancelled"} excludes a voided payment from collection
+        // totals (Fees/Payment audit §5/§7) — matches payment.service.ts's
+        // list() default and also matches documents with no `status` field
+        // at all (every payment created before this field existed).
+        todayCollection: [
+          { $match: { date: today, status: { $ne: "cancelled" } } },
+          { $group: { _id: null, total: { $sum: "$paidAmount" } } },
+        ],
         monthly: [
-          { $match: { date: { $gte: `${monthKeys[0]}-01` } } },
+          { $match: { date: { $gte: `${monthKeys[0]}-01` }, status: { $ne: "cancelled" } } },
           { $group: { _id: { $substrCP: ["$date", 0, 7] }, total: { $sum: "$paidAmount" } } },
         ],
       },
@@ -150,7 +157,7 @@ export async function getAdminSummary() {
       .sort({ admissionDate: -1, createdAt: -1 })
       .limit(5)
       .select("name class course admissionDate registrationId"),
-    Payment.find({})
+    Payment.find({ status: { $ne: "cancelled" } })
       .sort({ date: -1, createdAt: -1 })
       .limit(5)
       .populate<{ studentId: { _id: Types.ObjectId; name: string } | null }>("studentId", "name"),

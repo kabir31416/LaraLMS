@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { Types } from "mongoose";
 import { Payment, PaymentDoc } from "./payment.model";
 import { Student } from "../students/student.model";
 import { Branch } from "../branches/branch.model";
@@ -13,24 +14,70 @@ function isDuplicateKeyError(err: unknown): boolean {
   return !!err && typeof err === "object" && (err as { code?: number }).code === 11000;
 }
 
-export async function list(req: Request) {
-  const { page, limit, skip, sort } = parsePagination(req, { date: -1, createdAt: -1 });
+/**
+ * Shared by list() and stats() below (Fees/Payment audit §5/§13 — Reports'
+ * own Fee Collection totals must use this exact same filter, never a
+ * re-derived one) so a course/batch/date/method scope means the same thing
+ * everywhere a Payment is being counted or summed.
+ */
+function buildPaymentFilter(req: Request): Record<string, unknown> {
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["receiptNo"]) };
   if (req.query.studentId) filter.studentId = req.query.studentId;
   if (req.query.feeType) filter.feeType = req.query.feeType;
   if (req.query.method) filter.method = req.query.method;
+  if (req.query.courseId) filter.courseId = req.query.courseId;
+  if (req.query.batchId) filter.batchId = req.query.batchId;
   if (req.query.dateFrom || req.query.dateTo) {
     filter.date = {
       ...(req.query.dateFrom ? { $gte: req.query.dateFrom } : {}),
       ...(req.query.dateTo ? { $lte: req.query.dateTo } : {}),
     };
   }
+  // Every consumer of this endpoint (Payment History, Fee Collection Report,
+  // any future caller) gets a cancelled payment excluded by default — the
+  // ONE place this is decided, so nothing downstream has to know the
+  // `status` field exists just to avoid double-counting a voided
+  // transaction. Payment History alone asks for `includeCancelled=true` so
+  // admins can still see/audit a cancelled row (Fees/Payment audit §7/§8).
+  if (req.query.includeCancelled !== "true") filter.status = { $ne: "cancelled" };
+  return filter;
+}
+
+export async function list(req: Request) {
+  const { page, limit, skip, sort } = parsePagination(req, { date: -1, createdAt: -1 });
+  const filter = buildPaymentFilter(req);
 
   const [items, total] = await Promise.all([
     Payment.find(filter).sort(sort).skip(skip).limit(limit),
     Payment.countDocuments(filter),
   ]);
   return { items, meta: buildMeta(page, limit, total) };
+}
+
+/**
+ * Reports' Fee Collection tab's totals (Fees/Payment audit §5) — a global
+ * aggregate over EVERY matching payment, computed once in the database with
+ * the exact same filter list() uses, instead of the frontend summing
+ * whatever page of `/payments` it happened to fetch (which would silently
+ * under-count once matching payments exceed that page size).
+ */
+export async function stats(req: Request): Promise<{ total: number; count: number; receiptCount: number }> {
+  const filter = buildPaymentFilter(req);
+  // Unlike Model.find() (list() above), aggregate()'s $match is sent to
+  // MongoDB as-is — Mongoose never casts a query string to the schema's
+  // ObjectId type for it (same gotcha attendance.service.ts's stats()
+  // documents), so studentId/courseId/batchId must be cast by hand here or
+  // a course/batch-scoped report would silently come back as all zeros.
+  for (const key of ["studentId", "courseId", "batchId"]) {
+    const value = filter[key];
+    if (typeof value === "string" && Types.ObjectId.isValid(value)) filter[key] = new Types.ObjectId(value);
+  }
+  const [row] = await Payment.aggregate<{ total: number; count: number; receiptCount: number }>([
+    { $match: filter },
+    { $group: { _id: null, total: { $sum: "$paidAmount" }, count: { $sum: 1 }, receipts: { $addToSet: "$receiptNo" } } },
+    { $project: { total: 1, count: 1, receiptCount: { $size: "$receipts" } } },
+  ]);
+  return row ?? { total: 0, count: 0, receiptCount: 0 };
 }
 
 export async function getById(id: string): Promise<PaymentDoc> {
@@ -84,9 +131,13 @@ export async function getReceipt(payment: PaymentDoc): Promise<Record<string, un
 
 /**
  * A payment is a financial event, not an editable record — Phase 1 §6's fee
- * module review — so there is deliberately no update/delete here, only
- * create + read. A correction is its own new payment (e.g. a negative
- * adjustment via discount), which keeps the receipt trail intact.
+ * module review — so there is still no update, and no hard delete. A routine
+ * correction is its own new payment (e.g. a negative adjustment via
+ * discount), which keeps the receipt trail intact. The one exception is
+ * cancel() below, for a genuinely wrong transaction that must stop counting
+ * everywhere (Fees/Payment audit §7) — even that never rewrites this row's
+ * own amount/discount/paidAmount, only flags it and reverses its effect on
+ * the student.
  */
 export async function create(
   req: Request,
@@ -126,6 +177,18 @@ export async function create(
   if (paidAmount < 0) throw ApiError.badRequest("Discount cannot exceed amount + fine");
 
   const previousDue = student.due;
+  // Financial data integrity audit §4/§13 — the server re-checks the latest
+  // Due immediately before writing the Payment (never trusts a stale due the
+  // client may have read moments earlier) and rejects a transaction that
+  // would take the student's paid total past their total fee. A material
+  // payment (Coaching Material Inventory) never touches tuition due at all,
+  // so it's exempt. Zero-cash "discount correction" payments (paidAmount===0,
+  // Fees audit §1's worked example) remain allowed — this only rejects
+  // paidAmount that's strictly greater than what's actually owed.
+  const isMaterialPayment = data.source === "material";
+  if (!isMaterialPayment && paidAmount > previousDue) {
+    throw ApiError.badRequest(`পরিশোধের পরিমাণ (৳${paidAmount}) বর্তমান বকেয়ার (৳${previousDue}) চেয়ে বেশি হতে পারে না`);
+  }
   const receiptNo = await generateReceiptNumber();
   let doc: PaymentDoc;
   try {
@@ -157,13 +220,7 @@ export async function create(
   // tuition — the Coaching Material Inventory module (§6) reuses this
   // function purely to get a real receipt + Payment-history row, and must
   // never move the student's tuition due/paid/totalFee balance.
-  const isMaterialPayment = data.source === "material";
   if (!isMaterialPayment) {
-    // Same due formula as student.service.ts's computeFees — kept local here
-    // rather than importing it, matching the enrollment module's convention of
-    // mutating Student directly instead of routing through another module's
-    // private helpers.
-    student.paid += paidAmount;
     // A payment's own `discount` must permanently reduce the student's total
     // fee the exact same way admission-time discount does (student.service.ts's
     // computeFees/applyPatch) — everywhere else in this app, "discount" means
@@ -176,12 +233,23 @@ export async function create(
     // since bulk import creates no payment at all) hits the very first time
     // anyone tries to apply their real negotiated price via Add Payment.
     if (data.discount > 0) student.discount += data.discount;
-    const isOneTime = student.feeType === "এককালীন";
-    const totalFee = isOneTime
-      ? student.totalCourseFee + student.admissionFee - student.discount
-      : student.admissionFee + student.monthlyFee * student.courseDuration - student.discount;
-    student.totalFee = totalFee;
-    student.due = totalFee - student.paid;
+    student.paid += paidAmount;
+    // Fees/Payment audit §13 — ONE shared formula, reused from
+    // student.service.ts rather than reimplemented here (the previous
+    // inline duplicate of this exact formula was the two-copies risk the
+    // audit called out).
+    const studentService = await import("../students/student.service");
+    const fees = studentService.computeFees({
+      feeType: student.feeType,
+      totalCourseFee: student.totalCourseFee,
+      admissionFee: student.admissionFee,
+      monthlyFee: student.monthlyFee,
+      courseDuration: student.courseDuration,
+      discount: student.discount,
+      paid: student.paid,
+    });
+    student.totalFee = fees.totalFee;
+    student.due = fees.due;
     await student.save();
   }
 
@@ -215,4 +283,74 @@ export async function create(
   }
 
   return doc;
+}
+
+/**
+ * Cancels ("delete" in the UI) a wrong/unwanted payment — a soft flag, never
+ * a hard delete (Fees/Payment audit §7): the row, its receiptNo and its
+ * receipt page stay put for the audit trail, but this reverses exactly what
+ * create() did to the student (paid/discount/totalFee/due), removes the
+ * one accounting-ledger mirror this payment posted, and excludes it from
+ * every default list/aggregate from now on (list()'s `status` filter above,
+ * dashboard.service.ts's collection totals).
+ */
+export async function cancel(req: Request, id: string, reason?: string): Promise<PaymentDoc> {
+  const payment = await getById(id);
+  if (payment.status === "cancelled") throw ApiError.conflict("Payment is already cancelled");
+
+  const isMaterialPayment = payment.source === "material";
+  if (!isMaterialPayment) {
+    const student = await Student.findById(payment.studentId);
+    if (!student) throw ApiError.notFound("Student not found");
+
+    if (payment.discount > 0) student.discount = Math.max(0, student.discount - payment.discount);
+    student.paid = Math.max(0, student.paid - payment.paidAmount);
+
+    const studentService = await import("../students/student.service");
+    const fees = studentService.computeFees({
+      feeType: student.feeType,
+      totalCourseFee: student.totalCourseFee,
+      admissionFee: student.admissionFee,
+      monthlyFee: student.monthlyFee,
+      courseDuration: student.courseDuration,
+      discount: student.discount,
+      paid: student.paid,
+    });
+    student.totalFee = fees.totalFee;
+    student.due = fees.due;
+    await student.save();
+  }
+
+  const before = payment.toObject();
+  payment.status = "cancelled";
+  payment.cancelledAt = new Date();
+  payment.cancelledBy = req.user?.id as never;
+  if (reason) payment.cancelReason = reason;
+  await payment.save();
+
+  // Remove this payment's own auto-posted accounting-ledger entry so
+  // Accounts/Branch Ledger totals stay in sync too — targeted at exactly the
+  // one entry `recordAutoIncome`'s (source, refId) uniqueness created for
+  // THIS payment, never routed through accounts.service.ts's own
+  // deleteIncome() (which is deliberately restricted to manually-entered
+  // income only — an unrelated safeguard for the Accounts UI's own delete
+  // action, not applicable to this internal reversal).
+  try {
+    const { IncomeEntry } = await import("../accounts/income.model");
+    await IncomeEntry.deleteMany({ refId: String(payment._id) });
+  } catch (err) {
+    logger.warn({ err }, "Failed to remove accounting mirror for cancelled payment");
+  }
+
+  await recordAudit({
+    req,
+    action: "payment.cancel",
+    module: "payments",
+    targetCollection: "payments",
+    targetId: id,
+    before,
+    after: payment.toObject(),
+  });
+
+  return payment;
 }
