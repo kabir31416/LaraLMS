@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
  * the student's paid/due there too — this context just mirrors the result,
  * it never computes fee totals itself.
  */
-interface ApiPayment {
+export interface ApiPayment {
   _id: string;
   receiptNo: string;
   studentId: string;
@@ -23,12 +23,14 @@ interface ApiPayment {
   month?: string;
   note?: string;
   previousDue?: number;
+  source?: Payment["source"];
   status?: "active" | "cancelled";
   cancelledAt?: string;
   cancelReason?: string;
 }
 
-function fromApi(doc: ApiPayment): Payment {
+/** Exported so any page fetching raw /payments JSON directly (e.g. FeeManagement.tsx's server-paginated Payment History, which can't go through this context's own capped list) maps it the same way this context does — never a second, ad-hoc _id->id mapping. */
+export function fromApi(doc: ApiPayment): Payment {
   return {
     id: doc._id,
     receiptNo: doc.receiptNo,
@@ -43,6 +45,7 @@ function fromApi(doc: ApiPayment): Payment {
     month: doc.month,
     note: doc.note,
     previousDue: doc.previousDue,
+    source: doc.source,
     status: doc.status,
     cancelledAt: doc.cancelledAt,
     cancelReason: doc.cancelReason,

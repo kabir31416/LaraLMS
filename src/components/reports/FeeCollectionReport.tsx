@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatCard } from "@/components/StatCard";
 import { Filter, Wallet, Receipt, Hash } from "lucide-react";
 import { fromApi, type ApiStudent } from "@/contexts/StudentContext";
+import { fromApi as paymentFromApi, type ApiPayment } from "@/contexts/PaymentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { api } from "@/lib/apiClient";
@@ -52,8 +53,8 @@ export default function FeeCollectionReport() {
     listQs.set("sortOrder", "desc");
     listQs.set("limit", "100");
     api
-      .get<Payment[]>(`/payments?${listQs.toString()}`)
-      .then(setRows)
+      .get<ApiPayment[]>(`/payments?${listQs.toString()}`)
+      .then((docs) => setRows(docs.map(paymentFromApi)))
       .catch(() => setRows([]));
   }, [buildParams]);
 
