@@ -49,7 +49,28 @@ interface GuardianInline {
   guardianAddress?: string;
 }
 
-function computeFees(input: {
+function toOptionalNumber(value: unknown): number | undefined {
+  return value !== undefined && value !== null && value !== "" ? Number(value) : undefined;
+}
+
+/**
+ * The single formula for Course Fee → Discount → Total Fee → Due, shared by
+ * admission/edit (below) and payment.service.ts's create()/cancel() — no
+ * other place in the app may reimplement this (Fees/Payment audit §13, "ONE
+ * consistent formula").
+ *
+ * `totalFeeInput`, when given, is the admin's own "the student actually
+ * agreed to pay this much for the course" figure (Fees/Payment audit §1) —
+ * Discount is then DERIVED as Course Fee minus it, never entered directly.
+ * Admission Fee is a separate, non-discountable component that's always
+ * added on top (§13's "if Admission Fee is separate, document exactly how it
+ * participates" — here: totalFee = courseFeeBase + admissionFee - discount,
+ * unchanged either way). Omitting `totalFeeInput` keeps the legacy path
+ * (`discount` taken as-is) for any caller that still sends it directly
+ * (bulk import, quickCreate, publicNewStudentEntry all pass discount:0 today
+ * and are unaffected).
+ */
+export function computeFees(input: {
   feeType: StudentDoc["feeType"];
   totalCourseFee: number;
   admissionFee: number;
@@ -57,13 +78,21 @@ function computeFees(input: {
   courseDuration: number;
   discount: number;
   paid: number;
-}) {
+  totalFeeInput?: number;
+}): { totalFee: number; due: number; discount: number } {
   const isOneTime = input.feeType === "এককালীন";
-  const totalFee = isOneTime
-    ? input.totalCourseFee + input.admissionFee - input.discount
-    : input.admissionFee + input.monthlyFee * input.courseDuration - input.discount;
+  const courseFeeBase = isOneTime ? input.totalCourseFee : input.monthlyFee * input.courseDuration;
+  let discount = input.discount;
+  if (input.totalFeeInput !== undefined) {
+    if (input.totalFeeInput < 0) throw ApiError.badRequest("মোট ফি ঋণাত্মক হতে পারে না");
+    if (input.totalFeeInput > courseFeeBase) throw ApiError.badRequest("মোট ফি কোর্স ফি-এর চেয়ে বেশি হতে পারে না");
+    discount = courseFeeBase - input.totalFeeInput;
+  }
+  if (discount < 0) throw ApiError.badRequest("ছাড় ঋণাত্মক হতে পারে না");
+  if (discount > courseFeeBase) throw ApiError.badRequest("ছাড় কোর্স ফি-এর চেয়ে বেশি হতে পারে না");
+  const totalFee = courseFeeBase + input.admissionFee - discount;
   const due = totalFee - input.paid;
-  return { totalFee, due };
+  return { totalFee, due, discount };
 }
 
 async function resolveCourseOrThrow(courseId: string) {
@@ -585,7 +614,6 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
   const settings = await getSettings();
   const admissionFee = settings.admissionFeeBdt;
   const totalCourseFee = course.fee;
-  const discount = Number(body.discount) || 0;
   const feeType = (body.feeType as StudentDoc["feeType"]) || "এককালীন";
   const fees = computeFees({
     feeType,
@@ -593,8 +621,9 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
     admissionFee,
     monthlyFee: Number(body.monthlyFee) || 0,
     courseDuration: Number(body.courseDuration) || 0,
-    discount,
+    discount: Number(body.discount) || 0,
     paid: 0, // the admission-time payment (if any) is applied below through payment.service, never baked in directly
+    totalFeeInput: toOptionalNumber(body.totalFee),
   });
 
   // registrationId is ALWAYS system-generated — a Student's permanent ID is
@@ -603,7 +632,7 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
   // coaching center's own roll/registration value and is stored as
   // currentRollNumber below instead (see body.rollNumber).
   const registrationId = await generateRegistrationId();
-  const { paid: _paid, paymentMethod, ...rest } = body as Record<string, unknown>;
+  const { paid: _paid, paymentMethod, totalFee: _totalFeeInput, ...rest } = body as Record<string, unknown>;
   await syncHscInstitution(rest);
   const doc = await Student.create({
     ...rest,
@@ -613,10 +642,9 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
     currentRollNumber: body.rollNumber || undefined,
     admissionDate: body.admissionDate || new Date().toISOString().slice(0, 10),
     feeType,
-    discount,
     totalCourseFee,
     admissionFee,
-    ...fees,
+    ...fees, // totalFee, due, discount — all server-derived; always wins over anything in `rest`
     paid: 0,
   });
 
@@ -696,9 +724,10 @@ async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, u
   await syncHscInstitution(patch);
   await applyRollNumberIfPresent(doc, patch);
   const courseChanged = await applyCourseIdIfPresent(doc, patch);
-  const { rollNumber: _rollNumber, courseId: _courseId, ...rest } = patch;
+  const { rollNumber: _rollNumber, courseId: _courseId, totalFee: totalFeeInputRaw, ...rest } = patch;
 
-  const feeFieldsTouched = courseChanged || ["feeType", "monthlyFee", "courseDuration", "discount", "paid"].some((k) => k in patch);
+  const feeFieldsTouched =
+    courseChanged || ["feeType", "monthlyFee", "courseDuration", "discount", "paid"].some((k) => k in patch) || totalFeeInputRaw !== undefined;
   Object.assign(doc, rest);
   if (feeFieldsTouched) {
     const fees = computeFees({
@@ -709,9 +738,11 @@ async function applyPatch(req: Request, doc: StudentDoc, patch: Record<string, u
       courseDuration: doc.courseDuration,
       discount: doc.discount,
       paid: doc.paid,
+      totalFeeInput: toOptionalNumber(totalFeeInputRaw),
     });
     doc.totalFee = fees.totalFee;
     doc.due = fees.due;
+    doc.discount = fees.discount;
   }
   await doc.save();
 

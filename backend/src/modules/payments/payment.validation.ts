@@ -33,9 +33,33 @@ export const listPaymentsQuerySchema = z.object({
     studentId: z.string().length(24).optional(),
     feeType: z.enum(FEE_TYPES).optional(),
     method: z.string().trim().optional(),
+    courseId: z.string().optional(),
+    batchId: z.string().optional(),
     dateFrom: z.string().optional(),
     dateTo: z.string().optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
+    /** Payment History alone sends this — every other caller keeps the safe default of excluding a cancelled transaction. */
+    includeCancelled: z.enum(["true", "false"]).optional(),
   }),
+});
+
+/** Reports' Fee Collection tab (Fees/Payment audit §5) — same filter shape as listPaymentsQuerySchema minus pagination/sort. */
+export const paymentStatsQuerySchema = z.object({
+  query: z.object({
+    search: z.string().optional(),
+    studentId: z.string().length(24).optional(),
+    feeType: z.enum(FEE_TYPES).optional(),
+    method: z.string().trim().optional(),
+    courseId: z.string().optional(),
+    batchId: z.string().optional(),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    includeCancelled: z.enum(["true", "false"]).optional(),
+  }),
+});
+
+export const cancelPaymentSchema = z.object({
+  params: z.object({ id: z.string().length(24) }),
+  body: z.object({ reason: z.string().trim().max(200).optional() }),
 });

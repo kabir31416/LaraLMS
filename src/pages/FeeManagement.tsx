@@ -6,7 +6,8 @@ import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext
 import { usePayments } from "@/contexts/PaymentContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { useAcademic } from "@/contexts/AcademicContext";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { useAuth, ApiClientError, hasPermission } from "@/contexts/AuthContext";
+import { PAYMENTS_DELETE } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -45,7 +56,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { CalendarIcon, Plus, Search, DollarSign, AlertCircle, TrendingUp, Package, Check, ChevronsUpDown, Printer, Receipt as ReceiptIcon } from "lucide-react";
+import { CalendarIcon, Plus, Search, DollarSign, AlertCircle, TrendingUp, Package, Check, ChevronsUpDown, Receipt as ReceiptIcon, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { bn } from "date-fns/locale";
@@ -75,18 +86,30 @@ interface ListMeta {
 
 const FeeManagement = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canCancelPayments = hasPermission(user, PAYMENTS_DELETE);
   const { refreshStudents } = useStudents();
-  const { payments, addPayment } = usePayments();
+  const { courses } = useAcademic();
+  const { batches } = useBatches();
+  const { payments, addPayment, cancelPayment } = usePayments();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
   const [filterFeeType, setFilterFeeType] = useState("all");
+  const [filterCourse, setFilterCourse] = useState("all");
+  const [filterBatch, setFilterBatch] = useState("all");
+  const [filterDueStatus, setFilterDueStatus] = useState<"has" | "none" | "all">("has");
   const [duePage, setDuePage] = useState(1);
 
-  const today = format(new Date(), "yyyy-MM-dd");
-  const todayCollection = payments
-    .filter((p) => p.date === today)
-    .reduce((sum, p) => sum + p.paidAmount, 0);
+  // Server-computed (dashboard.service.ts already excludes cancelled
+  // payments) — never summed here from PaymentContext's own capped
+  // ≤100-row list, which would both under-count past that cap AND
+  // double-count a cancelled payment still sitting in that cache
+  // (Fees/Payment audit §5/§12).
+  const [todayCollection, setTodayCollection] = useState(0);
+  useEffect(() => {
+    api.get<{ todayCollection: number }>("/dashboard/admin").then((s) => setTodayCollection(s.todayCollection)).catch(() => {});
+  }, []);
 
   // Due-list summary cards — a global aggregate over EVERY due student
   // (not just the current page), computed server-side in one query
@@ -95,11 +118,14 @@ const FeeManagement = () => {
   // packageDue/monthlyDue once total students exceed that cap.
   const [dueStats, setDueStats] = useState({ totalDue: 0, packageDue: 0, monthlyDue: 0 });
   const buildDueParams = useCallback(() => {
-    const qs = new URLSearchParams({ dueStatus: "has" });
+    const qs = new URLSearchParams();
+    if (filterDueStatus !== "all") qs.set("dueStatus", filterDueStatus);
     if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
     if (filterFeeType !== "all") qs.set("feeType", filterFeeType);
+    if (filterCourse !== "all") qs.set("courseId", filterCourse);
+    if (filterBatch !== "all") qs.set("batchId", filterBatch);
     return qs;
-  }, [debouncedSearch, filterFeeType]);
+  }, [debouncedSearch, filterFeeType, filterCourse, filterBatch, filterDueStatus]);
 
   useEffect(() => {
     const qs = buildDueParams();
@@ -121,18 +147,53 @@ const FeeManagement = () => {
       .finally(() => setDueLoading(false));
   }, [buildDueParams, duePage]);
   useEffect(() => { loadDueStudents(); }, [loadDueStudents]);
-  useEffect(() => { setDuePage(1); }, [debouncedSearch, filterFeeType]);
+  useEffect(() => { setDuePage(1); }, [debouncedSearch, filterFeeType, filterCourse, filterBatch, filterDueStatus]);
+
+  // Payment History tab — real server-side pagination + filters (Fees/Payment
+  // audit §6/§12), independent of PaymentContext's own most-recent-100 cache
+  // (which also always excludes cancelled payments — History needs to show
+  // them, badged). includeCancelled=true is the one place in the whole app
+  // that asks for it.
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historySearch, setHistorySearch] = useState("");
+  const debouncedHistorySearch = useDebouncedValue(historySearch, 350);
+  const [historyMethod, setHistoryMethod] = useState("all");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [historyItems, setHistoryItems] = useState<Payment[]>([]);
+  const [historyMeta, setHistoryMeta] = useState<ListMeta | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const buildHistoryParams = useCallback(() => {
+    const qs = new URLSearchParams({ includeCancelled: "true", sortBy: "date", sortOrder: "desc" });
+    if (debouncedHistorySearch.trim()) qs.set("search", debouncedHistorySearch.trim());
+    if (historyMethod !== "all") qs.set("method", historyMethod);
+    if (historyFrom) qs.set("dateFrom", historyFrom);
+    if (historyTo) qs.set("dateTo", historyTo);
+    return qs;
+  }, [debouncedHistorySearch, historyMethod, historyFrom, historyTo]);
+  const loadHistory = useCallback(() => {
+    setHistoryLoading(true);
+    const qs = buildHistoryParams();
+    qs.set("page", String(historyPage));
+    qs.set("limit", "20");
+    api.getWithMeta<Payment[]>(`/payments?${qs.toString()}`)
+      .then((res) => { setHistoryItems(res.data); setHistoryMeta((res.meta as unknown as ListMeta) ?? null); })
+      .catch(() => { setHistoryItems([]); setHistoryMeta(null); })
+      .finally(() => setHistoryLoading(false));
+  }, [buildHistoryParams, historyPage]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => { setHistoryPage(1); }, [debouncedHistorySearch, historyMethod, historyFrom, historyTo]);
 
   // Payment History tab's per-row student name — one batched lookup for
-  // every distinct studentId already present in `payments` (PaymentContext's
-  // own most-recent-100 list), instead of one `students.find()` per row
-  // against StudentContext's separately-capped list.
+  // every distinct studentId on the CURRENT page of `historyItems`, instead
+  // of one `students.find()` per row against StudentContext's separately-
+  // capped list.
   const [paymentStudents, setPaymentStudents] = useState<Record<string, Student>>({});
   useEffect(() => {
-    const ids = Array.from(new Set(payments.map((p) => p.studentId))).filter(Boolean);
+    const ids = Array.from(new Set(historyItems.map((p) => p.studentId))).filter(Boolean);
     if (ids.length === 0) { setPaymentStudents({}); return; }
     let cancelled = false;
-    api.get<ApiStudent[]>(`/students?ids=${ids.join(",")}&limit=100`)
+    api.get<ApiStudent[]>(`/students?ids=${ids.join(",")}&limit=${ids.length}`)
       .then((docs) => {
         if (cancelled) return;
         const map: Record<string, Student> = {};
@@ -141,7 +202,26 @@ const FeeManagement = () => {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [payments]);
+  }, [historyItems]);
+
+  const [cancelTarget, setCancelTarget] = useState<Payment | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const handleCancelPayment = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await cancelPayment(cancelTarget.id);
+      toast.success("পেমেন্ট বাতিল করা হয়েছে");
+      setCancelTarget(null);
+      loadHistory();
+      loadDueStudents();
+      refreshStudents();
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "বাতিল করা যায়নি");
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -172,19 +252,33 @@ const FeeManagement = () => {
 
           <TabsContent value="due">
             <Card className="border-none shadow-sm">
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="নাম, রোল, রেজিস্ট্রেশন আইডি বা মোবাইল দিয়ে খুঁজুন..."
+                    className="pl-9"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="নাম, রোল, আইডি বা মোবাইল দিয়ে খুঁজুন..."
-                      className="pl-9"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
+                  <Select value={filterCourse} onValueChange={setFilterCourse}>
+                    <SelectTrigger className="sm:w-[180px]"><SelectValue placeholder="কোর্স" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">সব কোর্স</SelectItem>
+                      {courses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterBatch} onValueChange={setFilterBatch}>
+                    <SelectTrigger className="sm:w-[180px]"><SelectValue placeholder="ব্যাচ" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">সব ব্যাচ</SelectItem>
+                      {batches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
                   <Select value={filterFeeType} onValueChange={setFilterFeeType}>
-                    <SelectTrigger className="w-[160px]">
+                    <SelectTrigger className="sm:w-[160px]">
                       <SelectValue placeholder="ফি ধরন" />
                     </SelectTrigger>
                     <SelectContent>
@@ -193,9 +287,18 @@ const FeeManagement = () => {
                       <SelectItem value="মাসিক">মাসিক</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select value={filterDueStatus} onValueChange={(v) => setFilterDueStatus(v as typeof filterDueStatus)}>
+                    <SelectTrigger className="sm:w-[160px]"><SelectValue placeholder="বকেয়া অবস্থা" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="has">শুধু বকেয়া আছে</SelectItem>
+                      <SelectItem value="none">সম্পূর্ণ পরিশোধিত</SelectItem>
+                      <SelectItem value="all">সব শিক্ষার্থী</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -204,6 +307,8 @@ const FeeManagement = () => {
                       <TableHead>নাম</TableHead>
                       <TableHead>কোর্স</TableHead>
                       <TableHead>ফি ধরন</TableHead>
+                      <TableHead className="text-right">কোর্স ফি</TableHead>
+                      <TableHead className="text-right">ছাড়</TableHead>
                       <TableHead className="text-right">মোট ফি</TableHead>
                       <TableHead className="text-right">পরিশোধিত</TableHead>
                       <TableHead className="text-right">বকেয়া</TableHead>
@@ -212,12 +317,12 @@ const FeeManagement = () => {
                   <TableBody>
                     {dueLoading ? (
                       Array.from({ length: 6 }).map((_, i) => (
-                        <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                        <TableRow key={i}><TableCell colSpan={10}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
                       ))
                     ) : dueStudents.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                          কোনো বকেয়া শিক্ষার্থী নেই
+                        <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                          কোনো শিক্ষার্থী পাওয়া যায়নি
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -232,6 +337,8 @@ const FeeManagement = () => {
                               {s.feeType}
                             </Badge>
                           </TableCell>
+                          <TableCell className="text-right text-muted-foreground">৳ {s.totalCourseFee.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{s.discount > 0 ? `৳ ${s.discount.toLocaleString()}` : "—"}</TableCell>
                           <TableCell className="text-right">৳ {s.totalFee.toLocaleString()}</TableCell>
                           <TableCell className="text-right text-success">৳ {s.paid.toLocaleString()}</TableCell>
                           <TableCell className="text-right text-destructive font-semibold">৳ {s.due.toLocaleString()}</TableCell>
@@ -270,57 +377,111 @@ const FeeManagement = () => {
                     </Pagination>
                   </div>
                 )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="history">
             <Card className="border-none shadow-sm">
+              <CardHeader className="pb-3 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="রসিদ নং, নাম, রোল বা মোবাইল দিয়ে খুঁজুন..."
+                    className="pl-9"
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Select value={historyMethod} onValueChange={setHistoryMethod}>
+                    <SelectTrigger className="sm:w-[160px]"><SelectValue placeholder="পদ্ধতি" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">সব পদ্ধতি</SelectItem>
+                      {activePaymentMethods.map((m) => (<SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <Input type="date" className="sm:w-[160px]" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} placeholder="তারিখ থেকে" />
+                  <Input type="date" className="sm:w-[160px]" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} placeholder="তারিখ পর্যন্ত" />
+                </div>
+              </CardHeader>
               <CardContent className="p-0">
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>রসিদ নং</TableHead>
                       <TableHead>তারিখ</TableHead>
                       <TableHead>শিক্ষার্থী</TableHead>
+                      <TableHead>রেজি. আইডি</TableHead>
+                      <TableHead>রোল</TableHead>
+                      <TableHead>কোর্স</TableHead>
+                      <TableHead>ব্যাচ</TableHead>
                       <TableHead>ফি ধরন</TableHead>
                       <TableHead>মাস</TableHead>
                       <TableHead className="text-right">পরিমাণ</TableHead>
+                      <TableHead className="text-right">ছাড়</TableHead>
                       <TableHead className="text-right">জরিমানা</TableHead>
                       <TableHead className="text-right">পরিশোধিত</TableHead>
                       <TableHead>পদ্ধতি</TableHead>
-                      <TableHead>নোট</TableHead>
+                      <TableHead>উৎস</TableHead>
+                      <TableHead>স্ট্যাটাস</TableHead>
                       <TableHead className="text-right">অ্যাকশন</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payments.length === 0 ? (
+                    {historyLoading ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <TableRow key={i}><TableCell colSpan={17}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                      ))
+                    ) : historyItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={11} className="text-center text-muted-foreground py-8">কোনো পেমেন্ট নেই</TableCell>
+                        <TableCell colSpan={17} className="text-center text-muted-foreground py-8">কোনো পেমেন্ট নেই</TableCell>
                       </TableRow>
                     ) : (
-                      [...payments].sort((a, b) => b.date.localeCompare(a.date)).map((p) => {
+                      historyItems.map((p) => {
                         const student = paymentStudents[p.studentId];
+                        const isCancelled = p.status === "cancelled";
                         return (
-                          <TableRow key={p.id}>
+                          <TableRow key={p.id} className={isCancelled ? "opacity-60" : undefined}>
                             <TableCell className="font-mono text-xs">{p.receiptNo}</TableCell>
                             <TableCell>{p.date}</TableCell>
-                            <TableCell className="font-medium">
-                              {student ? formatStudentLabel({ name: student.name, rollNumber: student.rollNumber, systemId: student.studentId }) : "—"}
+                            <TableCell className={cn("font-medium", isCancelled && "line-through")}>
+                              {student ? student.name : "—"}
                             </TableCell>
+                            <TableCell className="font-mono text-xs">{student?.studentId || "—"}</TableCell>
+                            <TableCell className="font-mono text-xs">{student?.rollNumber || "—"}</TableCell>
+                            <TableCell>{student?.course || "—"}</TableCell>
+                            <TableCell>{batches.find((b) => b.id === student?.batchId)?.name || "—"}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs">{p.feeType}</Badge>
                             </TableCell>
                             <TableCell>{p.month || "—"}</TableCell>
                             <TableCell className="text-right">৳ {p.amount.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">{p.discount > 0 ? `৳ ${p.discount.toLocaleString()}` : "—"}</TableCell>
                             <TableCell className="text-right">{p.fine > 0 ? `৳ ${p.fine.toLocaleString()}` : "—"}</TableCell>
-                            <TableCell className="text-right font-semibold text-success">৳ {p.paidAmount.toLocaleString()}</TableCell>
+                            <TableCell className={cn("text-right font-semibold", isCancelled ? "text-muted-foreground line-through" : "text-success")}>৳ {p.paidAmount.toLocaleString()}</TableCell>
                             <TableCell>{p.method}</TableCell>
-                            <TableCell className="text-muted-foreground text-xs">{p.note || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.source === "admission" ? "ভর্তি" : p.source === "material" ? "ম্যাটেরিয়াল" : "নিয়মিত"}</TableCell>
+                            <TableCell>
+                              {isCancelled ? (
+                                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-xs">বাতিল</Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-xs">সক্রিয়</Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="ghost" onClick={() => navigate(`/payments/${p.id}/receipt`)}>
-                                <ReceiptIcon className="h-4 w-4" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                <Button size="sm" variant="ghost" onClick={() => navigate(`/payments/${p.id}/receipt`)}>
+                                  <ReceiptIcon className="h-4 w-4" />
+                                </Button>
+                                {canCancelPayments && !isCancelled && (
+                                  <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setCancelTarget(p)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -328,10 +489,64 @@ const FeeManagement = () => {
                     )}
                   </TableBody>
                 </Table>
+                </div>
+                {historyMeta && historyMeta.totalPages > 1 && (
+                  <div className="flex items-center justify-end p-4 border-t">
+                    <Pagination className="mx-0 w-auto">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            className={historyMeta.page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            onClick={() => historyMeta.page > 1 && setHistoryPage(historyMeta.page - 1)}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: historyMeta.totalPages }, (_, i) => i + 1)
+                          .filter((p) => p === 1 || p === historyMeta.totalPages || Math.abs(p - historyMeta.page) <= 1)
+                          .map((p, idx, arr) => (
+                            <PaginationItem key={p}>
+                              {idx > 0 && arr[idx - 1] !== p - 1 ? <span className="px-2 text-muted-foreground">…</span> : null}
+                              <PaginationLink isActive={p === historyMeta.page} className="cursor-pointer" onClick={() => setHistoryPage(p)}>
+                                {p}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            className={historyMeta.page >= historyMeta.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                            onClick={() => historyMeta.page < historyMeta.totalPages && setHistoryPage(historyMeta.page + 1)}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
+
+        <AlertDialog open={!!cancelTarget} onOpenChange={(v) => !v && setCancelTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>আপনি কি এই payment transaction টি delete/cancel করতে চান?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">রসিদ নং:</span><span className="font-mono">{cancelTarget?.receiptNo}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">শিক্ষার্থী:</span><span>{cancelTarget ? paymentStudents[cancelTarget.studentId]?.name || "—" : "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">পরিমাণ:</span><span className="font-semibold">৳ {cancelTarget?.paidAmount.toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">তারিখ:</span><span>{cancelTarget?.date}</span></div>
+                  <p className="pt-2 text-xs">বাতিল করলে শিক্ষার্থীর পরিশোধিত পরিমাণ ও বকেয়া স্বয়ংক্রিয়ভাবে সংশোধন হবে। এই কাজটি পূর্বাবস্থায় ফেরানো যায় না।</p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={cancelling}>না</AlertDialogCancel>
+              <AlertDialogAction onClick={handleCancelPayment} disabled={cancelling} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {cancelling ? "বাতিল হচ্ছে..." : "হ্যাঁ, বাতিল করুন"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <PaymentDialog
           open={paymentOpen}
@@ -540,6 +755,16 @@ function PaymentDialog({
                 <Badge variant="outline">{selectedStudent.feeType}</Badge>
               </div>
               <div className="flex justify-between gap-3">
+                <span className="text-muted-foreground shrink-0">কোর্স ফি:</span>
+                <span>৳ {selectedStudent.totalCourseFee.toLocaleString()}</span>
+              </div>
+              {selectedStudent.discount > 0 && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground shrink-0">ছাড়:</span>
+                  <span>৳ {selectedStudent.discount.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
                 <span className="text-muted-foreground shrink-0">মোট ফি:</span>
                 <span>৳ {selectedStudent.totalFee.toLocaleString()}</span>
               </div>
@@ -593,6 +818,11 @@ function PaymentDialog({
             <p className="text-sm text-muted-foreground">পরিশোধিত পরিমাণ</p>
             <p className="text-2xl font-bold text-primary">৳ {paidAmount.toLocaleString()}</p>
           </div>
+          {selectedStudent && paidAmount > selectedStudent.due && (
+            <p className="text-xs text-destructive text-center">
+              এই পরিমাণ বর্তমান বকেয়ার (৳ {selectedStudent.due.toLocaleString()}) চেয়ে বেশি — সার্ভার এটি গ্রহণ করবে না।
+            </p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">

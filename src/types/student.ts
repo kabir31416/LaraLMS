@@ -106,6 +106,10 @@ export interface Payment {
   note?: string;
   /** The student's due immediately before this payment (payment.model.ts) — the receipt's "পূর্ববর্তী বকেয়া"/"বর্তমান বকেয়া" are derived from this + paidAmount, not from the student's live (possibly since-changed) due. */
   previousDue?: number;
+  /** "cancelled" (Fees/Payment audit §7) is a soft flag — the row stays for the audit trail, but is excluded from every default financial total. Missing/undefined means "active" (every payment before this field existed). */
+  status?: "active" | "cancelled";
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 export const FEE_TYPES: FeeType[] = ["এককালীন", "মাসিক"];

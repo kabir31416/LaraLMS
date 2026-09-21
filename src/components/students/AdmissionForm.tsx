@@ -83,7 +83,12 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
         address: student.address,
         courseId: student.courseId || "",
         hscInstitution: student.hscInstitution || "",
-        discount: student.discount,
+        // The admin's "what the student actually agreed to pay for the
+        // course" figure (Fees/Payment audit §1) — Discount is DERIVED from
+        // Course Fee minus this, never entered directly. Re-deriving it here
+        // from the student's already-stored totalCourseFee/discount shows
+        // exactly today's agreed price when re-opening this form to edit.
+        totalFee: Math.max(0, student.totalCourseFee - student.discount),
         paid: 0,
         paymentMethod: "নগদ" as string,
       };
@@ -102,13 +107,18 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       address: "",
       courseId: "" as string,
       hscInstitution: "",
-      discount: 0,
+      totalFee: 0,
       paid: 0,
       paymentMethod: "নগদ" as string,
     };
   }
 
-  const totalPayable = courseFee + admissionFeeBdt - Number(form.discount);
+  const totalFeeNum = Number(form.totalFee) || 0;
+  // Preview only — the server always derives and persists the authoritative
+  // discount itself from Course Fee - Total Fee (student.service.ts's
+  // computeFees); this is just so the admin sees it before saving.
+  const discountPreview = Math.max(0, courseFee - totalFeeNum);
+  const totalPayable = totalFeeNum + admissionFeeBdt;
   const due = totalPayable - Number(form.paid);
 
   const updateField = (field: string, value: string | number) => {
@@ -117,7 +127,12 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
 
   const onCourseChange = (courseId: string) => {
     updateField("courseId", courseId);
-    setCourseFee(getCourse(courseId)?.fee ?? 0);
+    const fee = getCourse(courseId)?.fee ?? 0;
+    setCourseFee(fee);
+    // A course change resets the agreed price back to the new course's full
+    // fee (no discount) — any discount negotiated for the previous course
+    // no longer means anything against a different Course Fee.
+    updateField("totalFee", fee);
   };
 
   const [submitting, setSubmitting] = useState(false);
@@ -149,7 +164,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       address: form.address,
       hscInstitution: form.hscInstitution || undefined,
       admissionDate: admissionDate ? format(admissionDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
-      discount: Number(form.discount),
+      totalFee: totalFeeNum,
     };
     // Only send courseId when it actually has a value — for a legacy
     // student with none yet, omitting it (rather than sending "") means
@@ -322,8 +337,14 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <p className="text-xs text-muted-foreground">নির্দিষ্ট, পরিবর্তনযোগ্য নয়</p>
                 </div>
                 <div className="space-y-1.5">
+                  <Label>মোট ফি (৳)</Label>
+                  <Input type="number" value={form.totalFee} onChange={(e) => updateField("totalFee", Number(e.target.value))} />
+                  <p className="text-xs text-muted-foreground">শিক্ষার্থী কোর্সের জন্য প্রকৃতপক্ষে যত টাকা দেবে (ছাড়ের পর)</p>
+                </div>
+                <div className="space-y-1.5">
                   <Label>ছাড় (৳)</Label>
-                  <Input type="number" value={form.discount} onChange={(e) => updateField("discount", Number(e.target.value))} />
+                  <Input value={discountPreview} readOnly className="bg-muted/50" />
+                  <p className="text-xs text-muted-foreground">কোর্স ফি ও মোট ফি থেকে স্বয়ংক্রিয়ভাবে হিসাব হয়</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>মোট প্রদেয় (৳)</Label>
@@ -355,7 +376,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
               </div>
               {isEdit && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  ভর্তির পরের পেমেন্ট ফি ম্যানেজমেন্ট পেজ থেকে যোগ করুন — এখান থেকে শুধু কোর্স ও ছাড় পরিবর্তন করা যাবে।
+                  ভর্তির পরের পেমেন্ট ফি ম্যানেজমেন্ট পেজ থেকে যোগ করুন — এখান থেকে শুধু কোর্স ও মোট ফি পরিবর্তন করা যাবে।
                 </p>
               )}
             </section>

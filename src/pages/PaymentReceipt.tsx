@@ -59,6 +59,9 @@ interface ReceiptPayment {
   note?: string;
   previousDue?: number;
   source: "admission" | "regular" | "material";
+  /** "cancelled" (Fees/Payment audit §7/§9) is a soft flag — the receipt still renders (never a broken/missing page) but is clearly marked so it can never be mistaken for an active payment. */
+  status?: "active" | "cancelled";
+  cancelledAt?: string;
 }
 
 interface ReceiptInstitution {
@@ -211,6 +214,13 @@ export default function PaymentReceipt() {
               তারিখ: {payment.date}
             </p>
           </div>
+
+          {payment.status === "cancelled" && (
+            <div className="mb-3 rounded-md border-2 border-destructive bg-destructive/10 text-destructive text-center py-2 px-3">
+              <p className="text-sm font-bold">এই পেমেন্টটি বাতিল করা হয়েছে</p>
+              <p className="text-[11px]">এই রসিদ আর কোনো সক্রিয় পেমেন্ট নয় — শুধুমাত্র রেকর্ডের জন্য সংরক্ষিত।</p>
+            </div>
+          )}
 
           <section className="mb-3">
             <h3 className="text-xs font-semibold border-b pb-1 mb-1.5">শিক্ষার্থীর তথ্য</h3>

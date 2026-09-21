@@ -23,6 +23,9 @@ interface ApiPayment {
   month?: string;
   note?: string;
   previousDue?: number;
+  status?: "active" | "cancelled";
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 function fromApi(doc: ApiPayment): Payment {
@@ -40,6 +43,9 @@ function fromApi(doc: ApiPayment): Payment {
     month: doc.month,
     note: doc.note,
     previousDue: doc.previousDue,
+    status: doc.status,
+    cancelledAt: doc.cancelledAt,
+    cancelReason: doc.cancelReason,
   };
 }
 
@@ -56,6 +62,8 @@ interface PaymentContextType {
    * any call site that isn't a click-driven form.
    */
   addPayment: (payment: Omit<Payment, "id" | "receiptNo"> & { idempotencyKey?: string }) => Promise<Payment>;
+  /** Soft-cancels a payment (Fees/Payment audit §7) — never a hard delete. Reverses the student's paid/discount/totalFee/due server-side; the local `payments` list here is refreshed so `getPayments`/`todayCollection`-style consumers immediately reflect it too. */
+  cancelPayment: (id: string, reason?: string) => Promise<Payment>;
   refreshPayments: () => Promise<void>;
 }
 
@@ -105,9 +113,15 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
     return created;
   }, []);
 
+  const cancelPayment = useCallback(async (id: string, reason?: string): Promise<Payment> => {
+    const updated = fromApi(await api.patch<ApiPayment>(`/payments/${id}/cancel`, reason ? { reason } : undefined));
+    setPayments((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    return updated;
+  }, []);
+
   const value = useMemo(
-    () => ({ payments, loading, getPayments, addPayment, refreshPayments }),
-    [payments, loading, getPayments, addPayment, refreshPayments],
+    () => ({ payments, loading, getPayments, addPayment, cancelPayment, refreshPayments }),
+    [payments, loading, getPayments, addPayment, cancelPayment, refreshPayments],
   );
 
   return <PaymentContext.Provider value={value}>{children}</PaymentContext.Provider>;
