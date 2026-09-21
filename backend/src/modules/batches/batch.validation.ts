@@ -15,7 +15,14 @@ export const createBatchSchema = z.object({
 
 export const updateBatchSchema = z.object({
   params: z.object({ id: z.string().length(24) }),
-  body: createBatchSchema.shape.body.partial(),
+  // directorId alone also accepts `null` here (create's own schema doesn't
+  // need this — a brand-new batch has no prior director to clear) so an
+  // admin can explicitly unassign a Batch Director; omitting the key still
+  // means "leave it untouched", exactly as .partial() already gives every
+  // other field (Batch Director unassignment audit §10).
+  body: createBatchSchema.shape.body.partial().extend({
+    directorId: z.union([z.string().length(24), z.null()]).optional(),
+  }),
 });
 
 export const idParamSchema = z.object({ params: z.object({ id: z.string().length(24) }) });

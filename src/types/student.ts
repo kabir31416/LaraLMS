@@ -126,3 +126,10 @@ export const SUBJECTS = [
 ];
 export const GENDERS = ["পুরুষ", "মহিলা", "অন্যান্য"] as const;
 export const RELATIONS = ["পিতা", "মাতা", "ভাই", "বোন", "অন্যান্য"];
+/**
+ * HSC/SSC "বিভাগ" (renamed from "গ্রুপ") — must match the backend's
+ * HSC_SSC_GROUPS exactly (student.constants.ts), so a value chosen here
+ * always passes backend validation. Not the same list as the unrelated,
+ * unused `GROUPS` constant above (a different, legacy free-text field).
+ */
+export const HSC_SSC_GROUPS = ["বিজ্ঞান", "মানবিক", "ব্যবসায়"] as const;

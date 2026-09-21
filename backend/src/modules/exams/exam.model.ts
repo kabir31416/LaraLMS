@@ -19,7 +19,14 @@ export interface OfflineExamDoc extends Document {
    * it's assigned to.
    */
   subjectId: Types.ObjectId; // -> Subject
-  lectureId: Types.ObjectId; // -> Lecture
+  /**
+   * Optional (Result Entry Lecture-optional audit §11) — a Batch Director
+   * can save/send a result for a CourseSubject with no specific Lecture
+   * chosen. `undefined` here means "no lecture", same convention as every
+   * other optional reference in this codebase (e.g. Batch.directorId) —
+   * never an empty string or a fabricated placeholder Lecture document.
+   */
+  lectureId?: Types.ObjectId; // -> Lecture
   title: string;
   fullMarks: number;
   date: string; // yyyy-mm-dd
@@ -58,7 +65,7 @@ const offlineExamSchema = new Schema<OfflineExamDoc>(
     batchId: { type: Schema.Types.ObjectId, ref: "Batch", required: true },
     courseSubjectId: { type: Schema.Types.ObjectId, ref: "CourseSubject", required: true },
     subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
-    lectureId: { type: Schema.Types.ObjectId, ref: "Lecture", required: true },
+    lectureId: { type: Schema.Types.ObjectId, ref: "Lecture" },
     title: { type: String, required: true, trim: true },
     fullMarks: { type: Number, required: true, min: 1 },
     date: { type: String, required: true },

@@ -10,11 +10,28 @@ interface HscInstitutionOption {
   name: string;
 }
 
+/** Default fetcher — the authenticated Admin/Portal GET /hsc-institutions endpoint. */
+async function fetchViaAuthedApi(search: string): Promise<HscInstitutionOption[]> {
+  const qs = new URLSearchParams({ limit: "8" });
+  if (search) qs.set("search", search);
+  const res = await api.getWithMeta<HscInstitutionOption[]>(`/hsc-institutions?${qs.toString()}`);
+  return res.data;
+}
+
 interface Props {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /**
+   * HSC Institution Autocomplete audit §4 — overridable so the public
+   * `/studententry` page (its own short-lived entryToken, never the
+   * Admin/Portal session apiClient.ts manages) can point this at
+   * GET /public/student-entry/hsc-institutions instead, without a second,
+   * parallel combobox component. Defaults to the authenticated endpoint
+   * every other caller (AdmissionForm, Student self-profile) already uses.
+   */
+  fetchOptions?: (search: string) => Promise<HscInstitutionOption[]>;
 }
 
 /**
@@ -31,7 +48,7 @@ interface Props {
  * actually saved (§6/§8 — "do not create duplicate records unnecessarily",
  * "create only when the row is approved").
  */
-export function HscInstitutionCombobox({ value, onChange, placeholder, className }: Props) {
+export function HscInstitutionCombobox({ value, onChange, placeholder, className, fetchOptions = fetchViaAuthedApi }: Props) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<HscInstitutionOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,14 +59,12 @@ export function HscInstitutionCombobox({ value, onChange, placeholder, className
     if (!open) return;
     let cancelled = false;
     setLoading(true);
-    const qs = new URLSearchParams({ limit: "8" });
-    if (debounced.trim()) qs.set("search", debounced.trim());
-    api
-      .getWithMeta<HscInstitutionOption[]>(`/hsc-institutions?${qs.toString()}`)
-      .then((res) => { if (!cancelled) setOptions(res.data); })
+    fetchOptions(debounced.trim())
+      .then((items) => { if (!cancelled) setOptions(items); })
       .catch(() => { if (!cancelled) setOptions([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, open]);
 
   useEffect(() => () => clearTimeout(blurTimer.current), []);

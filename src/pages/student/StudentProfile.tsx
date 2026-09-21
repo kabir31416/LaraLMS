@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
-import { RELATIONS } from "@/types/student";
+import { RELATIONS, HSC_SSC_GROUPS } from "@/types/student";
 import { useStudentSelf } from "./useStudentSelf";
 import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
 import { Navigate } from "react-router-dom";
@@ -43,20 +43,38 @@ export default function StudentProfile() {
       permanentAddress: student?.permanentAddress || "",
       guardianName: student?.guardianName || "",
       guardianRelation: student?.guardianRelation || "",
-      guardianOccupation: student?.guardianOccupation || "",
-      guardianAddress: student?.guardianAddress || "",
       hscInstitution: student?.hscInstitution || "",
       hscBoard: student?.hscBoard || "",
       hscPassingYear: student?.hscPassingYear || "",
       hscGroup: student?.hscGroup || "",
       hscGpa: student?.hscGpa || "",
+      hscRoll: student?.hscRoll || "",
+      hscRegistrationNumber: student?.hscRegistrationNumber || "",
       sscInstitution: student?.sscInstitution || "",
       sscBoard: student?.sscBoard || "",
       sscPassingYear: student?.sscPassingYear || "",
       sscGroup: student?.sscGroup || "",
       sscGpa: student?.sscGpa || "",
+      sscRoll: student?.sscRoll || "",
+      sscRegistrationNumber: student?.sscRegistrationNumber || "",
     };
   }
+
+  /** Every HSC/SSC field except GPA is required (HSC/SSC required-fields audit §6/§7). */
+  const REQUIRED_FIELDS: { key: keyof SelfEditableFields; label: string }[] = [
+    { key: "hscInstitution", label: "HSC প্রতিষ্ঠান" },
+    { key: "hscBoard", label: "HSC বোর্ড" },
+    { key: "hscPassingYear", label: "HSC পাসের সাল" },
+    { key: "hscGroup", label: "HSC বিভাগ" },
+    { key: "hscRoll", label: "HSC রোল নম্বর" },
+    { key: "hscRegistrationNumber", label: "HSC রেজিস্ট্রেশন নম্বর" },
+    { key: "sscInstitution", label: "SSC প্রতিষ্ঠান" },
+    { key: "sscBoard", label: "SSC বোর্ড" },
+    { key: "sscPassingYear", label: "SSC পাসের সাল" },
+    { key: "sscGroup", label: "SSC বিভাগ" },
+    { key: "sscRoll", label: "SSC রোল নম্বর" },
+    { key: "sscRegistrationNumber", label: "SSC রেজিস্ট্রেশন নম্বর" },
+  ];
 
   // student loads asynchronously (GET /students/me) — the lazy useState
   // initializer above only runs once, on mount, before that data can
@@ -72,6 +90,12 @@ export default function StudentProfile() {
   const update = (k: keyof SelfEditableFields, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleSave = async () => {
+    for (const { key, label } of REQUIRED_FIELDS) {
+      if (!String(form[key] ?? "").trim()) {
+        toast.error(`${label} আবশ্যক`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       await updateProfile(form);
@@ -160,15 +184,7 @@ export default function StudentProfile() {
                 <SelectContent>{RELATIONS.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label>অভিভাবকের পেশা</Label>
-              <Input value={form.guardianOccupation} onChange={(e) => update("guardianOccupation", e.target.value)} placeholder="যেমন: ব্যবসায়ী" />
-            </div>
             <ReadOnlyField label="অভিভাবকের মোবাইল (অ্যাডমিন কর্তৃক নির্ধারিত)" value={student.guardianMobile} />
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>অভিভাবকের ঠিকানা</Label>
-              <Input value={form.guardianAddress} onChange={(e) => update("guardianAddress", e.target.value)} placeholder="অভিভাবকের ঠিকানা" />
-            </div>
           </CardContent>
         </Card>
 
@@ -189,10 +205,18 @@ export default function StudentProfile() {
         <Card>
           <CardHeader><CardTitle className="text-base">HSC তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5"><Label>প্রতিষ্ঠান</Label><HscInstitutionCombobox value={form.hscInstitution} onChange={(v) => update("hscInstitution", v)} /></div>
-            <div className="space-y-1.5"><Label>বোর্ড</Label><Input value={form.hscBoard} onChange={(e) => update("hscBoard", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>পাসের সাল</Label><Input value={form.hscPassingYear} onChange={(e) => update("hscPassingYear", e.target.value)} placeholder="২০২৪" /></div>
-            <div className="space-y-1.5"><Label>গ্রুপ</Label><Input value={form.hscGroup} onChange={(e) => update("hscGroup", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>প্রতিষ্ঠান *</Label><HscInstitutionCombobox value={form.hscInstitution || ""} onChange={(v) => update("hscInstitution", v)} /></div>
+            <div className="space-y-1.5"><Label>বোর্ড *</Label><Input value={form.hscBoard} onChange={(e) => update("hscBoard", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>পাসের সাল *</Label><Input value={form.hscPassingYear} onChange={(e) => update("hscPassingYear", e.target.value)} placeholder="২০২৪" /></div>
+            <div className="space-y-1.5">
+              <Label>বিভাগ *</Label>
+              <Select value={form.hscGroup} onValueChange={(v) => update("hscGroup", v)}>
+                <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+                <SelectContent>{HSC_SSC_GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.hscRoll} onChange={(e) => update("hscRoll", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর *</Label><Input value={form.hscRegistrationNumber} onChange={(e) => update("hscRegistrationNumber", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.hscGpa} onChange={(e) => update("hscGpa", e.target.value)} placeholder="৫.০০" /></div>
           </CardContent>
         </Card>
@@ -200,10 +224,18 @@ export default function StudentProfile() {
         <Card>
           <CardHeader><CardTitle className="text-base">SSC তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5"><Label>প্রতিষ্ঠান</Label><Input value={form.sscInstitution} onChange={(e) => update("sscInstitution", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>বোর্ড</Label><Input value={form.sscBoard} onChange={(e) => update("sscBoard", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>পাসের সাল</Label><Input value={form.sscPassingYear} onChange={(e) => update("sscPassingYear", e.target.value)} placeholder="২০২২" /></div>
-            <div className="space-y-1.5"><Label>গ্রুপ</Label><Input value={form.sscGroup} onChange={(e) => update("sscGroup", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>প্রতিষ্ঠান *</Label><Input value={form.sscInstitution} onChange={(e) => update("sscInstitution", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>বোর্ড *</Label><Input value={form.sscBoard} onChange={(e) => update("sscBoard", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>পাসের সাল *</Label><Input value={form.sscPassingYear} onChange={(e) => update("sscPassingYear", e.target.value)} placeholder="২০২২" /></div>
+            <div className="space-y-1.5">
+              <Label>বিভাগ *</Label>
+              <Select value={form.sscGroup} onValueChange={(v) => update("sscGroup", v)}>
+                <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+                <SelectContent>{HSC_SSC_GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.sscRoll} onChange={(e) => update("sscRoll", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর *</Label><Input value={form.sscRegistrationNumber} onChange={(e) => update("sscRegistrationNumber", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.sscGpa} onChange={(e) => update("sscGpa", e.target.value)} placeholder="৫.০০" /></div>
           </CardContent>
         </Card>

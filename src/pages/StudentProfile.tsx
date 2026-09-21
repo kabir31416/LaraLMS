@@ -335,7 +335,7 @@ const StudentProfile = () => {
                   <InfoRow label="রেজিস্ট্রেশন" value={student.sscRegistrationNumber} />
                   <InfoRow label="জিপিএ" value={student.sscGpa} />
                   <InfoRow label="পাসের বছর" value={student.sscPassingYear} />
-                  <InfoRow label="গ্রুপ" value={student.sscGroup} />
+                  <InfoRow label="বিভাগ" value={student.sscGroup} />
                 </CardContent>
               </Card>
 
@@ -350,7 +350,7 @@ const StudentProfile = () => {
                   <InfoRow label="রেজিস্ট্রেশন" value={student.hscRegistrationNumber} />
                   <InfoRow label="জিপিএ" value={student.hscGpa} />
                   <InfoRow label="পাসের বছর" value={student.hscPassingYear} />
-                  <InfoRow label="গ্রুপ" value={student.hscGroup} />
+                  <InfoRow label="বিভাগ" value={student.hscGroup} />
                 </CardContent>
               </Card>
             </div>

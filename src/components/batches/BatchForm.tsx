@@ -81,7 +81,14 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
       courseId: form.courseId,
       batchTime: form.batchTime,
       roomNumber: form.roomNumber,
-      directorId: form.directorId || undefined,
+      // On edit, clearing the director must send an explicit `null` — the
+      // backend's updateBatchSchema now accepts it as "unassign" (Batch
+      // Director unassignment audit §10); `undefined` gets dropped entirely
+      // by JSON.stringify, which is exactly the bug that made removal
+      // impossible before. Create has no prior value to clear, so it keeps
+      // omitting the key when no director is chosen (create's own schema
+      // isn't nullable, and doesn't need to be).
+      directorId: form.directorId || (isEdit ? null : undefined),
       days,
       startDate: startDate ? format(startDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
     };

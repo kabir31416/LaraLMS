@@ -87,7 +87,7 @@ export const COLUMN_DEFINITIONS: ColumnDef[] = [
   { headers: ["SSC Registration"], field: "sscRegistrationNumber", required: false, kind: "text", forceTextFormat: true },
   { headers: ["SSC GPA", "SSC জিপিএ"], field: "sscGpa", required: false, kind: "text" },
   { headers: ["SSC Year", "SSC পাসের বছর"], field: "sscPassingYear", required: false, kind: "text" },
-  { headers: ["SSC Group", "SSC গ্রুপ"], field: "sscGroup", required: false, kind: "text" },
+  { headers: ["SSC Group", "SSC গ্রুপ", "SSC বিভাগ"], field: "sscGroup", required: false, kind: "text" },
   { headers: ["SSC School", "SSC প্রতিষ্ঠান"], field: "sscInstitution", required: false, kind: "text" },
 
   // ---- HSC ----
@@ -96,7 +96,7 @@ export const COLUMN_DEFINITIONS: ColumnDef[] = [
   { headers: ["HSC Registration"], field: "hscRegistrationNumber", required: false, kind: "text", forceTextFormat: true },
   { headers: ["HSC GPA", "HSC জিপিএ"], field: "hscGpa", required: false, kind: "text" },
   { headers: ["HSC Year", "HSC পাসের বছর"], field: "hscPassingYear", required: false, kind: "text" },
-  { headers: ["HSC Group", "HSC গ্রুপ"], field: "hscGroup", required: false, kind: "text" },
+  { headers: ["HSC Group", "HSC গ্রুপ", "HSC বিভাগ"], field: "hscGroup", required: false, kind: "text" },
   { headers: ["HSC College", "HSC প্রতিষ্ঠান"], field: "hscInstitution", required: false, kind: "text" },
 ];
 

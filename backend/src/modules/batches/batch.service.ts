@@ -30,10 +30,21 @@ export async function create(req: Request, data: Partial<BatchDoc>) {
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<BatchDoc>) {
+export async function update(req: Request, id: string, patch: Partial<BatchDoc> & { directorId?: string | null }) {
   const doc = await getById(id);
   const before = doc.toObject();
-  Object.assign(doc, patch);
+  // `directorId: null` is the explicit "unassign the Batch Director" signal
+  // (Batch Director unassignment audit §10) — Object.assign would otherwise
+  // just write the literal `null` onto an ObjectId-ref path, which Mongoose
+  // does accept, but doing it explicitly here keeps the intent visible and
+  // matches how every other "clear this reference" patch in this codebase
+  // is handled. Omitting the key entirely (the normal update-nothing case)
+  // never reaches this branch, so untouched batches are unaffected.
+  const { directorId, ...rest } = patch;
+  Object.assign(doc, rest);
+  if ("directorId" in patch) {
+    doc.directorId = directorId ? (directorId as never) : undefined;
+  }
   await doc.save();
   await recordAudit({ req, action: "batch.update", module: "batches", targetCollection: "batches", targetId: id, before, after: doc.toObject() });
   return doc;

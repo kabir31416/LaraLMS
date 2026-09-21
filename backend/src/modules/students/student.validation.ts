@@ -1,6 +1,41 @@
 import { z } from "zod";
-import { ADMISSION_TYPES, FEE_TYPES, GENDERS, STUDENT_STATUS } from "./student.constants";
+import { ADMISSION_TYPES, FEE_TYPES, GENDERS, HSC_SSC_GROUPS, STUDENT_STATUS } from "./student.constants";
 import { RELATIONS } from "./student.constants";
+
+/** ০.০০–৫.০০ (Bangladesh GPA scale) — the only existing convention to reuse is "GPA is a free-text string field," so this is a new-but-minimal format/range check, not a reinterpretation of stored data. Blank stays valid (GPA is the one HSC/SSC field that stays optional — HSC/SSC required-fields audit §6). */
+const GPA_REGEX = /^[0-5](\.\d{1,2})?$/;
+const gpaField = z
+  .string()
+  .trim()
+  .regex(GPA_REGEX, "GPA সঠিকভাবে দিন (০.০০ থেকে ৫.০০ এর মধ্যে)")
+  .optional()
+  .or(z.literal(""));
+
+/**
+ * Shared by updateSelfSchema below and publicStudentEntry.validation.ts's
+ * updatePublicProfileSchema — HSC/SSC required-fields + বিভাগ audit §5-§8:
+ * every HSC/SSC field is mandatory except GPA, and বিভাগ (renamed from
+ * গ্রুপ) is now a closed 3-value enum rather than free text. Kept as one
+ * shared object (not copy-pasted into both `.strict()` schemas separately)
+ * so the two public/portal self-edit surfaces can never drift out of sync
+ * with each other again.
+ */
+export const hscSscEducationFields = {
+  hscInstitution: z.string().trim().min(1, "HSC প্রতিষ্ঠানের নাম আবশ্যক"),
+  hscBoard: z.string().trim().min(1, "HSC বোর্ড আবশ্যক"),
+  hscPassingYear: z.string().trim().min(1, "HSC পাসের সাল আবশ্যক"),
+  hscGroup: z.enum(HSC_SSC_GROUPS, { errorMap: () => ({ message: "HSC বিভাগ নির্বাচন করুন (বিজ্ঞান/মানবিক/ব্যবসায়)" }) }),
+  hscGpa: gpaField,
+  hscRoll: z.string().trim().min(1, "HSC রোল নম্বর আবশ্যক"),
+  hscRegistrationNumber: z.string().trim().min(1, "HSC রেজিস্ট্রেশন নম্বর আবশ্যক"),
+  sscInstitution: z.string().trim().min(1, "SSC প্রতিষ্ঠানের নাম আবশ্যক"),
+  sscBoard: z.string().trim().min(1, "SSC বোর্ড আবশ্যক"),
+  sscPassingYear: z.string().trim().min(1, "SSC পাসের সাল আবশ্যক"),
+  sscGroup: z.enum(HSC_SSC_GROUPS, { errorMap: () => ({ message: "SSC বিভাগ নির্বাচন করুন (বিজ্ঞান/মানবিক/ব্যবসায়)" }) }),
+  sscGpa: gpaField,
+  sscRoll: z.string().trim().min(1, "SSC রোল নম্বর আবশ্যক"),
+  sscRegistrationNumber: z.string().trim().min(1, "SSC রেজিস্ট্রেশন নম্বর আবশ্যক"),
+};
 
 export const idParamSchema = z.object({ params: z.object({ id: z.string().length(24) }) });
 
@@ -103,16 +138,28 @@ export const updateStudentSchema = z.object({
 
 /**
  * Student-editable subset only (Phase 4 field-ownership split). Everything
- * admin-controlled — registrationId, currentRollNumber, name, phone, dob,
+ * admin-controlled — registrationId, currentRollNumber, name, phone,
  * guardianMobile, bloodGroup, courseId, currentBatchId/status — is absent by
  * construction, not by a role check inside a shared schema, so there is no
  * way for a student's own PATCH .../self request to ever touch them.
+ * `dob` WAS on that admin-only list too, but is now student-editable here
+ * (DOB self-edit audit §3) — the Student model already stores it as a plain
+ * optional string (student.model.ts), so no schema/model change was needed,
+ * only removing it from this exclusion list.
+ *
+ * `guardianOccupation`/`guardianAddress` were REMOVED from here (Guardian
+ * পেশা/ঠিকানা audit §9) — neither StudentEntry.tsx nor student/StudentProfile.tsx
+ * sends them anymore; `.strict()` below now rejects them outright rather
+ * than silently accepting a value nothing in the UI can produce. A
+ * student's previously-saved value stays in the database untouched — this
+ * only closes the write path, it never reads or deletes anything.
  */
 export const updateSelfSchema = z.object({
   params: z.object({ id: z.string().length(24) }),
   body: z
     .object({
       photoUrl: z.string().optional(),
+      dob: z.string().trim().min(1).optional(),
       presentAddress: z.string().trim().optional(),
       permanentAddress: z.string().trim().optional(),
       division: z.string().trim().optional(),
@@ -121,24 +168,9 @@ export const updateSelfSchema = z.object({
       postOffice: z.string().trim().optional(),
       postcode: z.string().trim().optional(),
       village: z.string().trim().optional(),
-      hscInstitution: z.string().trim().optional(),
-      hscBoard: z.string().trim().optional(),
-      hscPassingYear: z.string().trim().optional(),
-      hscGroup: z.string().trim().optional(),
-      hscGpa: z.string().trim().optional(),
-      hscRoll: z.string().trim().optional(),
-      hscRegistrationNumber: z.string().trim().optional(),
-      sscInstitution: z.string().trim().optional(),
-      sscBoard: z.string().trim().optional(),
-      sscPassingYear: z.string().trim().optional(),
-      sscGroup: z.string().trim().optional(),
-      sscGpa: z.string().trim().optional(),
-      sscRoll: z.string().trim().optional(),
-      sscRegistrationNumber: z.string().trim().optional(),
+      ...hscSscEducationFields,
       guardianName: z.string().trim().optional(),
       guardianRelation: z.enum(RELATIONS).optional(),
-      guardianOccupation: z.string().trim().optional(),
-      guardianAddress: z.string().trim().optional(),
     })
     .strict(),
 });

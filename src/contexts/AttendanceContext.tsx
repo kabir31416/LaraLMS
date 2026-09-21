@@ -31,7 +31,8 @@ interface ApiOfflineExam {
   batchId: string;
   courseSubjectId: string;
   subjectId: string;
-  lectureId: string;
+  /** Optional (Result Entry Lecture-optional audit §11). */
+  lectureId?: string;
   title: string;
   fullMarks: number;
   date: string;
@@ -99,10 +100,10 @@ interface Ctx {
   getResultsByExam: (examId: string) => Promise<OfflineResult[]>;
   getResultsByExams: (examIds: string[]) => Promise<OfflineResult[]>;
   getResultsByStudent: (studentId: string) => Promise<OfflineResult[]>;
-  /** "Save Result" — saves marks + attendance only, never calls the SMS gateway. Safe to click repeatedly. */
-  saveResult: (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<{ examId: string; resultsSaved: number }>;
-  /** "Send Result" — saves first, then texts guardians using the caller's Result SMS template. */
-  submitResult: (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
+  /** "Save Result" — saves marks + attendance only, never calls the SMS gateway. Safe to click repeatedly. `lectureId` is optional (Result Entry Lecture-optional audit §11). */
+  saveResult: (data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<{ examId: string; resultsSaved: number }>;
+  /** "Send Result" — saves first, then texts guardians using the caller's Result SMS template. `lectureId` is optional (§11). */
+  submitResult: (data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] }) => Promise<SubmitResultSummary>;
   resendSms: (examId: string, studentIds: string[]) => Promise<Omit<SubmitResultSummary, "examId" | "resultsSaved">>;
   getResultSmsTemplate: () => Promise<ResultSmsTemplateConfig>;
   updateResultSmsTemplate: (template: string) => Promise<ResultSmsTemplateConfig>;
@@ -159,11 +160,11 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     await api.post(`/exams/${examId}/results`, { items });
   }, []);
 
-  const saveResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<{ examId: string; resultsSaved: number }> => {
+  const saveResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<{ examId: string; resultsSaved: number }> => {
     return api.post("/exams/save-result", data);
   }, []);
 
-  const submitResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
+  const submitResult = useCallback(async (data: { batchId: string; courseSubjectId: string; lectureId?: string; date: string; fullMarks: number; items: SubmitResultItem[] }): Promise<SubmitResultSummary> => {
     return api.post<SubmitResultSummary>("/exams/submit-result", data);
   }, []);
 

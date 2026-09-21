@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RELATIONS } from "../students/student.constants";
+import { hscSscEducationFields } from "../students/student.validation";
 
 /**
  * "Registration Number / Roll" accepts either identifier, matched together
@@ -23,10 +24,22 @@ export const verifyStudentEntrySchema = z.object({
  * course, batch, fees, status, results, attendance, etc.) is simply absent
  * from this schema — `.strict()` rejects anything else outright rather than
  * silently ignoring it.
+ *
+ * The HSC/SSC fields are the literal shared `hscSscEducationFields` object
+ * from student.validation.ts, not an independently hand-copied list — this
+ * keeps this schema and updateSelfSchema from ever drifting out of sync
+ * again (HSC/SSC required-fields + বিভাগ audit §5-§8: every HSC/SSC field is
+ * mandatory except GPA, and বিভাগ is a closed 3-value enum). `dob` is
+ * included here too (DOB self-edit audit §3) — Student.dob is already a
+ * plain optional string field, reused as-is. `guardianOccupation`/
+ * `guardianAddress` were removed here too (Guardian পেশা/ঠিকানা audit §9) —
+ * StudentEntry.tsx no longer sends them; any previously-saved value stays
+ * in the database untouched.
  */
 export const updatePublicProfileSchema = z.object({
   body: z
     .object({
+      dob: z.string().trim().min(1).optional(),
       presentAddress: z.string().trim().optional(),
       permanentAddress: z.string().trim().optional(),
       division: z.string().trim().optional(),
@@ -35,24 +48,9 @@ export const updatePublicProfileSchema = z.object({
       postOffice: z.string().trim().optional(),
       postcode: z.string().trim().optional(),
       village: z.string().trim().optional(),
-      hscInstitution: z.string().trim().optional(),
-      hscBoard: z.string().trim().optional(),
-      hscPassingYear: z.string().trim().optional(),
-      hscGroup: z.string().trim().optional(),
-      hscGpa: z.string().trim().optional(),
-      hscRoll: z.string().trim().optional(),
-      hscRegistrationNumber: z.string().trim().optional(),
-      sscInstitution: z.string().trim().optional(),
-      sscBoard: z.string().trim().optional(),
-      sscPassingYear: z.string().trim().optional(),
-      sscGroup: z.string().trim().optional(),
-      sscGpa: z.string().trim().optional(),
-      sscRoll: z.string().trim().optional(),
-      sscRegistrationNumber: z.string().trim().optional(),
+      ...hscSscEducationFields,
       guardianName: z.string().trim().optional(),
       guardianRelation: z.enum(RELATIONS).optional(),
-      guardianOccupation: z.string().trim().optional(),
-      guardianAddress: z.string().trim().optional(),
     })
     .strict(),
 });
