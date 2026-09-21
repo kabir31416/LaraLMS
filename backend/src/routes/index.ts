@@ -34,6 +34,7 @@ import publicStudentEntryRoutes from "../modules/publicStudentEntry/publicStuden
 import publicNewStudentEntryRoutes from "../modules/publicNewStudentEntry/publicNewStudentEntry.routes";
 import auditLogRoutes from "../audit/auditLog.routes";
 import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
+import smsRoutes from "../modules/sms/sms.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -83,5 +84,6 @@ router.use("/public/student-entry", publicStudentEntryRoutes);
 router.use("/public/new-student-entry", publicNewStudentEntryRoutes);
 router.use("/audit-logs", auditLogRoutes);
 router.use("/admission-results", admissionResultRoutes);
+router.use("/sms", smsRoutes);
 
 export default router;

@@ -9,6 +9,9 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import { generateReceiptNumber } from "../../common/utils/idGenerators";
 import { logger } from "../../logger/logger";
+import * as guardianService from "../guardians/guardian.service";
+import { sendSms, getSmsSettingsForApi } from "../sms/sms.service";
+import { renderTemplate } from "../sms/sms.template";
 
 function isDuplicateKeyError(err: unknown): boolean {
   return !!err && typeof err === "object" && (err as { code?: number }).code === 11000;
@@ -127,6 +130,41 @@ export async function getReceipt(payment: PaymentDoc): Promise<Record<string, un
     : undefined;
 
   return { payment, student, batchName, currentDue, institution };
+}
+
+/**
+ * Payment SMS (SMS Provider Upgrade §7) — best-effort, fires once a payment
+ * has actually committed and the student's balance has already been
+ * updated, using that same freshly-updated `student` document so
+ * totalPaid/due reflect this exact payment, never a stale pre-payment
+ * snapshot. Never throws (§17: "payment must remain successful" whatever
+ * happens to the SMS) and fires for every payment.service.ts create() call
+ * — admission-time, regular, and material payments alike — same
+ * unconditional-per-payment convention this file's own accounts-ledger
+ * auto-mirror already uses just below.
+ */
+async function sendPaymentSms(studentId: string, paidAmount: number, receiptNo: string): Promise<void> {
+  try {
+    const student = await Student.findById(studentId);
+    if (!student) return;
+    const guardian = await guardianService.getPrimary(studentId);
+    if (!guardian?.phone) return;
+
+    const settings = await getSmsSettingsForApi();
+    const message = renderTemplate(settings.templates.payment, {
+      studentName: student.name,
+      registrationId: student.registrationId,
+      roll: student.currentRollNumber || "",
+      courseName: student.course || "",
+      paymentAmount: String(paidAmount),
+      totalPaid: String(student.paid),
+      due: String(student.due),
+      receiptNo,
+    });
+    await sendSms({ to: guardian.phone, message, eventType: "payment", studentId });
+  } catch (err) {
+    logger.warn({ err }, "Payment SMS failed — continuing without blocking payment");
+  }
 }
 
 /**
@@ -281,6 +319,8 @@ export async function create(
   } catch (err) {
     logger.warn({ err }, "Failed to auto-post payment to accounts ledger");
   }
+
+  await sendPaymentSms(data.studentId, paidAmount, receiptNo);
 
   return doc;
 }

@@ -26,6 +26,10 @@ export const logger = pino({
       "*.token",
       "*.accessToken",
       "*.refreshToken",
+      // SMS Provider Upgrade §18 — Alpha SMS's api_key must never reach logs,
+      // whatever shape the object carrying it happens to have.
+      "*.apiKey",
+      "*.api_key",
     ],
     censor: "[redacted]",
   },
