@@ -303,10 +303,27 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
     filter.dob = new RegExp(`-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}$`);
   }
 
+  // A Batch Director's own-batch scope (student.controller.ts's
+  // scopeToOwnBatchIfNeeded forces this on every list()/admissionRollStats()
+  // call for a non-broad-access caller) must NARROW an already-set
+  // `?batchId=` filter, never replace it — a director requesting one
+  // specific batch (e.g. Result Entry's roster fetch) previously got every
+  // student across *all* batches they direct instead, because this branch
+  // unconditionally overwrote `filter.currentBatchId` set above. Multi
+  // Batch Director support made a director-with-several-batches the normal
+  // case, which is what turned this from a latent bug into a visible one.
   if (req.query.directorId) {
     const { Batch } = await import("../batches/batch.model");
     const batchIds = await Batch.find({ directorIds: req.query.directorId }).distinct("_id");
-    filter.currentBatchId = { $in: batchIds };
+    if (filter.currentBatchId instanceof Types.ObjectId) {
+      // A specific batch was already requested — keep it only if this director actually directs it.
+      if (!batchIds.some((id) => id.equals(filter.currentBatchId as Types.ObjectId))) {
+        filter.currentBatchId = { $in: [] };
+      }
+    } else {
+      // No specific batch requested (or "unassigned", which a director may never see) — scope to every batch they direct.
+      filter.currentBatchId = { $in: batchIds };
+    }
   }
 
   if (typeof req.query.feeType === "string" && req.query.feeType.trim()) {
