@@ -55,7 +55,7 @@ const DirectorDashboard = () => {
   }, [user]);
 
   const myBatches = useMemo(
-    () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    () => (user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : []),
     [batches, user],
   );
   const myBatchIds = new Set(myBatches.map((b) => b.id));

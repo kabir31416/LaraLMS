@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { OfflineExam, OfflineExamDoc } from "./exam.model";
 import { OfflineResult } from "./result.model";
 import { Batch } from "../batches/batch.model";
+import { isBatchDirector } from "../batches/batch.service";
 import { Student, StudentDoc } from "../students/student.model";
 import { Subject, SubjectDoc } from "../subjects/subject.model";
 import { CourseSubject, CourseSubjectDoc } from "../courseSubjects/courseSubject.model";
@@ -21,9 +22,9 @@ export async function assertCanActOnBatch(req: Request, batchId: string): Promis
   const perms = req.user!.permissions;
   if (perms.includes("*") || perms.includes(PERMISSIONS.EXAMS_MANAGE)) return;
   if (!perms.includes(PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH)) throw ApiError.forbidden("Missing permission");
-  const batch = await Batch.findById(batchId).select("directorId");
+  const batch = await Batch.findById(batchId).select("directorIds");
   if (!batch) throw ApiError.notFound("Batch not found");
-  if (!req.user!.staffId || String(batch.directorId) !== req.user!.staffId) {
+  if (!isBatchDirector(batch.directorIds, req.user!.staffId)) {
     throw ApiError.forbidden("You may only manage exams for batches you direct");
   }
 }
@@ -36,7 +37,7 @@ export async function readScope(req: Request): Promise<{ batchIds?: string[] } |
   }
   if (perms.includes(PERMISSIONS.EXAMS_READ_OWN_BATCH) || perms.includes(PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH)) {
     if (!req.user!.staffId) throw ApiError.forbidden("No linked staff record");
-    const batchIds = await Batch.find({ directorId: req.user!.staffId }).distinct("_id");
+    const batchIds = await Batch.find({ directorIds: req.user!.staffId }).distinct("_id");
     return { batchIds: batchIds.map(String) };
   }
   if (perms.includes(PERMISSIONS.RESULTS_READ_OWN)) {
@@ -167,7 +168,7 @@ export async function listResults(req: Request) {
       filter.studentId = req.user!.studentId;
     } else if (perms.includes(PERMISSIONS.EXAMS_READ_OWN_BATCH) || perms.includes(PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH)) {
       if (!req.user!.staffId) throw ApiError.forbidden("No linked staff record");
-      const batchIds = await Batch.find({ directorId: req.user!.staffId }).distinct("_id");
+      const batchIds = await Batch.find({ directorIds: req.user!.staffId }).distinct("_id");
       const examIds = await OfflineExam.find({ batchId: { $in: batchIds } }).distinct("_id");
       filter.examId = filter.examId ? filter.examId : { $in: examIds };
     } else {

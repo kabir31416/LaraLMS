@@ -8,7 +8,7 @@ export interface BatchDoc extends Document {
   batchTime: string;
   days: (typeof WEEK_DAYS)[number][];
   roomNumber?: string;
-  directorId?: Types.ObjectId; // -> Staff, real ref since Module 13
+  directorIds: Types.ObjectId[]; // -> Staff, multiple Batch Directors per batch
   startDate: string;
   createdAt: Date;
   updatedAt: Date;
@@ -21,7 +21,7 @@ const batchSchema = new Schema<BatchDoc>(
     batchTime: { type: String, required: true },
     days: { type: [String], enum: WEEK_DAYS, default: [] },
     roomNumber: String,
-    directorId: { type: Schema.Types.ObjectId, ref: "Staff" },
+    directorIds: { type: [Schema.Types.ObjectId], ref: "Staff", default: [] },
     startDate: { type: String, required: true },
   },
   { timestamps: true },

@@ -25,7 +25,7 @@ export interface Batch {
   days: WeekDay[];
   roomNumber?: string;
   startDate: string; // ISO
-  directorId?: string; // staff id (Batch Director)
+  directorIds: string[]; // staff ids (Batch Directors — a batch may have more than one)
   // No studentIds here anymore — a batch's roster is whoever has
   // Student.batchId === this batch's id (kept in sync by the enrollment
   // API on enroll/transfer/withdraw), not an array owned by the batch.

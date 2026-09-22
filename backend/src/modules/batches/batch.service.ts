@@ -5,11 +5,19 @@ import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, buildSearchFilter, parsePagination } from "../../common/utils/pagination";
 import * as enrollmentService from "../enrollments/enrollment.service";
 
+/** Shared "is this staff member one of the batch's Batch Directors" check — used wherever a Batch Director's own-batch access needs enforcing (exams, attendance, students). */
+export function isBatchDirector(directorIds: BatchDoc["directorIds"] | undefined, staffId: string | undefined): boolean {
+  if (!staffId || !directorIds) return false;
+  return directorIds.some((id) => String(id) === staffId);
+}
+
 export async function list(req: Request) {
   const { page, limit, skip, sort } = parsePagination(req, { name: 1 });
   const filter: Record<string, unknown> = { ...buildSearchFilter(req.query.search, ["name"]) };
   if (req.query.courseId) filter.courseId = req.query.courseId;
-  if (req.query.directorId) filter.directorId = req.query.directorId;
+  // Scalar match against an array field is Mongo's "array contains" test —
+  // batches where this one staff member is among the (possibly several) directors.
+  if (req.query.directorId) filter.directorIds = req.query.directorId;
 
   const [items, total] = await Promise.all([
     Batch.find(filter).sort(sort).skip(skip).limit(limit),
@@ -30,20 +38,18 @@ export async function create(req: Request, data: Partial<BatchDoc>) {
   return doc;
 }
 
-export async function update(req: Request, id: string, patch: Partial<BatchDoc> & { directorId?: string | null }) {
+export async function update(req: Request, id: string, patch: Partial<BatchDoc> & { directorIds?: string[] }) {
   const doc = await getById(id);
   const before = doc.toObject();
-  // `directorId: null` is the explicit "unassign the Batch Director" signal
-  // (Batch Director unassignment audit §10) — Object.assign would otherwise
-  // just write the literal `null` onto an ObjectId-ref path, which Mongoose
-  // does accept, but doing it explicitly here keeps the intent visible and
-  // matches how every other "clear this reference" patch in this codebase
-  // is handled. Omitting the key entirely (the normal update-nothing case)
-  // never reaches this branch, so untouched batches are unaffected.
-  const { directorId, ...rest } = patch;
+  // `directorIds: []` is the explicit "unassign all Batch Directors" signal
+  // (multi-director support) — handled separately from Object.assign so an
+  // empty array reliably clears the field rather than being treated as a
+  // no-op. Omitting the key entirely (the normal update-nothing case) never
+  // reaches this branch, so untouched batches are unaffected.
+  const { directorIds, ...rest } = patch;
   Object.assign(doc, rest);
-  if ("directorId" in patch) {
-    doc.directorId = directorId ? (directorId as never) : undefined;
+  if ("directorIds" in patch) {
+    doc.directorIds = (directorIds ?? []) as never;
   }
   await doc.save();
   await recordAudit({ req, action: "batch.update", module: "batches", targetCollection: "batches", targetId: id, before, after: doc.toObject() });

@@ -101,7 +101,7 @@ export async function remove(req: Request, id: string): Promise<void> {
   // Phase 1 §4's missing-delete-guard finding, fixed: a director who still
   // directs at least one batch can't just vanish.
   const { Batch } = await import("../batches/batch.model");
-  if (await Batch.exists({ directorId: id })) {
+  if (await Batch.exists({ directorIds: id })) {
     throw ApiError.conflict("This staff member still directs at least one batch — reassign it first");
   }
 

@@ -42,7 +42,7 @@ async function resolveBatchScope(req: Request): Promise<string[] | undefined> {
   if (perms.includes("*") || perms.includes(PERMISSIONS.ADMISSION_RESULTS_MANAGE)) return undefined;
   if (!perms.includes(PERMISSIONS.ADMISSION_RESULTS_READ_OWN_BATCH)) throw ApiError.forbidden("Missing permission");
   if (!req.user!.staffId) throw ApiError.forbidden("No linked staff record");
-  const batchIds = await Batch.find({ directorId: req.user!.staffId }).distinct("_id");
+  const batchIds = await Batch.find({ directorIds: req.user!.staffId }).distinct("_id");
   return batchIds.map(String);
 }
 

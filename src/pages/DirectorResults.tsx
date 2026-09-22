@@ -52,7 +52,7 @@ const DirectorResults = () => {
 
   // Admin can enter results for any batch; a Batch Director only their own.
   const myBatches = useMemo(
-    () => (isAdmin ? batches : user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    () => (isAdmin ? batches : user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : []),
     [batches, user, isAdmin],
   );
 

@@ -71,13 +71,13 @@ const Batches = () => {
     const q = search.toLowerCase();
     return batches.filter((b) => {
       const matchSearch = !q || b.name.toLowerCase().includes(q) || courseName(b.courseId).toLowerCase().includes(q);
-      const matchDir = filterDirector === "all" || b.directorId === filterDirector;
+      const matchDir = filterDirector === "all" || b.directorIds?.includes(filterDirector);
       return matchSearch && matchDir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches, search, filterDirector]);
 
-  const directorName = (id?: string) => (id ? getStaff(id)?.name || "—" : "—");
+  const directorName = (ids?: string[]) => (ids?.length ? ids.map((id) => getStaff(id)?.name || "—").join(", ") : "—");
 
   const handleDelete = async (id: string) => {
     try {
@@ -112,7 +112,7 @@ const Batches = () => {
             <div className="flex-1">
               <h1 className="text-2xl font-bold">{openBatch.name}</h1>
               <p className="text-sm text-muted-foreground">
-                {courseName(openBatch.courseId)} · {openBatch.batchTime} · রুম {openBatch.roomNumber || "—"} · ডিরেক্টর: {directorName(openBatch.directorId)}
+                {courseName(openBatch.courseId)} · {openBatch.batchTime} · রুম {openBatch.roomNumber || "—"} · ডিরেক্টর: {directorName(openBatch.directorIds)}
               </p>
             </div>
             <Button onClick={() => setAssignFor(openBatch.id)}>
@@ -253,7 +253,7 @@ const Batches = () => {
                     <TableCell className="text-sm">{b.batchTime}</TableCell>
                     <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{b.days.join(", ") || "—"}</TableCell>
                     <TableCell>{b.roomNumber || "—"}</TableCell>
-                    <TableCell>{directorName(b.directorId)}</TableCell>
+                    <TableCell>{directorName(b.directorIds)}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline">{studentCount(b.id)}</Badge>
                     </TableCell>
