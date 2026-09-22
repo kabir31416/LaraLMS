@@ -7,6 +7,7 @@ import {
   reportParamSchema,
   testSmsSchema,
   updateAlphaSettingsSchema,
+  updateBulkSmsBdSettingsSchema,
   updateEventsSchema,
   updateProviderSchema,
   updateTemplateSchema,
@@ -52,6 +53,7 @@ router.use(requirePermission(PERMISSIONS.SMS_MANAGE));
 
 router.get("/settings", controller.getSettings);
 router.patch("/settings/provider", validate(updateProviderSchema), controller.updateProvider);
+router.patch("/settings/bulksmsbd", validate(updateBulkSmsBdSettingsSchema), controller.updateBulkSmsBdSettings);
 router.patch("/settings/alpha", validate(updateAlphaSettingsSchema), controller.updateAlphaSettings);
 router.patch("/settings/events", validate(updateEventsSchema), controller.updateEvents);
 router.patch("/settings/templates/:event", validate(updateTemplateSchema), controller.updateTemplate);

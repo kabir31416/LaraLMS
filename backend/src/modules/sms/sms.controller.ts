@@ -18,6 +18,11 @@ export const updateAlphaSettings = asyncHandler(async (req: Request, res: Respon
   sendSuccess(res, await smsService.getSmsSettingsForApi());
 });
 
+export const updateBulkSmsBdSettings = asyncHandler(async (req: Request, res: Response) => {
+  await smsService.updateBulkSmsBdSettings(req, req.body);
+  sendSuccess(res, await smsService.getSmsSettingsForApi());
+});
+
 export const updateEvents = asyncHandler(async (req: Request, res: Response) => {
   const events = await smsService.updateEvents(req, req.body);
   sendSuccess(res, events);

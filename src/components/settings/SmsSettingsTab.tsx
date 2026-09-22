@@ -26,6 +26,7 @@ type SmsEvent = "admission" | "payment" | "birthday" | "result";
 
 interface SmsSettingsApi {
   activeProvider: SmsProvider;
+  bulksmsbd: { apiKeyConfigured: boolean; apiKeyMasked?: string; senderId?: string; usingEnvFallback: boolean };
   alpha: { apiKeyConfigured: boolean; apiKeyMasked?: string; senderId?: string; contentId?: string };
   events: Record<SmsEvent, boolean>;
   templates: { admission: string; payment: string; birthday: string };
@@ -97,6 +98,10 @@ export function SmsSettingsTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
+  const [bulkApiKey, setBulkApiKey] = useState("");
+  const [bulkSenderId, setBulkSenderId] = useState("");
+  const [savingBulk, setSavingBulk] = useState(false);
+
   const [alphaApiKey, setAlphaApiKey] = useState("");
   const [alphaSenderId, setAlphaSenderId] = useState("");
   const [alphaContentId, setAlphaContentId] = useState("");
@@ -104,6 +109,7 @@ export function SmsSettingsTab() {
 
   useEffect(() => {
     if (!settings) return;
+    setBulkSenderId(settings.bulksmsbd.senderId || "");
     setAlphaSenderId(settings.alpha.senderId || "");
     setAlphaContentId(settings.alpha.contentId || "");
   }, [settings]);
@@ -128,6 +134,23 @@ export function SmsSettingsTab() {
       toast.success("প্রোভাইডার পরিবর্তন হয়েছে");
     } catch (err) {
       toast.error(errMsg(err, "প্রোভাইডার পরিবর্তন করা যায়নি"));
+    }
+  };
+
+  const saveBulkSmsBdSettings = async () => {
+    setSavingBulk(true);
+    try {
+      const updated = await api.patch<SmsSettingsApi>("/sms/settings/bulksmsbd", {
+        apiKey: bulkApiKey.trim() || undefined,
+        senderId: bulkSenderId,
+      });
+      setSettings(updated);
+      setBulkApiKey("");
+      toast.success("BulkSMSBD সেটিংস সংরক্ষিত হয়েছে");
+    } catch (err) {
+      toast.error(errMsg(err, "সংরক্ষণ ব্যর্থ হয়েছে"));
+    } finally {
+      setSavingBulk(false);
     }
   };
 
@@ -235,6 +258,36 @@ export function SmsSettingsTab() {
                 {balanceCheckedAt && <span className="text-xs text-muted-foreground ml-2">({balanceCheckedAt.toLocaleTimeString("bn-BD")})</span>}
               </div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="text-base">BulkSMSBD কনফিগারেশন</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>
+              API Key{" "}
+              {settings.bulksmsbd.apiKeyConfigured && (
+                <Badge variant="outline" className="ml-1 text-xs">
+                  বর্তমান: {settings.bulksmsbd.apiKeyMasked}{settings.bulksmsbd.usingEnvFallback ? " (Environment থেকে)" : ""}
+                </Badge>
+              )}
+            </Label>
+            <Input
+              type="password"
+              value={bulkApiKey}
+              onChange={(e) => setBulkApiKey(e.target.value)}
+              placeholder={settings.bulksmsbd.apiKeyConfigured ? "পরিবর্তন না করতে খালি রাখুন" : "API Key দিন"}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Sender ID</Label>
+            <Input value={bulkSenderId} onChange={(e) => setBulkSenderId(e.target.value)} placeholder="যেমন: 8809648910510" />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={saveBulkSmsBdSettings} disabled={savingBulk}>{savingBulk ? "সংরক্ষণ হচ্ছে..." : "Save BulkSMSBD Settings"}</Button>
           </div>
         </CardContent>
       </Card>
