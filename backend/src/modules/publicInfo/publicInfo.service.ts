@@ -64,10 +64,10 @@ async function toPublicView(doc: StudentDoc, visibleFields: string[]): Promise<R
     const batch = await Batch.findById(doc.currentBatchId);
     if (want("currentBatch")) view.currentBatch = batch?.name ?? null;
     if (want("batchDirector")) {
-      if (batch?.directorId) {
+      if (batch?.directorIds.length) {
         const { Staff } = await import("../staff/staff.model");
-        const director = await Staff.findById(batch.directorId);
-        view.batchDirector = director?.name ?? null;
+        const directors = await Staff.find({ _id: { $in: batch.directorIds } });
+        view.batchDirector = directors.map((d) => d.name).join(", ") || null;
       } else {
         view.batchDirector = null;
       }

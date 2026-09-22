@@ -59,7 +59,7 @@ const DirectorStudents = () => {
   const [loading, setLoading] = useState(true);
 
   const myBatches = useMemo(
-    () => (user ? batches.filter((b) => b.directorId === user.staffId) : []),
+    () => (user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : []),
     [batches, user],
   );
 

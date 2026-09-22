@@ -305,7 +305,7 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
 
   if (req.query.directorId) {
     const { Batch } = await import("../batches/batch.model");
-    const batchIds = await Batch.find({ directorId: req.query.directorId }).distinct("_id");
+    const batchIds = await Batch.find({ directorIds: req.query.directorId }).distinct("_id");
     filter.currentBatchId = { $in: batchIds };
   }
 
@@ -486,8 +486,9 @@ export async function updateAdmissionRoll(req: Request, id: string, rawAdmission
       throw ApiError.forbidden("You do not have permission to access this student.");
     }
     const { Batch } = await import("../batches/batch.model");
-    const batch = await Batch.findById(doc.currentBatchId).select("directorId");
-    if (!batch || String(batch.directorId ?? "") !== req.user!.staffId) {
+    const { isBatchDirector } = await import("../batches/batch.service");
+    const batch = await Batch.findById(doc.currentBatchId).select("directorIds");
+    if (!batch || !isBatchDirector(batch.directorIds, req.user!.staffId)) {
       throw ApiError.forbidden("You do not have permission to access this student.");
     }
   }
@@ -550,7 +551,7 @@ export async function getMyProfile(req: Request): Promise<Record<string, unknown
   const withG = await withGuardian(doc);
 
   let batch: Record<string, unknown> | null = null;
-  let director: Record<string, unknown> | null = null;
+  let directors: Record<string, unknown>[] = [];
   if (doc.currentBatchId) {
     const { Batch } = await import("../batches/batch.model");
     const batchDoc = await Batch.findById(doc.currentBatchId);
@@ -562,15 +563,15 @@ export async function getMyProfile(req: Request): Promise<Record<string, unknown
         roomNumber: batchDoc.roomNumber,
         days: batchDoc.days,
       };
-      if (batchDoc.directorId) {
+      if (batchDoc.directorIds.length) {
         const { Staff } = await import("../staff/staff.model");
-        const staffDoc = await Staff.findById(batchDoc.directorId);
-        if (staffDoc) director = { id: String(staffDoc._id), name: staffDoc.name };
+        const staffDocs = await Staff.find({ _id: { $in: batchDoc.directorIds } });
+        directors = staffDocs.map((s) => ({ id: String(s._id), name: s.name }));
       }
     }
   }
 
-  return { ...withG, batch, director };
+  return { ...withG, batch, directors };
 }
 
 async function getDocOrThrow(id: string): Promise<StudentDoc> {

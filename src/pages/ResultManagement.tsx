@@ -173,7 +173,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
   // still independently enforces this via readScope regardless of what the
   // dropdown offers). Admin: every batch, plus "সকল ব্যাচ" (all).
   const myBatches = useMemo(
-    () => (isDirector && user ? batches.filter((b) => b.directorId === user.staffId) : batches),
+    () => (isDirector && user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : batches),
     [batches, isDirector, user],
   );
 
@@ -589,7 +589,7 @@ function BatchResultTab({ isDirector }: { isDirector: boolean }) {
   const { listExams } = useAttendance();
 
   const myBatches = useMemo(
-    () => (isDirector && user ? batches.filter((b) => b.directorId === user.staffId) : batches),
+    () => (isDirector && user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : batches),
     [batches, isDirector, user],
   );
 

@@ -32,7 +32,7 @@ function ReadOnlyField({ label, value }: { label: string; value?: string | numbe
 }
 
 export default function StudentProfile() {
-  const { user, student, batch, director, updateProfile, uploadPhoto, removePhoto } = useStudentSelf();
+  const { user, student, batch, directors, updateProfile, uploadPhoto, removePhoto } = useStudentSelf();
   const [form, setForm] = useState<SelfEditableFields>(() => initForm());
   const [saving, setSaving] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -166,7 +166,7 @@ export default function StudentProfile() {
             <Field label="সময়" value={batch?.batchTime} />
             <Field label="রুম" value={batch?.roomNumber} />
             <Field label="দিন" value={batch?.days.join(", ")} />
-            <Field label="ব্যাচ ডিরেক্টর" value={director?.name} />
+            <Field label="ব্যাচ ডিরেক্টর" value={directors.length ? directors.map((d) => d.name).join(", ") : undefined} />
           </CardContent>
         </Card>
 

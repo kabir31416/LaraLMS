@@ -227,7 +227,9 @@ const StudentProfile = () => {
                         <Badge variant="outline">{b.name}</Badge>
                         <Badge variant="outline" className="text-xs">{b.batchTime}</Badge>
                         {b.roomNumber && <Badge variant="outline" className="text-xs">রুম {b.roomNumber}</Badge>}
-                        {b.directorId && <Badge variant="outline" className="text-xs">ডিরেক্টর: {getStaff(b.directorId)?.name}</Badge>}
+                        {b.directorIds?.map((id) => (
+                          <Badge key={id} variant="outline" className="text-xs">ডিরেক্টর: {getStaff(id)?.name}</Badge>
+                        ))}
                       </>
                     ) : (
                       <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 italic">Batch assigned হয়নি</Badge>

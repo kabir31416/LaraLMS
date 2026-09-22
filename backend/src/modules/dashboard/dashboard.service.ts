@@ -284,7 +284,7 @@ export async function getAdmissionSummary() {
 /** Director summary — scoped to the batches this Staff record directs. */
 export async function getDirectorSummary(staffId: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const batches = await Batch.find({ directorId: staffId })
+  const batches = await Batch.find({ directorIds: staffId })
     .populate<{ courseId: { _id: Types.ObjectId; name: string } | null }>("courseId", "name")
     .sort({ name: 1 });
   const batchIds = batches.map((b) => b._id);

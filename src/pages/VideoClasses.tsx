@@ -45,7 +45,7 @@ export default function VideoClasses() {
       list = list.filter((v) => lecIds.has(v.lectureId));
     }
     if (user?.role === "Batch Director") {
-      const ids = new Set(batches.filter((b) => b.directorId === user.staffId).map((b) => b.id));
+      const ids = new Set(batches.filter((b) => b.directorIds?.includes(user.staffId)).map((b) => b.id));
       list = list.filter((v) => !v.batchId || ids.has(v.batchId));
     }
     return list;

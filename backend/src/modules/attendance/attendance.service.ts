@@ -2,6 +2,7 @@ import { Request } from "express";
 import { Types } from "mongoose";
 import { ATTENDANCE_SOURCE, ATTENDANCE_STATUS, AttendanceEntry } from "./attendance.model";
 import { Batch } from "../batches/batch.model";
+import { isBatchDirector } from "../batches/batch.service";
 import { ApiError } from "../../common/utils/ApiError";
 import { recordAudit } from "../../audit/auditLog.service";
 import { buildMeta, parsePagination } from "../../common/utils/pagination";
@@ -11,9 +12,9 @@ import { PERMISSIONS } from "../rbac/permissions";
 export async function assertCanActOnBatch(req: Request, batchId: string, broadPermission: string): Promise<void> {
   const perms = req.user!.permissions;
   if (perms.includes("*") || perms.includes(broadPermission)) return;
-  const batch = await Batch.findById(batchId).select("directorId");
+  const batch = await Batch.findById(batchId).select("directorIds");
   if (!batch) throw ApiError.notFound("Batch not found");
-  if (!req.user!.staffId || String(batch.directorId) !== req.user!.staffId) {
+  if (!isBatchDirector(batch.directorIds, req.user!.staffId)) {
     throw ApiError.forbidden("You may only act on batches you direct");
   }
 }

@@ -343,7 +343,7 @@ export async function getBatchResults(
   req: Request,
   params: { batchId: string; subjectId?: string; lectureId?: string; examId?: string },
 ): Promise<BatchResultView> {
-  const batch = await Batch.findById(params.batchId).select("name courseId directorId");
+  const batch = await Batch.findById(params.batchId).select("name courseId directorIds");
   if (!batch) throw ApiError.notFound("Batch not found");
 
   const scope = await readScope(req);

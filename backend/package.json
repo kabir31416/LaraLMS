@@ -14,6 +14,7 @@
     "check-setup": "ts-node-dev --transpile-only src/scripts/check-setup.ts",
     "migrate:global-subjects": "ts-node-dev --transpile-only src/scripts/migrate-global-subjects.ts",
     "migrate:hsc-ssc-group": "ts-node-dev --transpile-only src/scripts/migrate-hsc-ssc-group.ts",
+    "migrate:batch-multi-director": "ts-node-dev --transpile-only src/scripts/migrate-batch-multi-director.ts",
     "audit:students": "ts-node-dev --transpile-only src/scripts/audit-student-data.ts",
     "typecheck": "tsc --noEmit"
   },

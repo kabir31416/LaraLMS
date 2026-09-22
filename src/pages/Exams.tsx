@@ -28,7 +28,7 @@ export default function Exams() {
   const visibleExams = useMemo(() => {
     const exams = classExams.filter((c) => c.type === "Exam");
     if (user?.role === "Batch Director") {
-      const ids = new Set(batches.filter((b) => b.directorId === user.staffId).map((b) => b.id));
+      const ids = new Set(batches.filter((b) => b.directorIds?.includes(user.staffId)).map((b) => b.id));
       return exams.filter((e) => !e.batchId || ids.has(e.batchId));
     }
     return exams;

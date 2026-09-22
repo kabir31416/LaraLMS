@@ -23,7 +23,7 @@ export default function StaffReport() {
     let cancelled = false;
     Promise.all(
       directors.map(async (s) => {
-        const batchIds = batches.filter((b) => b.directorId === s.id).map((b) => b.id);
+        const batchIds = batches.filter((b) => b.directorIds?.includes(s.id)).map((b) => b.id);
         if (batchIds.length === 0) return [s.id, "—"] as const;
         const data = await getStats({ batchIds, from, to: format(new Date(), "yyyy-MM-dd") });
         return [s.id, data.present + data.absent ? `${data.pct}%` : "—"] as const;

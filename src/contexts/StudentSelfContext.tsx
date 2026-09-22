@@ -82,7 +82,7 @@ interface ApiMyProfile {
   guardianOccupation?: string;
   guardianAddress?: string;
   batch: SelfBatch | null;
-  director: SelfDirector | null;
+  directors: SelfDirector[];
 }
 
 function studentFromApi(doc: ApiMyProfile): Student {
@@ -176,7 +176,7 @@ export interface SelfEditableFields {
 interface StudentSelfContextType {
   student: Student | undefined;
   batch: SelfBatch | undefined;
-  director: SelfDirector | undefined;
+  directors: SelfDirector[];
   loading: boolean;
   refresh: () => Promise<void>;
   updateProfile: (patch: SelfEditableFields) => Promise<void>;
@@ -190,14 +190,14 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
   const { user } = useAuth();
   const [student, setStudent] = useState<Student | undefined>(undefined);
   const [batch, setBatch] = useState<SelfBatch | undefined>(undefined);
-  const [director, setDirector] = useState<SelfDirector | undefined>(undefined);
+  const [directors, setDirectors] = useState<SelfDirector[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     const doc = await api.get<ApiMyProfile>("/students/me");
     setStudent(studentFromApi(doc));
     setBatch(doc.batch ?? undefined);
-    setDirector(doc.director ?? undefined);
+    setDirectors(doc.directors ?? []);
   }, []);
 
   /**
@@ -209,21 +209,21 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
    */
   const updateProfile = useCallback(async (patch: SelfEditableFields) => {
     if (!student) throw new Error("No student profile loaded yet");
-    const doc = await api.patch<Omit<ApiMyProfile, "batch" | "director">>(`/students/${student.id}/self`, patch);
-    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+    const doc = await api.patch<Omit<ApiMyProfile, "batch" | "directors">>(`/students/${student.id}/self`, patch);
+    setStudent(studentFromApi({ ...doc, batch: null, directors: [] }));
   }, [student]);
 
   /** POST /students/me/photo — identity comes from the session token server-side, never the URL, so there's no student id to pass here at all. */
   const uploadPhoto = useCallback(async (photo: Blob) => {
     const formData = new FormData();
     formData.append("photo", photo, "photo.jpg");
-    const doc = await api.postForm<Omit<ApiMyProfile, "batch" | "director">>("/students/me/photo", formData);
-    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+    const doc = await api.postForm<Omit<ApiMyProfile, "batch" | "directors">>("/students/me/photo", formData);
+    setStudent(studentFromApi({ ...doc, batch: null, directors: [] }));
   }, []);
 
   const removePhoto = useCallback(async () => {
-    const doc = await api.del<Omit<ApiMyProfile, "batch" | "director">>("/students/me/photo");
-    setStudent(studentFromApi({ ...doc, batch: null, director: null }));
+    const doc = await api.del<Omit<ApiMyProfile, "batch" | "directors">>("/students/me/photo");
+    setStudent(studentFromApi({ ...doc, batch: null, directors: [] }));
   }, []);
 
   useEffect(() => {
@@ -235,8 +235,8 @@ export function StudentSelfProvider({ children }: { children: React.ReactNode })
   }, [user?.studentId, refresh]);
 
   const value = useMemo(
-    () => ({ student, batch, director, loading, refresh, updateProfile, uploadPhoto, removePhoto }),
-    [student, batch, director, loading, refresh, updateProfile, uploadPhoto, removePhoto],
+    () => ({ student, batch, directors, loading, refresh, updateProfile, uploadPhoto, removePhoto }),
+    [student, batch, directors, loading, refresh, updateProfile, uploadPhoto, removePhoto],
   );
 
   return <StudentSelfContext.Provider value={value}>{children}</StudentSelfContext.Provider>;

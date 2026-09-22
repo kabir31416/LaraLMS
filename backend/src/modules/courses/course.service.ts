@@ -14,7 +14,7 @@ import { buildMeta, buildSearchFilter, parsePagination } from "../../common/util
  */
 export async function getDirectorCourseIds(staffId: string): Promise<string[]> {
   const { Batch } = await import("../batches/batch.model");
-  const ids = await Batch.find({ directorId: staffId }).distinct("courseId");
+  const ids = await Batch.find({ directorIds: staffId }).distinct("courseId");
   return ids.map(String);
 }
 

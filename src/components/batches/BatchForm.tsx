@@ -49,12 +49,14 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
   // new batches even though nothing auto-assigns Diploma anywhere in the
   // schema. Re-seeding the form here every time the dialog actually opens
   // (or the batch being edited changes) is the fix.
+  const [directorIds, setDirectorIds] = useState<string[]>(editBatch?.directorIds || []);
+
   useEffect(() => {
     if (!open) return;
     setForm(init(editBatch));
     setStartDate(editBatch?.startDate ? new Date(editBatch.startDate) : new Date());
     setDays(editBatch?.days || []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setDirectorIds(editBatch?.directorIds || []);
   }, [open, editBatch]);
 
   function init(b?: Batch | null) {
@@ -63,13 +65,14 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
       courseId: b?.courseId || "",
       batchTime: b?.batchTime || "",
       roomNumber: b?.roomNumber || "",
-      directorId: b?.directorId || "",
     };
   }
 
   const update = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const toggleDay = (d: WeekDay) =>
     setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+  const toggleDirector = (id: string) =>
+    setDirectorIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSubmit = async () => {
     if (!form.name || !form.courseId || !form.batchTime) {
@@ -81,14 +84,9 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
       courseId: form.courseId,
       batchTime: form.batchTime,
       roomNumber: form.roomNumber,
-      // On edit, clearing the director must send an explicit `null` — the
-      // backend's updateBatchSchema now accepts it as "unassign" (Batch
-      // Director unassignment audit §10); `undefined` gets dropped entirely
-      // by JSON.stringify, which is exactly the bug that made removal
-      // impossible before. Create has no prior value to clear, so it keeps
-      // omitting the key when no director is chosen (create's own schema
-      // isn't nullable, and doesn't need to be).
-      directorId: form.directorId || (isEdit ? null : undefined),
+      // Always sent as an array — an empty array explicitly means "no Batch
+      // Directors assigned", matching the backend's array-clear contract.
+      directorIds,
       days,
       startDate: startDate ? format(startDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
     };
@@ -155,19 +153,19 @@ export function BatchForm({ open, onOpenChange, editBatch }: Props) {
               </PopoverContent>
             </Popover>
           </div>
-          <div className="space-y-1.5">
-            <Label>ব্যাচ ডিরেক্টর</Label>
-            <Select value={form.directorId || "none"} onValueChange={(v) => update("directorId", v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— কেউ না —</SelectItem>
-                {directors.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {directors.length === 0 && (
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>ব্যাচ ডিরেক্টর (একাধিক নির্বাচন করা যাবে)</Label>
+            {directors.length === 0 ? (
               <p className="text-xs text-muted-foreground">প্রথমে স্টাফ পেজ থেকে Batch Director যোগ করুন</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border rounded-lg p-3 bg-muted/30 max-h-40 overflow-y-auto">
+                {directors.map((d) => (
+                  <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox checked={directorIds.includes(d.id)} onCheckedChange={() => toggleDirector(d.id)} />
+                    {d.name}
+                  </label>
+                ))}
+              </div>
             )}
           </div>
           <div className="space-y-1.5 md:col-span-2">
