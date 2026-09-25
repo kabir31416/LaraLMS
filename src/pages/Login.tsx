@@ -124,7 +124,7 @@ const Login = () => {
               <GraduationCap className="w-8 h-8 text-primary-foreground" />
             </div>
           )}
-          <CardTitle className="text-xl">{institution?.name || "লারা এলএমএস"}</CardTitle>
+          <CardTitle className="text-xl">{institution?.name || "নিউরন নার্সিং কোচিং"}</CardTitle>
           <p className="text-sm text-muted-foreground">আপনার অ্যাকাউন্টে লগইন করুন</p>
         </CardHeader>
         <CardContent>
