@@ -65,6 +65,7 @@ interface EntryProfile {
   sscRegistrationNumber: string;
   guardianName: string;
   guardianRelation: string;
+  admissionStatus: "pending" | "approved" | "rejected";
 }
 
 /**
@@ -160,6 +161,13 @@ export default function StudentEntry() {
 
   const handleSave = async () => {
     if (!form) return;
+    // Student Entry Workflow §10 — a still-pending application must have a
+    // photo before it can be saved/completed; the backend independently
+    // enforces this same rule (publicStudentEntry.service.ts's updateProfile).
+    if (profile?.admissionStatus === "pending" && !profile.photo) {
+      toast.error("প্রোফাইল সংরক্ষণের আগে একটি ছবি আপলোড করুন");
+      return;
+    }
     for (const { key, label } of REQUIRED_FIELDS) {
       if (!String(form[key] ?? "").trim()) {
         toast.error(`${label} আবশ্যক`);
@@ -239,6 +247,14 @@ export default function StudentEntry() {
           <h1 className="text-xl font-bold">শিক্ষার্থী প্রোফাইল</h1>
           <Button variant="ghost" size="sm" onClick={handleStartOver}>অন্য শিক্ষার্থী</Button>
         </div>
+
+        {profile.admissionStatus === "pending" && (
+          <Card className="border-warning/40 bg-warning/10">
+            <CardContent className="py-3 text-sm text-warning-foreground">
+              আপনার আবেদনটি এখনো অ্যাডমিন অনুমোদনের অপেক্ষায় আছে। নিচের তথ্য ও একটি ছবি দিয়ে প্রোফাইল সম্পূর্ণ করুন — অনুমোদনের পর আপনি ব্যাচে সক্রিয় হবেন।
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="pt-6 flex flex-col items-center gap-3">

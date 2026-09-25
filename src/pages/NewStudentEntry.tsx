@@ -11,18 +11,28 @@ import { ApiClientError } from "@/lib/apiClient";
 import { newStudentEntryApi } from "@/lib/newStudentEntryClient";
 
 /**
- * Public, no-login quick student entry (/newstudententry) — EXACTLY 5
- * fields (name, roll, student phone, guardian phone, course). Everything
- * else this student will ever have (dob, address, HSC/SSC info, photo,
- * fees, batch, ...) is filled in later through the existing Student
- * Profile — this page's only job is to create a normal Student record via
- * the same production creation path Admission/Bulk Import already use
+ * Public, no-login quick student entry (/newstudententry) — Admin/Staff
+ * entry point (Student Entry Workflow). Collects name, roll, student phone,
+ * guardian phone, Course, Batch (Batch is scoped to the selected Course —
+ * never a free choice), and an OPTIONAL photo. Everything else this student
+ * will ever have (dob, address, HSC/SSC info, fees, ...) is filled in later
+ * through the existing Student Profile / the student's own /studententry —
+ * this page's only job is to create a `"pending"` application via the same
+ * production Student-creation path Admission/Bulk Import already use
  * (backend/src/modules/publicNewStudentEntry, a thin wrapper around
- * student.service.ts's create()), never a parallel data structure.
+ * student.service.ts's create()), never a parallel data structure. The
+ * created student is NOT enrolled in any batch and does not appear in any
+ * Student List until an Admin approves it (see PendingStudents.tsx).
  */
 interface CourseOption {
   _id: string;
   name: string;
+}
+
+interface BatchOption {
+  _id: string;
+  name: string;
+  batchTime: string;
 }
 
 interface RegisterResult {
@@ -30,7 +40,11 @@ interface RegisterResult {
   rollNumber?: string;
   registrationId: string;
   course?: string;
+  admissionStatus: "pending" | "approved" | "rejected";
 }
+
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const ACCEPTED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function friendlyError(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback;
@@ -45,6 +59,10 @@ export default function NewStudentEntry() {
   const [phone, setPhone] = useState("");
   const [guardianMobile, setGuardianMobile] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [batches, setBatches] = useState<BatchOption[]>([]);
+  const [batchesLoading, setBatchesLoading] = useState(false);
+  const [batchId, setBatchId] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RegisterResult | null>(null);
 
@@ -55,25 +73,58 @@ export default function NewStudentEntry() {
       .finally(() => setCoursesLoading(false));
   }, []);
 
+  // Batch dropdown is scoped to the selected Course — resets whenever the
+  // Course changes so a stale Batch from a different Course can never be
+  // submitted (Student Entry Workflow §4). Backend independently re-verifies
+  // the pair regardless.
+  useEffect(() => {
+    setBatchId("");
+    if (!courseId) { setBatches([]); return; }
+    setBatchesLoading(true);
+    newStudentEntryApi.get<BatchOption[]>(`/batches?courseId=${courseId}`)
+      .then(setBatches)
+      .catch(() => toast.error("ব্যাচের তালিকা লোড করা যায়নি।"))
+      .finally(() => setBatchesLoading(false));
+  }, [courseId]);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!ACCEPTED_PHOTO_TYPES.includes(file.type)) {
+      toast.error("শুধু JPG, PNG অথবা WEBP ছবি দেওয়া যাবে");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error("ছবির আকার ৮ MB-এর বেশি হতে পারবে না");
+      return;
+    }
+    setPhoto(file);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-    if (!name.trim() || !rollNumber.trim() || !phone.trim() || !guardianMobile.trim() || !courseId) {
-      toast.error("সবগুলো ঘর পূরণ করুন");
+    if (!name.trim() || !rollNumber.trim() || !phone.trim() || !guardianMobile.trim() || !courseId || !batchId) {
+      toast.error("সবগুলো আবশ্যক ঘর পূরণ করুন");
       return;
     }
     setSubmitting(true);
     try {
-      const data = await newStudentEntryApi.post<RegisterResult>("/", {
-        name: name.trim(),
-        rollNumber: rollNumber.trim(),
-        phone: phone.trim(),
-        guardianMobile: guardianMobile.trim(),
-        courseId,
-      });
+      const formData = new FormData();
+      formData.append("name", name.trim());
+      formData.append("rollNumber", rollNumber.trim());
+      formData.append("phone", phone.trim());
+      formData.append("guardianMobile", guardianMobile.trim());
+      formData.append("courseId", courseId);
+      formData.append("batchId", batchId);
+      // Photo is OPTIONAL — simply omitted from the form when not chosen; the
+      // backend never treats a missing photo as an error on this route.
+      if (photo) formData.append("photo", photo);
+      const data = await newStudentEntryApi.postForm<RegisterResult>("/", formData);
       setResult(data);
     } catch (err) {
-      toast.error(friendlyError(err, "শিক্ষার্থী যোগ করা যায়নি। আবার চেষ্টা করুন।"));
+      toast.error(friendlyError(err, "আবেদন জমা করা যায়নি। আবার চেষ্টা করুন।"));
     } finally {
       setSubmitting(false);
     }
@@ -86,6 +137,8 @@ export default function NewStudentEntry() {
     setPhone("");
     setGuardianMobile("");
     setCourseId("");
+    setBatchId("");
+    setPhoto(null);
   };
 
   if (result) {
@@ -96,7 +149,10 @@ export default function NewStudentEntry() {
             <div className="mx-auto w-12 h-12 rounded-xl bg-success flex items-center justify-center">
               <CheckCircle2 className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-2xl font-bold">শিক্ষার্থী সফলভাবে যোগ হয়েছে</h1>
+            <h1 className="text-2xl font-bold">আবেদন সফলভাবে জমা হয়েছে</h1>
+            {result.admissionStatus === "pending" && (
+              <p className="text-sm text-muted-foreground">অ্যাডমিন অনুমোদনের অপেক্ষায় আছে — অনুমোদনের পর শিক্ষার্থী ব্যাচে সক্রিয় হবে।</p>
+            )}
           </div>
           <Card>
             <CardContent className="pt-6 space-y-3">
@@ -115,6 +171,10 @@ export default function NewStudentEntry() {
               <div>
                 <p className="text-xs text-muted-foreground">কোর্স</p>
                 <p className="text-sm font-medium">{result.course || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">অবস্থা</p>
+                <p className="text-sm font-medium">{result.admissionStatus === "pending" ? "পেন্ডিং (অনুমোদনের অপেক্ষায়)" : "সক্রিয়"}</p>
               </div>
             </CardContent>
           </Card>
@@ -169,8 +229,29 @@ export default function NewStudentEntry() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>ব্যাচ *</Label>
+                <Select value={batchId} onValueChange={setBatchId} disabled={!courseId || batchesLoading}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={!courseId ? "প্রথমে কোর্স নির্বাচন করুন" : batchesLoading ? "লোড হচ্ছে..." : "ব্যাচ নির্বাচন করুন"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {batches.map((b) => (
+                      <SelectItem key={b._id} value={b._id}>{b.name} — {b.batchTime}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {courseId && !batchesLoading && batches.length === 0 && (
+                  <p className="text-xs text-muted-foreground">এই কোর্সে কোনো ব্যাচ নেই — প্রথমে ব্যাচ পেজ থেকে একটি ব্যাচ তৈরি করুন</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>শিক্ষার্থীর ছবি (ঐচ্ছিক)</Label>
+                <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} />
+                {photo && <p className="text-xs text-muted-foreground">নির্বাচিত: {photo.name}</p>}
+              </div>
               <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? "যোগ করা হচ্ছে..." : "শিক্ষার্থী যোগ করুন"}
+                {submitting ? "জমা হচ্ছে..." : "আবেদন জমা করুন"}
               </Button>
             </form>
           </CardContent>

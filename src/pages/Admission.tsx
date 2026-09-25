@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserPlus, Users, TrendingUp, CalendarDays, CalendarRange, UserCheck, FileSpreadsheet, ListChecks } from "lucide-react";
+import { UserPlus, Users, TrendingUp, CalendarDays, CalendarRange, UserCheck, FileSpreadsheet, ListChecks, ClipboardList } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { useStudents } from "@/contexts/StudentContext";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
@@ -56,6 +56,10 @@ const Admission = () => {
             </Button>
             <Button variant="outline" onClick={() => navigate("/admission/import")}>
               <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel থেকে ভর্তি
+            </Button>
+            {/* Student Entry Workflow — /newstudententry submissions (and their /studententry completions) land here, awaiting approval. */}
+            <Button variant="outline" onClick={() => navigate("/admission/pending")}>
+              <ClipboardList className="mr-2 h-4 w-4" /> পেন্ডিং আবেদন
             </Button>
             <Button onClick={() => setFormOpen(true)}>
               <UserPlus className="mr-2 h-4 w-4" /> নতুন ভর্তি

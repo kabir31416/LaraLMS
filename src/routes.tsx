@@ -29,6 +29,7 @@ import ChanceResults from "./pages/ChanceResults";
 import ResultManagement from "./pages/ResultManagement";
 import StudentImportUpload from "./pages/StudentImportUpload";
 import StudentImportPreview from "./pages/StudentImportPreview";
+import PendingStudents from "./pages/PendingStudents";
 
 // Shared (Admin + Director)
 import Exams from "./pages/Exams";
@@ -66,6 +67,7 @@ export function AppRoutes() {
         <Route path="/admission" element={<Admission />} />
         <Route path="/admission/import" element={<StudentImportUpload />} />
         <Route path="/admission/import/:sessionId" element={<StudentImportPreview />} />
+        <Route path="/admission/pending" element={<PendingStudents />} />
         <Route path="/fees" element={<FeeManagement />} />
         <Route path="/books" element={<Books />} />
         <Route path="/accounts" element={<Accounts />} />

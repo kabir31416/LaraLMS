@@ -27,3 +27,17 @@ export const STUDENT_STATUS = ["সক্রিয়", "নিষ্ক্র�
  * normalizing old values.
  */
 export const HSC_SSC_GROUPS = ["বিজ্ঞান", "মানবিক", "ব্যবসায়"] as const;
+
+/**
+ * Student Entry Workflow — a student created through the public entry flows
+ * (/newstudententry, then optionally completed via /studententry) starts
+ * `"pending"` and is never treated as a real, batch-enrolled student until an
+ * Admin explicitly approves it. Deliberately a SEPARATE field from `status`
+ * above (Active/Inactive) rather than a third value added to that enum —
+ * `status` is a well-established 2-value field read across exports/reports/
+ * filters everywhere else in the app, and retrofitting it risks surprising
+ * every one of those call sites. An absent `admissionStatus` (every student
+ * created any other way — Admin Admission, Bulk Import, Excel) is treated as
+ * already-approved by construction (see student.service.ts's buildStudentFilter).
+ */
+export const ADMISSION_ENTRY_STATUS = ["pending", "approved", "rejected"] as const;
