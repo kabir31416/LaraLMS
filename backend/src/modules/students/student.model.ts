@@ -1,5 +1,5 @@
 import { Schema, model, Document, Types } from "mongoose";
-import { ADMISSION_TYPES, FEE_TYPES, GENDERS, STUDENT_STATUS } from "./student.constants";
+import { ADMISSION_ENTRY_STATUS, ADMISSION_TYPES, FEE_TYPES, GENDERS, STUDENT_STATUS } from "./student.constants";
 
 export interface ProfileCompletion {
   status: "incomplete" | "complete";
@@ -103,6 +103,21 @@ export interface StudentDoc extends Document {
    */
   admissionRoll?: string;
 
+  /**
+   * Student Entry Workflow — undefined means "not a pending application at
+   * all" (Admin Admission, Bulk Import, every pre-existing student), and is
+   * treated as already-approved everywhere this is checked. Only a student
+   * created via /newstudententry starts as `"pending"`.
+   */
+  admissionStatus?: (typeof ADMISSION_ENTRY_STATUS)[number];
+  /** The batch requested at pending-submission time — not yet a real enrollment (BatchEnrollment/`currentBatchId` are only set once an Admin approves). */
+  requestedBatchId?: Types.ObjectId;
+  approvedAt?: Date;
+  approvedBy?: Types.ObjectId;
+  rejectedAt?: Date;
+  rejectedBy?: Types.ObjectId;
+  rejectionReason?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -187,6 +202,14 @@ const studentSchema = new Schema<StudentDoc>(
     profileCompletion: { type: profileCompletionSchema, default: () => ({ status: "incomplete", percent: 0, missingFields: [] }) },
 
     admissionRoll: { type: String, trim: true },
+
+    admissionStatus: { type: String, enum: ADMISSION_ENTRY_STATUS },
+    requestedBatchId: { type: Schema.Types.ObjectId, ref: "Batch" },
+    approvedAt: Date,
+    approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    rejectedAt: Date,
+    rejectedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    rejectionReason: { type: String, trim: true },
   },
   { timestamps: true },
 );

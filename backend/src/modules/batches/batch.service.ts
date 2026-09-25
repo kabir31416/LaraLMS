@@ -32,6 +32,22 @@ export async function getById(id: string): Promise<BatchDoc> {
   return doc;
 }
 
+/**
+ * Student Entry Workflow — the backend is authoritative for "does this Batch
+ * actually belong to this Course," never trusting a client-submitted pair
+ * blindly (both /newstudententry's submission and its admin-approval step
+ * re-check this). No such check existed anywhere in the codebase before this
+ * — enrollStudent() just snapshots whatever batch is given.
+ */
+export async function assertBatchBelongsToCourse(batchId: string, courseId: string): Promise<BatchDoc> {
+  const batch = await Batch.findById(batchId);
+  if (!batch) throw ApiError.notFound("Batch not found");
+  if (String(batch.courseId) !== String(courseId)) {
+    throw ApiError.badRequest("নির্বাচিত ব্যাচটি এই কোর্সের অন্তর্ভুক্ত নয়");
+  }
+  return batch;
+}
+
 export async function create(req: Request, data: Partial<BatchDoc>) {
   const doc = await Batch.create(data);
   await recordAudit({ req, action: "batch.create", module: "batches", targetCollection: "batches", targetId: String(doc._id), after: doc.toObject() });

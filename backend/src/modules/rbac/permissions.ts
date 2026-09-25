@@ -25,6 +25,8 @@ export const PERMISSIONS = {
   STUDENTS_DELETE: "students:delete",
   STUDENTS_MANAGE_ROLL: "students:manage-roll",
   STUDENTS_MANAGE_ADMISSION_ROLL_OWN_BATCH: "students:manage-admission-roll:own-batch",
+  /** Student Entry Workflow — approve/reject a pending /newstudententry (or student-completed) application. Separate from STUDENTS_UPDATE so it can be granted/denied independently. */
+  STUDENTS_APPROVE_ENTRY: "students:approve-entry",
 
   // Batches & enrollment
   BATCHES_MANAGE: "batches:manage",

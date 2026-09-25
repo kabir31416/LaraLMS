@@ -15,7 +15,9 @@ interface Envelope<T> {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  // Never set Content-Type for FormData — the browser must set its own
+  // multipart boundary (same pattern as studentEntryClient.ts's postForm).
+  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
 
   const res = await fetch(`${BASE_URL}/public/new-student-entry${path}`, { ...options, headers });
   const body = (await res.json().catch(() => ({ success: false, error: { code: "PARSE_ERROR", message: "Invalid server response" } }))) as Envelope<T>;
@@ -28,4 +30,5 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const newStudentEntryApi = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, data?: unknown) => request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
 };

@@ -329,6 +329,19 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
   if (typeof req.query.feeType === "string" && req.query.feeType.trim()) {
     filter.feeType = req.query.feeType;
   }
+
+  // Student Entry Workflow — a pending or rejected public-entry application
+  // is not a real student yet, so every default Student List/export/stats
+  // view excludes both by construction. The Admin Pending Applications page
+  // is the one caller that explicitly asks for a specific admissionStatus.
+  // `$nin` also matches documents where the field is simply absent (every
+  // student created any other way), so nothing else needs to change.
+  if (typeof req.query.admissionStatus === "string" && req.query.admissionStatus.trim()) {
+    filter.admissionStatus = req.query.admissionStatus.trim();
+  } else {
+    filter.admissionStatus = { $nin: ["pending", "rejected"] };
+  }
+
   return filter;
 }
 
@@ -595,6 +608,83 @@ async function getDocOrThrow(id: string): Promise<StudentDoc> {
   const doc = await Student.findById(id);
   if (!doc) throw ApiError.notFound("Student not found");
   return doc;
+}
+
+/**
+ * Student Entry Workflow — approving a pending /newstudententry (or a
+ * student-completed one via /studententry) fully re-validates everything the
+ * original submission checked, never trusting that nothing changed in the
+ * meantime (the referenced Course/Batch could have been edited or deleted
+ * since submission). Reuses the exact same enrollment.service.ts
+ * `enrollStudent()` every other batch-assignment path in the app already
+ * goes through — no second Student↔Batch relationship is created here.
+ */
+export async function approveEntry(req: Request, id: string): Promise<Record<string, unknown>> {
+  const doc = await getDocOrThrow(id);
+  if (doc.admissionStatus !== "pending") {
+    throw ApiError.conflict(
+      doc.admissionStatus === "approved" ? "এই আবেদনটি ইতিমধ্যে অনুমোদিত হয়েছে" : "এই আবেদনটি বাতিল করা হয়েছে — অনুমোদন করা যাবে না",
+    );
+  }
+  if (!doc.courseId) throw ApiError.badRequest("এই আবেদনে কোনো কোর্স নির্ধারিত নেই");
+  if (!doc.requestedBatchId) throw ApiError.badRequest("এই আবেদনে কোনো ব্যাচের অনুরোধ নেই");
+
+  const { assertBatchBelongsToCourse } = await import("../batches/batch.service");
+  await assertBatchBelongsToCourse(String(doc.requestedBatchId), String(doc.courseId));
+
+  const before = doc.toObject();
+  const enrollmentService = await import("../enrollments/enrollment.service");
+  await enrollmentService.enrollStudent(req, id, String(doc.requestedBatchId));
+
+  const fresh = await getDocOrThrow(id);
+  fresh.admissionStatus = "approved";
+  fresh.approvedAt = new Date();
+  fresh.approvedBy = req.user?.id as never;
+  await fresh.save();
+
+  await recordAudit({
+    req,
+    action: "student.approve-entry",
+    module: "students",
+    targetCollection: "students",
+    targetId: id,
+    before,
+    after: fresh.toObject(),
+  });
+  return withGuardian(fresh);
+}
+
+/**
+ * Student Entry Workflow — rejecting a pending application never touches
+ * enrollment (it was never enrolled in the first place — `requestedBatchId`
+ * only ever becomes a real `currentBatchId`/BatchEnrollment on approval), and
+ * never deletes the record — the submitted data + rejection reason stay in
+ * the database for audit/history, exactly as required.
+ */
+export async function rejectEntry(req: Request, id: string, reason?: string): Promise<Record<string, unknown>> {
+  const doc = await getDocOrThrow(id);
+  if (doc.admissionStatus !== "pending") {
+    throw ApiError.conflict(
+      doc.admissionStatus === "approved" ? "এই আবেদনটি ইতিমধ্যে অনুমোদিত হয়েছে — বাতিল করা যাবে না" : "এই আবেদনটি ইতিমধ্যে বাতিল করা হয়েছে",
+    );
+  }
+  const before = doc.toObject();
+  doc.admissionStatus = "rejected";
+  doc.rejectedAt = new Date();
+  doc.rejectedBy = req.user?.id as never;
+  if (reason?.trim()) doc.rejectionReason = reason.trim();
+  await doc.save();
+
+  await recordAudit({
+    req,
+    action: "student.reject-entry",
+    module: "students",
+    targetCollection: "students",
+    targetId: id,
+    before,
+    after: doc.toObject(),
+  });
+  return withGuardian(doc);
 }
 
 /** Roll + Name + Phone only — Phase 1 §2/§13. */

@@ -10,6 +10,7 @@ export const STUDENTS_CREATE = "students:create";
 export const STUDENTS_UPDATE = "students:update";
 export const STUDENTS_DELETE = "students:delete";
 export const STUDENTS_MANAGE_ROLL = "students:manage-roll";
+export const STUDENTS_APPROVE_ENTRY = "students:approve-entry";
 export const PAYMENTS_READ = "payments:read";
 export const PAYMENTS_CREATE = "payments:create";
 export const PAYMENTS_DELETE = "payments:delete";

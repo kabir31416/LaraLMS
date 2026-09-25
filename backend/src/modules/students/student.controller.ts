@@ -78,6 +78,12 @@ export const updateRoll = asyncHandler(async (req: Request, res: Response) => se
 
 export const updateStatus = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.updateStatus(req, req.params.id, req.body.status)));
 
+export const approveEntry = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.approveEntry(req, req.params.id)));
+
+export const rejectEntry = asyncHandler(async (req: Request, res: Response) =>
+  sendSuccess(res, await service.rejectEntry(req, req.params.id, req.body.reason)),
+);
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   await service.remove(req, req.params.id);
   sendSuccess(res, { deleted: true });

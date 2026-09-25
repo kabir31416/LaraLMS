@@ -74,6 +74,11 @@ async function toEntryProfileView(doc: StudentDoc): Promise<Record<string, unkno
     course: doc.course ?? null,
     batchName,
     guardianMobile: guardian?.phone ?? null,
+    // Student Entry Workflow — lets the page show a "still pending Admin
+    // approval" banner and enforce its own required-photo rule; undefined/
+    // "approved" both mean "not pending," matching student.service.ts's
+    // buildStudentFilter treating an absent admissionStatus as approved.
+    admissionStatus: doc.admissionStatus ?? "approved",
     // Editable subset — mirrors updatePublicProfileSchema exactly.
     presentAddress: doc.presentAddress ?? "",
     permanentAddress: doc.permanentAddress ?? "",
@@ -109,9 +114,27 @@ export async function getProfile(studentId: string): Promise<Record<string, unkn
   return toEntryProfileView(doc);
 }
 
-/** The patch is already whitelisted by updatePublicProfileSchema (.strict()) — reuses student.service.ts's updateSelf so this never re-implements HSC-master-data sync, guardian upsert, or profile-completion refresh a second time. */
+/**
+ * The patch is already whitelisted by updatePublicProfileSchema (.strict()) —
+ * reuses student.service.ts's updateSelf so this never re-implements
+ * HSC-master-data sync, guardian upsert, or profile-completion refresh a
+ * second time.
+ *
+ * Student Entry Workflow §10 — a still-`"pending"` application (created via
+ * /newstudententry, now being completed here) MUST have a photo before this
+ * save is accepted; the backend is authoritative for this, never trusting
+ * the frontend's own required-photo check alone. An already-approved
+ * student (every other /studententry use case — completing/editing a
+ * profile after admin approval) is completely unaffected. The student
+ * uploads the photo first via the separate POST /photo endpoint (same as
+ * the existing upload/replace flow), then this save simply verifies one is
+ * now on file — it never accepts a photo file itself.
+ */
 export async function updateProfile(req: Request, studentId: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
-  await getVerifiedStudent(studentId); // 404s cleanly if the record vanished since the token was issued
+  const before = await getVerifiedStudent(studentId); // 404s cleanly if the record vanished since the token was issued
+  if (before.admissionStatus === "pending" && !before.photoUrl) {
+    throw ApiError.badRequest("প্রোফাইল সংরক্ষণের আগে একটি ছবি আপলোড করুন।");
+  }
   await studentService.updateSelf(req, studentId, patch);
   const doc = await getVerifiedStudent(studentId);
   return toEntryProfileView(doc);

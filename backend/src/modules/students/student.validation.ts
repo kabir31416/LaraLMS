@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ADMISSION_TYPES, FEE_TYPES, GENDERS, HSC_SSC_GROUPS, STUDENT_STATUS } from "./student.constants";
+import { ADMISSION_ENTRY_STATUS, ADMISSION_TYPES, FEE_TYPES, GENDERS, HSC_SSC_GROUPS, STUDENT_STATUS } from "./student.constants";
 import { RELATIONS } from "./student.constants";
 
 /** ০.০০–৫.০০ (Bangladesh GPA scale) — the only existing convention to reuse is "GPA is a free-text string field," so this is a new-but-minimal format/range check, not a reinterpretation of stored data. Blank stays valid (GPA is the one HSC/SSC field that stays optional — HSC/SSC required-fields audit §6). */
@@ -220,9 +220,16 @@ export const listStudentsQuerySchema = z.object({
     profileStatus: z.enum(["incomplete", "complete"]).optional(),
     admissionRollStatus: z.enum(["added", "missing"]).optional(),
     feeType: z.enum(FEE_TYPES).optional(),
+    /** Student Entry Workflow — omitted means "exclude pending/rejected" (student.service.ts's buildStudentFilter); the Admin Pending page is the one caller that sends this explicitly. */
+    admissionStatus: z.enum(ADMISSION_ENTRY_STATUS).optional(),
     sortBy: z.string().optional(),
     sortOrder: z.enum(["asc", "desc"]).optional(),
   }),
+});
+
+export const rejectEntrySchema = z.object({
+  params: z.object({ id: z.string().length(24) }),
+  body: z.object({ reason: z.string().trim().max(500).optional() }),
 });
 
 export const admissionRollStatsQuerySchema = z.object({

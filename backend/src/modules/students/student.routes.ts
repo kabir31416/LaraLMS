@@ -10,6 +10,7 @@ import {
   idParamSchema,
   listStudentsQuerySchema,
   quickCreateStudentSchema,
+  rejectEntrySchema,
   updateAdmissionRollSchema,
   updateRollSchema,
   updateSelfSchema,
@@ -87,6 +88,11 @@ router.patch(
   controller.updateAdmissionRoll,
 );
 router.patch("/:id/status", requirePermission(PERMISSIONS.STUDENTS_UPDATE), validate(updateStatusSchema), controller.updateStatus);
+// Student Entry Workflow — approve/reject a pending /newstudententry (or
+// student-completed via /studententry) application. A separate permission
+// from STUDENTS_UPDATE so it can be granted/denied independently.
+router.post("/:id/approve-entry", requirePermission(PERMISSIONS.STUDENTS_APPROVE_ENTRY), validate(idParamSchema), controller.approveEntry);
+router.post("/:id/reject-entry", requirePermission(PERMISSIONS.STUDENTS_APPROVE_ENTRY), validate(rejectEntrySchema), controller.rejectEntry);
 // Admin upload/replace/remove — same STUDENTS_UPDATE permission every other
 // admin edit to this student already requires, no separate privilege.
 router.post("/:id/photo", requirePermission(PERMISSIONS.STUDENTS_UPDATE), validate(idParamSchema), photoUpload.single("photo"), controller.uploadPhoto);
