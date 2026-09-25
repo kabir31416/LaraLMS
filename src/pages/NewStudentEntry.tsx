@@ -161,7 +161,7 @@ export default function NewStudentEntry() {
                 <p className="text-sm font-medium">{result.name}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">রোল নম্বর</p>
+                <p className="text-xs text-muted-foreground">রেজিস্ট্রেশন নম্বর</p>
                 <p className="text-sm font-medium">{result.rollNumber || "—"}</p>
               </div>
               <div>
@@ -205,7 +205,7 @@ export default function NewStudentEntry() {
                 <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
               </div>
               <div className="space-y-1.5">
-                <Label>রোল নম্বর *</Label>
+                <Label>রেজিস্ট্রেশন নম্বর *</Label>
                 <Input value={rollNumber} onChange={(e) => setRollNumber(e.target.value)} autoComplete="off" />
               </div>
               <div className="space-y-1.5">

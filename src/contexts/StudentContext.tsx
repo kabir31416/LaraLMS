@@ -80,6 +80,8 @@ export interface ApiStudent {
   guardianMobile?: string;
   guardianOccupation?: string;
   guardianAddress?: string;
+  admissionStatus?: Student["admissionStatus"];
+  requestedBatchId?: string;
 }
 
 /** Exported so the Student List page (Students.tsx) can map its own server-paginated/filtered fetch through the exact same field translation, without duplicating it or routing that fetch through this context's own 100-row-capped global list. */
@@ -148,6 +150,8 @@ export function fromApi(doc: ApiStudent): Student {
     guardianMobile: doc.guardianMobile,
     guardianOccupation: doc.guardianOccupation,
     guardianAddress: doc.guardianAddress,
+    admissionStatus: doc.admissionStatus,
+    requestedBatchId: doc.requestedBatchId,
   };
 }
 
@@ -182,6 +186,9 @@ interface StudentContextType {
   transferStudent: (studentId: string, toBatchId: string, reason: string, newRollNumber?: string) => Promise<void>;
   withdrawStudent: (studentId: string, reason?: string) => Promise<void>;
   refreshStudents: () => Promise<void>;
+  // Student Entry Workflow
+  approveEntry: (id: string) => Promise<Student>;
+  rejectEntry: (id: string, reason?: string) => Promise<Student>;
 }
 
 const StudentContext = createContext<StudentContextType | null>(null);
@@ -254,6 +261,19 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
     setStudents((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  /** Student Entry Workflow — approve/reject a pending entry directly from the Student List's own row menu. Reuses the same backend endpoints the dedicated Pending Applications page uses. */
+  const approveEntry = useCallback(async (id: string): Promise<Student> => {
+    const updated = fromApi(await api.post<ApiStudent>(`/students/${id}/approve-entry`, {}));
+    upsertLocal(updated);
+    return updated;
+  }, [upsertLocal]);
+
+  const rejectEntry = useCallback(async (id: string, reason?: string): Promise<Student> => {
+    const updated = fromApi(await api.post<ApiStudent>(`/students/${id}/reject-entry`, { reason }));
+    upsertLocal(updated);
+    return updated;
+  }, [upsertLocal]);
+
   const getStudent = useCallback((id: string) => students.find((s) => s.id === id), [students]);
 
   const enrollStudent = useCallback(async (studentId: string, batchId: string) => {
@@ -276,9 +296,10 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
       students, loading,
       addStudent, addStudentQuick, updateStudent, updateRoll, uploadStudentPhoto, deleteStudentPhoto, deleteStudent, getStudent,
       enrollStudent, transferStudent, withdrawStudent, refreshStudents,
+      approveEntry, rejectEntry,
     }),
     [students, loading, addStudent, addStudentQuick, updateStudent, updateRoll, uploadStudentPhoto, deleteStudentPhoto, deleteStudent, getStudent,
-      enrollStudent, transferStudent, withdrawStudent, refreshStudents],
+      enrollStudent, transferStudent, withdrawStudent, refreshStudents, approveEntry, rejectEntry],
   );
 
   return <StudentContext.Provider value={value}>{children}</StudentContext.Provider>;

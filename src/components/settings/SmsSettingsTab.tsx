@@ -42,16 +42,16 @@ const EVENT_LABELS: { key: SmsEvent; label: string }[] = [
 // Mirrors backend/src/modules/sms/sms.constants.ts's variable lists exactly — never invent a placeholder the backend doesn't actually resolve.
 const ADMISSION_VARIABLES: SmsTemplateVariable[] = [
   { key: "studentName", label: "শিক্ষার্থীর নাম" },
-  { key: "registrationId", label: "রেজিস্ট্রেশন আইডি" },
-  { key: "roll", label: "রোল নম্বর" },
+  { key: "registrationId", label: "আইডি" },
+  { key: "roll", label: "রেজিস্ট্রেশন নম্বর" },
   { key: "courseName", label: "কোর্সের নাম" },
   { key: "batchName", label: "ব্যাচের নাম" },
   { key: "guardianName", label: "অভিভাবকের নাম" },
 ];
 const PAYMENT_VARIABLES: SmsTemplateVariable[] = [
   { key: "studentName", label: "শিক্ষার্থীর নাম" },
-  { key: "registrationId", label: "রেজিস্ট্রেশন আইডি" },
-  { key: "roll", label: "রোল নম্বর" },
+  { key: "registrationId", label: "আইডি" },
+  { key: "roll", label: "রেজিস্ট্রেশন নম্বর" },
   { key: "courseName", label: "কোর্সের নাম" },
   { key: "paymentAmount", label: "এই পেমেন্টের পরিমাণ" },
   { key: "totalPaid", label: "সর্বমোট পরিশোধিত" },
@@ -60,8 +60,8 @@ const PAYMENT_VARIABLES: SmsTemplateVariable[] = [
 ];
 const BIRTHDAY_VARIABLES: SmsTemplateVariable[] = [
   { key: "studentName", label: "শিক্ষার্থীর নাম" },
-  { key: "registrationId", label: "রেজিস্ট্রেশন আইডি" },
-  { key: "roll", label: "রোল নম্বর" },
+  { key: "registrationId", label: "আইডি" },
+  { key: "roll", label: "রেজিস্ট্রেশন নম্বর" },
   { key: "courseName", label: "কোর্সের নাম" },
   { key: "guardianName", label: "অভিভাবকের নাম" },
 ];

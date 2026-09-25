@@ -285,7 +285,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
               <div>
                 <CardTitle className="text-base">{detail.student.name}</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  আইডি: {detail.student.registrationId} • রোল: {detail.student.rollNumber || "—"} • কোর্স: {detail.student.course || "—"} • ব্যাচ: {detail.student.batchName || "—"} • মোবাইল: {detail.student.phone}
+                  আইডি: {detail.student.registrationId} • রেজিস্ট্রেশন: {detail.student.rollNumber || "—"} • কোর্স: {detail.student.course || "—"} • ব্যাচ: {detail.student.batchName || "—"} • মোবাইল: {detail.student.phone}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -353,7 +353,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>খুঁজুন (আইডি, রোল, নাম বা মোবাইল)</Label>
+            <Label>খুঁজুন (আইডি, রেজিস্ট্রেশন নম্বর, নাম বা মোবাইল)</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="খুঁজুন..." className="pl-9" />
@@ -375,7 +375,7 @@ function IndividualResultTab({ isDirector }: { isDirector: boolean }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]">SL</TableHead>
-                    <TableHead>রোল</TableHead>
+                    <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                     <TableHead>Registration ID</TableHead>
                     <TableHead>নাম</TableHead>
                     <TableHead>মোবাইল</TableHead>
@@ -668,7 +668,7 @@ function BatchResultTab({ isDirector }: { isDirector: boolean }) {
     if (!view) return;
     printReport(
       `ব্যাচভিত্তিক ফলাফল — ${view.batch.name}`,
-      ["SL", "রোল", "রেজিঃ আইডি", "নাম", ...view.columns.map((c) => `${c.subjectName} (${c.date})`), "মোট প্রাপ্ত", "মোট পূর্ণমান", "শতকরা", "গ্রেড"],
+      ["SL", "রেজিস্ট্রেশন নম্বর", "আইডি", "নাম", ...view.columns.map((c) => `${c.subjectName} (${c.date})`), "মোট প্রাপ্ত", "মোট পূর্ণমান", "শতকরা", "গ্রেড"],
       view.rows.map((r, i) => [
         i + 1, r.rollNumber, r.registrationId, r.name,
         ...r.cells.map((c) => (c.status === "na" ? "না" : c.status === "absent" ? "অনুপস্থিত" : c.value ?? "-")),
@@ -682,7 +682,7 @@ function BatchResultTab({ isDirector }: { isDirector: boolean }) {
     exportExcel({
       filename: `batch-result-${view.batch.name}`,
       title: `ব্যাচভিত্তিক ফলাফল — ${view.batch.name}`,
-      headers: ["SL", "রোল", "রেজিঃ আইডি", "নাম", ...view.columns.map((c) => `${c.subjectName} (${c.date})`), "মোট প্রাপ্ত", "মোট পূর্ণমান", "শতকরা", "গ্রেড"],
+      headers: ["SL", "রেজিস্ট্রেশন নম্বর", "আইডি", "নাম", ...view.columns.map((c) => `${c.subjectName} (${c.date})`), "মোট প্রাপ্ত", "মোট পূর্ণমান", "শতকরা", "গ্রেড"],
       rows: view.rows.map((r, i) => [
         i + 1, r.rollNumber, r.registrationId, r.name,
         ...r.cells.map((c) => (c.status === "na" ? "না" : c.status === "absent" ? "অনুপস্থিত" : c.value ?? "-")),
@@ -772,7 +772,7 @@ function BatchResultTab({ isDirector }: { isDirector: boolean }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]">SL</TableHead>
-                    <TableHead>রোল</TableHead>
+                    <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                     <TableHead>রেজিঃ আইডি</TableHead>
                     <TableHead>নাম</TableHead>
                     {view.columns.map((c) => (

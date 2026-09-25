@@ -89,6 +89,11 @@ export interface Student {
   // Status
   status: "সক্রিয়" | "নিষ্ক্রিয়";
   profileCompletion?: ProfileCompletion;
+
+  /** Student Entry Workflow — undefined/"approved" means a normal student (every admission path except a still-pending public entry). */
+  admissionStatus?: "pending" | "approved" | "rejected";
+  /** The batch requested at pending-submission time, before an Admin approves and actually enrolls the student. */
+  requestedBatchId?: string;
 }
 
 export interface Payment {

@@ -92,7 +92,7 @@ function SelectScreen({ onSelect }: { onSelect: (s: ScreenType) => void }) {
         >
           <UserRound className="h-8 w-8 text-primary" />
           <span className="font-semibold">ব্যক্তিগত ফলাফল</span>
-          <span className="text-xs text-muted-foreground">রোল নম্বর দিয়ে নিজের ফলাফল দেখুন</span>
+          <span className="text-xs text-muted-foreground">রেজিস্ট্রেশন নম্বর দিয়ে নিজের ফলাফল দেখুন</span>
         </button>
       </CardContent>
     </Card>
@@ -232,7 +232,7 @@ function BatchMasterSheetDisplay({ data, institution }: { data: BatchMasterSheet
             <Table className="text-sm">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky left-0 z-20 bg-muted/70 min-w-[80px]">রোল</TableHead>
+                  <TableHead className="sticky left-0 z-20 bg-muted/70 min-w-[80px]">রেজিস্ট্রেশন নম্বর</TableHead>
                   <TableHead className="sticky left-[80px] z-20 bg-muted/70 min-w-[140px]">নাম</TableHead>
                   {columns.map((c, i) => (
                     <TableHead key={i} className="text-center whitespace-nowrap min-w-[90px]">
@@ -287,7 +287,7 @@ function IndividualScreen({ onBack, institution }: { onBack: () => void; institu
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (searching) return; // duplicate-submit prevention
-    if (!roll.trim()) { toast.error("সঠিক রোল নম্বর প্রদান করুন।"); return; }
+    if (!roll.trim()) { toast.error("সঠিক রেজিস্ট্রেশন নম্বর প্রদান করুন।"); return; }
     if (!startDate || !endDate) { toast.error("সঠিক তারিখ নির্বাচন করুন।"); return; }
     if (startDate > endDate) { toast.error("শুরু তারিখ শেষ তারিখের পরে হতে পারবে না।"); return; }
 
@@ -314,7 +314,7 @@ function IndividualScreen({ onBack, institution }: { onBack: () => void; institu
           <form className="space-y-4" onSubmit={handleSearch}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1.5">
-                <Label>রোল নম্বর</Label>
+                <Label>রেজিস্ট্রেশন নম্বর</Label>
                 <Input value={roll} onChange={(e) => setRoll(e.target.value)} placeholder="যেমন: ১০১" autoFocus />
               </div>
               <div className="space-y-1.5">
@@ -370,7 +370,7 @@ function IndividualResultDisplay({ data, institution }: { data: IndividualResult
         </CardHeader>
         <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
           <div><p className="text-xs text-muted-foreground">নাম</p><p className="font-medium">{student.name}</p></div>
-          <div><p className="text-xs text-muted-foreground">রোল নম্বর</p><p className="font-medium">{student.rollNumber}</p></div>
+          <div><p className="text-xs text-muted-foreground">রেজিস্ট্রেশন নম্বর</p><p className="font-medium">{student.rollNumber}</p></div>
           <div><p className="text-xs text-muted-foreground">কোর্স</p><p className="font-medium">{student.course || "—"}</p></div>
           <div><p className="text-xs text-muted-foreground">ব্যাচ</p><p className="font-medium">{student.batch || "—"}</p></div>
           <div className="col-span-2 sm:col-span-4">

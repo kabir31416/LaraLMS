@@ -336,7 +336,7 @@ function DistributionHistory({ batches }: { batches: { id: string; name: string 
 
   return (
     <div className="space-y-3">
-      <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="শিক্ষার্থীর নাম, রোল বা রেজিস্ট্রেশন আইডি দিয়ে খুঁজুন..." className="max-w-md" />
+      <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="শিক্ষার্থীর নাম, রেজিস্ট্রেশন নম্বর বা আইডি দিয়ে খুঁজুন..." className="max-w-md" />
       <Card className="border-none shadow-sm">
         {loading ? (
           <CardContent className="py-12 text-center text-muted-foreground">লোড হচ্ছে...</CardContent>

@@ -18,7 +18,7 @@ import { toast } from "sonner";
  */
 const ALLOWED_FIELDS: { key: string; label: string }[] = [
   { key: "photo", label: "শিক্ষার্থীর ছবি" },
-  { key: "registrationId", label: "রেজিস্ট্রেশন আইডি" },
+  { key: "registrationId", label: "আইডি" },
   { key: "course", label: "কোর্স" },
   { key: "batch", label: "ব্যাচ" },
   { key: "rank", label: "অবস্থান (Top 3)" },
@@ -65,7 +65,7 @@ export function PublicMarksheetTab() {
     <Card className="border-none shadow-sm max-w-2xl">
       <CardHeader>
         <CardTitle className="text-base">পাবলিক মার্কশিট (/marksheet)</CardTitle>
-        <p className="text-xs text-muted-foreground">লগইন ছাড়াই যে কেউ রোল নম্বর দিয়ে ফলাফল দেখতে পারবে — নিচে নিয়ন্ত্রণ করুন</p>
+        <p className="text-xs text-muted-foreground">লগইন ছাড়াই যে কেউ রেজিস্ট্রেশন নম্বর দিয়ে ফলাফল দেখতে পারবে — নিচে নিয়ন্ত্রণ করুন</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between border rounded-lg p-3">

@@ -3,6 +3,11 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Pagination,
   PaginationContent,
@@ -14,13 +19,14 @@ import {
 import { UserPlus, Printer, FileSpreadsheet } from "lucide-react";
 import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
+import { STUDENTS_APPROVE_ENTRY } from "@/lib/permissions";
 import { StudentFilters, type DueStatus } from "@/components/students/StudentFilters";
 import { StudentTable } from "@/components/students/StudentTable";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
 import type { Student } from "@/types/student";
 import { toast } from "sonner";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { ApiClientError, useAuth, hasPermission } from "@/contexts/AuthContext";
 import { api } from "@/lib/apiClient";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { exportExcel, printReport } from "@/lib/exporters";
@@ -64,8 +70,10 @@ function friendlyError(err: unknown, fallback: string): string {
 }
 
 const Students = () => {
-  const { deleteStudent, uploadStudentPhoto, deleteStudentPhoto } = useStudents();
+  const { deleteStudent, uploadStudentPhoto, deleteStudentPhoto, approveEntry, rejectEntry } = useStudents();
   const { getCourse } = useAcademic();
+  const { user } = useAuth();
+  const canApproveEntry = hasPermission(user, STUDENTS_APPROVE_ENTRY);
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 350);
@@ -91,6 +99,9 @@ const Students = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [photoStudent, setPhotoStudent] = useState<Student | null>(null);
+  const [rejecting, setRejecting] = useState<Student | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [entryBusyId, setEntryBusyId] = useState<string | null>(null);
 
   const courseName = courseId === "all" ? undefined : getCourse(courseId)?.name;
 
@@ -146,6 +157,37 @@ const Students = () => {
     }
   };
 
+  /** Student Entry Workflow — Approve/Reject reachable straight from the Student List's own 3-dot menu, same endpoints the dedicated Pending Applications page uses. */
+  const handleApprove = async (student: Student) => {
+    if (entryBusyId) return;
+    setEntryBusyId(student.id);
+    try {
+      await approveEntry(student.id);
+      toast.success(`${student.name}-কে অনুমোদন করা হয়েছে`);
+      load();
+    } catch (err) {
+      toast.error(friendlyError(err, "অনুমোদন করা যায়নি"));
+    } finally {
+      setEntryBusyId(null);
+    }
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejecting || entryBusyId) return;
+    setEntryBusyId(rejecting.id);
+    try {
+      await rejectEntry(rejecting.id, rejectReason.trim() || undefined);
+      toast.success(`${rejecting.name}-এর আবেদন বাতিল করা হয়েছে`);
+      setRejecting(null);
+      setRejectReason("");
+      load();
+    } catch (err) {
+      toast.error(friendlyError(err, "বাতিল করা যায়নি"));
+    } finally {
+      setEntryBusyId(null);
+    }
+  };
+
   const handlePhotoOpenChange = (open: boolean) => {
     if (!open) {
       setPhotoStudent(null);
@@ -168,7 +210,7 @@ const Students = () => {
     try {
       const rows = await fetchFilteredForExport();
       if (rows.length === 0) { toast.error("বর্তমান ফিল্টারে কোনো শিক্ষার্থী পাওয়া যায়নি।"); return; }
-      const headers = ["নাম", "রোল", "রেজিস্ট্রেশন আইডি", "মোবাইল", "অভিভাবকের নম্বর", "জন্মতারিখ", "কোর্স", "ব্যাচ", "HSC প্রতিষ্ঠান", "বকেয়া"];
+      const headers = ["নাম", "রেজিস্ট্রেশন নম্বর", "আইডি", "মোবাইল", "অভিভাবকের নম্বর", "জন্মতারিখ", "কোর্স", "ব্যাচ", "HSC প্রতিষ্ঠান", "বকেয়া"];
       const dataRows = rows.map((r) => [
         r.name, r.rollNumber || "—", r.registrationId, r.phone, r.guardianMobile || "—",
         r.dob || "—", r.course || "—", r.batchName || "—", r.hscInstitution || "—",
@@ -187,7 +229,7 @@ const Students = () => {
     try {
       const rows = await fetchFilteredForExport();
       if (rows.length === 0) { toast.error("বর্তমান ফিল্টারে কোনো শিক্ষার্থী পাওয়া যায়নি।"); return; }
-      const headers = ["নাম", "রোল", "রেজিস্ট্রেশন আইডি", "মোবাইল", "অভিভাবকের নম্বর", "জন্মতারিখ", "কোর্স", "ব্যাচ", "HSC প্রতিষ্ঠান", "বকেয়া", "স্ট্যাটাস"];
+      const headers = ["নাম", "রেজিস্ট্রেশন নম্বর", "আইডি", "মোবাইল", "অভিভাবকের নম্বর", "জন্মতারিখ", "কোর্স", "ব্যাচ", "HSC প্রতিষ্ঠান", "বকেয়া", "স্ট্যাটাস"];
       const dataRows = rows.map((r) => [
         r.name, r.rollNumber || "—", r.registrationId, r.phone, r.guardianMobile || "—",
         r.dob || "—", r.course || "—", r.batchName || "—", r.hscInstitution || "—", r.due, r.status,
@@ -248,7 +290,14 @@ const Students = () => {
           {loading ? (
             <div className="p-6 space-y-3">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
-            <StudentTable students={students} onEdit={handleEdit} onDelete={handleDelete} onUploadPhoto={setPhotoStudent} />
+            <StudentTable
+              students={students}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onUploadPhoto={setPhotoStudent}
+              onApprove={canApproveEntry ? handleApprove : undefined}
+              onReject={canApproveEntry ? setRejecting : undefined}
+            />
           )}
 
           {meta && meta.totalPages > 1 && (
@@ -302,6 +351,24 @@ const Students = () => {
             onRemove={async () => { await deleteStudentPhoto(photoStudent.id); }}
           />
         )}
+
+        <AlertDialog open={!!rejecting} onOpenChange={(v) => { if (!v) { setRejecting(null); setRejectReason(""); } }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>আবেদন বাতিল করবেন?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {rejecting?.name}-এর আবেদন বাতিল করা হবে। এই শিক্ষার্থী কোনো ব্যাচে যুক্ত হবে না। জমাকৃত তথ্য ইতিহাসের জন্য সংরক্ষিত থাকবে।
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <Textarea placeholder="বাতিলের কারণ (ঐচ্ছিক)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>বাতিল করুন</AlertDialogCancel>
+              <AlertDialogAction onClick={handleRejectConfirm} disabled={entryBusyId === rejecting?.id}>আবেদন বাতিল করুন</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

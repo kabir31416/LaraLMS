@@ -256,7 +256,7 @@ const FeeManagement = () => {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="নাম, রোল, রেজিস্ট্রেশন আইডি বা মোবাইল দিয়ে খুঁজুন..."
+                    placeholder="নাম, রেজিস্ট্রেশন নম্বর, আইডি বা মোবাইল দিয়ে খুঁজুন..."
                     className="pl-9"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -303,7 +303,7 @@ const FeeManagement = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Registration ID</TableHead>
-                      <TableHead>রোল</TableHead>
+                      <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                       <TableHead>নাম</TableHead>
                       <TableHead>কোর্স</TableHead>
                       <TableHead>ফি ধরন</TableHead>
@@ -388,7 +388,7 @@ const FeeManagement = () => {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="রসিদ নং, নাম, রোল বা মোবাইল দিয়ে খুঁজুন..."
+                    placeholder="রসিদ নং, নাম, রেজিস্ট্রেশন নম্বর বা মোবাইল দিয়ে খুঁজুন..."
                     className="pl-9"
                     value={historySearch}
                     onChange={(e) => setHistorySearch(e.target.value)}
@@ -415,7 +415,7 @@ const FeeManagement = () => {
                       <TableHead>তারিখ</TableHead>
                       <TableHead>শিক্ষার্থী</TableHead>
                       <TableHead>রেজি. আইডি</TableHead>
-                      <TableHead>রোল</TableHead>
+                      <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                       <TableHead>কোর্স</TableHead>
                       <TableHead>ব্যাচ</TableHead>
                       <TableHead>ফি ধরন</TableHead>
@@ -702,7 +702,7 @@ function PaymentDialog({
                     partial/older set happens to be in `pickerOptions`. */}
                 <Command shouldFilter={false}>
                   <CommandInput
-                    placeholder="আইডি, রোল, নাম বা মোবাইল দিয়ে খুঁজুন..."
+                    placeholder="আইডি, রেজিস্ট্রেশন নম্বর, নাম বা মোবাইল দিয়ে খুঁজুন..."
                     value={pickerSearch}
                     onValueChange={setPickerSearch}
                   />

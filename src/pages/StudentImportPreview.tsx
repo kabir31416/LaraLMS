@@ -383,7 +383,7 @@ export default function StudentImportPreview() {
                         />
                       </TableHead>
                       <TableHead>সারি</TableHead>
-                      <TableHead>রোল/রেজিস্ট্রেশন</TableHead>
+                      <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                       <TableHead>নাম</TableHead>
                       <TableHead>জন্ম তারিখ</TableHead>
                       <TableHead>মোবাইল</TableHead>

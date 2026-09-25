@@ -27,14 +27,15 @@ export const hscSscEducationFields = {
   hscGroup: z.enum(HSC_SSC_GROUPS, { errorMap: () => ({ message: "HSC বিভাগ নির্বাচন করুন (বিজ্ঞান/মানবিক/ব্যবসায়)" }) }),
   hscGpa: gpaField,
   hscRoll: z.string().trim().min(1, "HSC রোল নম্বর আবশ্যক"),
-  hscRegistrationNumber: z.string().trim().min(1, "HSC রেজিস্ট্রেশন নম্বর আবশ্যক"),
+  /** HSC/SSC "রেজিস্ট্রেশন নম্বর" (board registration number — unrelated to Student.currentRollNumber) is now optional, not every board issues one before results are out. */
+  hscRegistrationNumber: z.string().trim().optional().or(z.literal("")),
   sscInstitution: z.string().trim().min(1, "SSC প্রতিষ্ঠানের নাম আবশ্যক"),
   sscBoard: z.string().trim().min(1, "SSC বোর্ড আবশ্যক"),
   sscPassingYear: z.string().trim().min(1, "SSC পাসের সাল আবশ্যক"),
   sscGroup: z.enum(HSC_SSC_GROUPS, { errorMap: () => ({ message: "SSC বিভাগ নির্বাচন করুন (বিজ্ঞান/মানবিক/ব্যবসায়)" }) }),
   sscGpa: gpaField,
   sscRoll: z.string().trim().min(1, "SSC রোল নম্বর আবশ্যক"),
-  sscRegistrationNumber: z.string().trim().min(1, "SSC রেজিস্ট্রেশন নম্বর আবশ্যক"),
+  sscRegistrationNumber: z.string().trim().optional().or(z.literal("")),
 };
 
 export const idParamSchema = z.object({ params: z.object({ id: z.string().length(24) }) });
@@ -64,8 +65,9 @@ export const createStudentSchema = z.object({
   body: z.object({
     name: z.string().trim().min(2),
     phone: z.string().trim().min(6),
-    dob: z.string().min(1),
-    rollNumber: z.string().trim().min(1),
+    /** DOB and Registration Number (রেজিস্ট্রেশন নম্বর, the coaching center's own currentRollNumber) are both optional on the main Admission form now — a student who doesn't have either yet can still be admitted and completes them later. */
+    dob: z.string().min(1).optional(),
+    rollNumber: z.string().trim().min(1).optional(),
     courseId: z.string().length(24),
     guardianMobile: z.string().trim().min(6),
 

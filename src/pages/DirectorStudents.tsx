@@ -126,7 +126,7 @@ const DirectorStudents = () => {
                 <TableHead className="w-[60px]">ছবি</TableHead>
                 <TableHead>আইডি</TableHead>
                 <TableHead>নাম</TableHead>
-                <TableHead>রোল</TableHead>
+                <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                 <TableHead>ব্যাচ</TableHead>
                 <TableHead>মোবাইল</TableHead>
                 <TableHead>অভিভাবকের নম্বর</TableHead>

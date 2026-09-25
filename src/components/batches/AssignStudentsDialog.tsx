@@ -99,7 +99,7 @@ export function AssignStudentsDialog({ open, onOpenChange, batchId }: Props) {
         <div className="space-y-3 pt-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="নাম, রোল, আইডি বা মোবাইল..." className="pl-9" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="নাম, রেজিস্ট্রেশন নম্বর, আইডি বা মোবাইল..." className="pl-9" />
           </div>
           <ScrollArea className="h-[400px] border rounded-lg">
             <div className="p-2 space-y-1">
