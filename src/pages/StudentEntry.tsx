@@ -92,13 +92,11 @@ const REQUIRED_FIELDS: { key: keyof EditableFields; label: string }[] = [
   { key: "hscPassingYear", label: "HSC পাসের সাল" },
   { key: "hscGroup", label: "HSC বিভাগ" },
   { key: "hscRoll", label: "HSC রোল নম্বর" },
-  { key: "hscRegistrationNumber", label: "HSC রেজিস্ট্রেশন নম্বর" },
   { key: "sscInstitution", label: "SSC প্রতিষ্ঠান" },
   { key: "sscBoard", label: "SSC বোর্ড" },
   { key: "sscPassingYear", label: "SSC পাসের সাল" },
   { key: "sscGroup", label: "SSC বিভাগ" },
   { key: "sscRoll", label: "SSC রোল নম্বর" },
-  { key: "sscRegistrationNumber", label: "SSC রেজিস্ট্রেশন নম্বর" },
 ];
 
 function editableFieldsFrom(p: EntryProfile): EditableFields {
@@ -334,7 +332,7 @@ export default function StudentEntry() {
               </Select>
             </div>
             <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.hscRoll} onChange={(e) => update("hscRoll", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর *</Label><Input value={form.hscRegistrationNumber} onChange={(e) => update("hscRegistrationNumber", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)</Label><Input value={form.hscRegistrationNumber} onChange={(e) => update("hscRegistrationNumber", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.hscGpa} onChange={(e) => update("hscGpa", e.target.value)} /></div>
           </CardContent>
         </Card>
@@ -353,7 +351,7 @@ export default function StudentEntry() {
               </Select>
             </div>
             <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.sscRoll} onChange={(e) => update("sscRoll", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর *</Label><Input value={form.sscRegistrationNumber} onChange={(e) => update("sscRegistrationNumber", e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)</Label><Input value={form.sscRegistrationNumber} onChange={(e) => update("sscRegistrationNumber", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.sscGpa} onChange={(e) => update("sscGpa", e.target.value)} /></div>
           </CardContent>
         </Card>

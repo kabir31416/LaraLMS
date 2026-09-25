@@ -61,13 +61,13 @@ export function MaterialStudentPicker({ open, onOpenChange, onSelect }: Props) {
         <div className="space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="রেজিস্ট্রেশন আইডি, রোল, নাম বা মোবাইল দিয়ে খুঁজুন..." className="pl-9" />
+            <Input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="আইডি, রেজিস্ট্রেশন নম্বর, নাম বা মোবাইল দিয়ে খুঁজুন..." className="pl-9" />
           </div>
           <div className="max-h-72 overflow-auto space-y-1">
             {loading ? (
               <p className="text-sm text-muted-foreground text-center py-6">খোঁজা হচ্ছে...</p>
             ) : !debounced.trim() ? (
-              <p className="text-sm text-muted-foreground text-center py-6">শিক্ষার্থীর নাম, রোল বা মোবাইল লিখুন</p>
+              <p className="text-sm text-muted-foreground text-center py-6">শিক্ষার্থীর নাম, রেজিস্ট্রেশন নম্বর বা মোবাইল লিখুন</p>
             ) : results.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-6">কোনো শিক্ষার্থী পাওয়া যায়নি</p>
             ) : (

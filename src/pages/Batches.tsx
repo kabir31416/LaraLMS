@@ -137,7 +137,7 @@ const Batches = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Registration ID</TableHead>
-                  <TableHead>রোল</TableHead>
+                  <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                   <TableHead>নাম</TableHead>
                   <TableHead>মোবাইল</TableHead>
                   <TableHead>কোর্স</TableHead>
@@ -340,7 +340,7 @@ function TransferDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>নতুন রোল নম্বর (ঐচ্ছিক)</Label>
+            <Label>নতুন রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)</Label>
             <Input value={newRoll} onChange={(e) => setNewRoll(e.target.value)} placeholder={student?.rollNumber || ""} />
           </div>
           <div className="space-y-1.5">

@@ -330,16 +330,18 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
     filter.feeType = req.query.feeType;
   }
 
-  // Student Entry Workflow — a pending or rejected public-entry application
-  // is not a real student yet, so every default Student List/export/stats
-  // view excludes both by construction. The Admin Pending Applications page
-  // is the one caller that explicitly asks for a specific admissionStatus.
-  // `$nin` also matches documents where the field is simply absent (every
-  // student created any other way), so nothing else needs to change.
+  // Student Entry Workflow — pending applications now show in the normal
+  // Student List too (so Admin can approve/reject them from the same 3-dot
+  // menu everyone else uses), but a REJECTED one is a voided application,
+  // not a student, and stays hidden from every default view unless a caller
+  // explicitly asks for it (the Admin Pending Applications page does, via
+  // ?admissionStatus=). `$ne` also matches documents where the field is
+  // simply absent (every student created any other way), so nothing else
+  // needs to change for them.
   if (typeof req.query.admissionStatus === "string" && req.query.admissionStatus.trim()) {
     filter.admissionStatus = req.query.admissionStatus.trim();
   } else {
-    filter.admissionStatus = { $nin: ["pending", "rejected"] };
+    filter.admissionStatus = { $ne: "rejected" };
   }
 
   return filter;

@@ -16,7 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Eye, Pencil, Trash2, MoreVertical, ImageUp } from "lucide-react";
+import { Eye, Pencil, Trash2, MoreVertical, ImageUp, Check, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useBatches } from "@/contexts/BatchContext";
 
@@ -25,6 +25,9 @@ interface StudentTableProps {
   onEdit: (student: Student) => void;
   onDelete: (id: string) => void;
   onUploadPhoto: (student: Student) => void;
+  /** Student Entry Workflow — omitted entirely (rather than shown disabled) when the caller has no STUDENTS_APPROVE_ENTRY permission, same "hide, don't disable" convention as the rest of this menu. */
+  onApprove?: (student: Student) => void;
+  onReject?: (student: Student) => void;
 }
 
 /** dd MMM yyyy from a "yyyy-mm-dd" dob string, without pulling in date-fns just for this — malformed/absent values fall back to "—". */
@@ -39,7 +42,7 @@ function formatDob(dob?: string): string {
   return `${Number(d)} ${MONTHS[monthIdx]} ${y}`;
 }
 
-export function StudentTable({ students, onEdit, onDelete, onUploadPhoto }: StudentTableProps) {
+export function StudentTable({ students, onEdit, onDelete, onUploadPhoto, onApprove, onReject }: StudentTableProps) {
   const navigate = useNavigate();
   const { batches } = useBatches();
   const getBatchByStudent = (studentBatchId?: string) => batches.find((b) => b.id === studentBatchId);
@@ -59,7 +62,7 @@ export function StudentTable({ students, onEdit, onDelete, onUploadPhoto }: Stud
           <TableRow>
             <TableHead className="w-[60px]">ছবি</TableHead>
             <TableHead>আইডি</TableHead>
-            <TableHead>রোল</TableHead>
+            <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
             <TableHead>নাম</TableHead>
             <TableHead className="hidden lg:table-cell">ব্যাচ</TableHead>
             <TableHead>মোবাইল</TableHead>
@@ -106,16 +109,20 @@ export function StudentTable({ students, onEdit, onDelete, onUploadPhoto }: Stud
                   )}
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant={student.status === "সক্রিয়" ? "default" : "secondary"}
-                    className={
-                      student.status === "সক্রিয়"
-                        ? "bg-success/10 text-success border-success/20 hover:bg-success/20"
-                        : "bg-muted text-muted-foreground"
-                    }
-                  >
-                    {student.status}
-                  </Badge>
+                  {student.admissionStatus === "pending" ? (
+                    <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20">পেন্ডিং</Badge>
+                  ) : (
+                    <Badge
+                      variant={student.status === "সক্রিয়" ? "default" : "secondary"}
+                      className={
+                        student.status === "সক্রিয়"
+                          ? "bg-success/10 text-success border-success/20 hover:bg-success/20"
+                          : "bg-muted text-muted-foreground"
+                      }
+                    >
+                      {student.status}
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell>
                   <DropdownMenu>
@@ -125,6 +132,19 @@ export function StudentTable({ students, onEdit, onDelete, onUploadPhoto }: Stud
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {student.admissionStatus === "pending" && onApprove && (
+                        <DropdownMenuItem
+                          className="text-success focus:text-success"
+                          onClick={(e) => { e.stopPropagation(); onApprove(student); }}
+                        >
+                          <Check className="mr-2 h-4 w-4" /> অনুমোদন করুন
+                        </DropdownMenuItem>
+                      )}
+                      {student.admissionStatus === "pending" && onReject && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onReject(student); }}>
+                          <X className="mr-2 h-4 w-4" /> বাতিল করুন
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/students/${student.id}`); }}>
                         <Eye className="mr-2 h-4 w-4" /> প্রোফাইল দেখুন
                       </DropdownMenuItem>

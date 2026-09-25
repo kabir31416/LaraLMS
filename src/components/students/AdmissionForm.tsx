@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +66,24 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
   // edit an already-admitted student shows their *original* fee, never a
   // Course Fee that was changed in Settings afterward (Phase 4 §19).
   const [courseFee, setCourseFee] = useState<number>(editStudent?.totalCourseFee ?? 0);
+
+  // `<AdmissionForm>` is rendered once by Students.tsx/Admission.tsx and
+  // stays mounted for the page's whole lifetime — the Dialog only toggles
+  // visibility, it never unmounts/remounts this component. useState's lazy
+  // initializer therefore only ran once, on the very first open, so opening
+  // it for "নতুন ভর্তি" first (editStudent=null) and THEN clicking সম্পাদনা
+  // on a row left every field exactly as the blank create-form had them —
+  // this is the "৩ ডট থেকে সম্পাদনা করতে গেলে blank form আসে" bug. Re-seeding
+  // the form here every time the dialog actually opens (or the student being
+  // edited changes) is the fix — same pattern already used by BatchForm.tsx.
+  useEffect(() => {
+    if (!open) return;
+    setForm(getInitialForm(editStudent));
+    setDob(editStudent?.dob ? new Date(editStudent.dob) : undefined);
+    setAdmissionDate(editStudent?.admissionDate ? new Date(editStudent.admissionDate) : new Date());
+    setCourseFee(editStudent?.totalCourseFee ?? 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editStudent]);
 
   function getInitialForm(student?: Student | null) {
     if (student) {
@@ -144,8 +162,8 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
     // §1/§3). Editing an existing student never re-demands Course: a
     // record admitted before this field existed must stay editable without
     // being forced to pick one now (Phase 4 §11 backward compatibility).
-    if (!form.name || !form.mobile || !form.rollNumber || !dob || !form.guardianMobile || (!isEdit && !form.courseId)) {
-      toast.error("নাম, মোবাইল নম্বর, রোল নম্বর, জন্ম তারিখ, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
+    if (!form.name || !form.mobile || !form.guardianMobile || (!isEdit && !form.courseId)) {
+      toast.error("নাম, মোবাইল নম্বর, অভিভাবকের মোবাইল ও কোর্স আবশ্যক");
       return;
     }
 
@@ -155,7 +173,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
       mobile: form.mobile,
       altMobile: form.altMobile || undefined,
       email: form.email || undefined,
-      dob: dob ? format(dob, "yyyy-MM-dd") : "",
+      dob: dob ? format(dob, "yyyy-MM-dd") : undefined,
       gender: form.gender as Student["gender"],
       bloodGroup: form.bloodGroup || undefined,
       guardianName: form.guardianName,
@@ -220,7 +238,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.name} onChange={(e) => updateField("name", e.target.value)} placeholder="পূর্ণ নাম লিখুন" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>রোল নম্বর *</Label>
+                  <Label>রেজিস্ট্রেশন নম্বর</Label>
                   <Input value={form.rollNumber} onChange={(e) => updateField("rollNumber", e.target.value)} placeholder="যেমন: ০৭" />
                 </div>
                 <div className="space-y-1.5">
@@ -228,7 +246,7 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                   <Input value={form.mobile} onChange={(e) => updateField("mobile", e.target.value)} placeholder="01XXXXXXXXX" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>জন্ম তারিখ *</Label>
+                  <Label>জন্ম তারিখ</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dob && "text-muted-foreground")}>

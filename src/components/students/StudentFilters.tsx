@@ -104,7 +104,7 @@ export function StudentFilters({
         <Input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="নাম, আইডি, রোল বা মোবাইল দিয়ে খুঁজুন..."
+          placeholder="নাম, আইডি, রেজিস্ট্রেশন নম্বর বা মোবাইল দিয়ে খুঁজুন..."
           className="pl-9"
         />
       </div>

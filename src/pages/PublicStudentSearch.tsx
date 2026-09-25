@@ -169,7 +169,7 @@ export default function PublicStudentSearch() {
           // two separate grid cells, so the card reads well whichever subset
           // the admin has enabled.
           const identityParts = [
-            r.rollNumber ? `রোল: ${r.rollNumber}` : null,
+            r.rollNumber ? `রেজিস্ট্রেশন: ${r.rollNumber}` : null,
             r.registrationId ? `আইডি: ${r.registrationId}` : null,
           ].filter((p): p is string => !!p);
 

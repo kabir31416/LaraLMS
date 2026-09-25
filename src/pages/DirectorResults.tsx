@@ -206,7 +206,7 @@ const DirectorResults = () => {
 
     // Validate before saving anything — Present always needs a valid 0..fullMarks mark.
     for (const s of batchStudents) {
-      const status = attendance[s.id] || "Absent";
+      const status = attendance[s.id] || "Present";
       if (status !== "Present") continue;
       const raw = marks[s.id];
       const num = raw?.trim() ? Number(raw) : NaN;
@@ -221,7 +221,7 @@ const DirectorResults = () => {
     }
 
     const items = batchStudents.map((s) => {
-      const status: AttendanceStatus = attendance[s.id] || "Absent";
+      const status: AttendanceStatus = attendance[s.id] || "Present";
       const raw = marks[s.id];
       const num = status === "Present" && raw?.trim() ? Number(raw) : null;
       return { studentId: s.id, marks: num, attendance: status };
@@ -397,7 +397,7 @@ const DirectorResults = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>রোল</TableHead>
+                    <TableHead>রেজিস্ট্রেশন নম্বর</TableHead>
                     <TableHead>Registration ID</TableHead>
                     <TableHead>নাম</TableHead>
                     <TableHead className="w-[120px]">নম্বর</TableHead>
@@ -410,7 +410,7 @@ const DirectorResults = () => {
                   ) : batchStudents.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">কোনো শিক্ষার্থী নেই</TableCell></TableRow>
                   ) : batchStudents.map((s) => {
-                    const status: AttendanceStatus = attendance[s.id] || "Absent";
+                    const status: AttendanceStatus = attendance[s.id] || "Present";
                     const isPresent = status === "Present";
                     return (
                       <TableRow key={s.id}>
@@ -457,14 +457,14 @@ const DirectorResults = () => {
               ) : batchStudents.length === 0 ? (
                 <p className="text-center py-8 text-sm text-muted-foreground">কোনো শিক্ষার্থী নেই</p>
               ) : batchStudents.map((s) => {
-                const status: AttendanceStatus = attendance[s.id] || "Absent";
+                const status: AttendanceStatus = attendance[s.id] || "Present";
                 const isPresent = status === "Present";
                 return (
                   <div key={s.id} className="rounded-lg border p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-medium truncate">{s.name}</p>
-                        <p className="text-xs text-muted-foreground font-mono">রোল: {s.rollNumber || "—"} · Reg ID: {s.studentId}</p>
+                        <p className="text-xs text-muted-foreground font-mono">রেজিস্ট্রেশন: {s.rollNumber || "—"} · আইডি: {s.studentId}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs ${!isPresent ? "text-destructive font-medium" : "text-muted-foreground"}`}>অনুপস্থিত</span>
@@ -520,7 +520,7 @@ const DirectorResults = () => {
               {summary.failedStudents.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    যাদের SMS পাঠানো যায়নি: {summary.failedStudents.map((f) => `${f.name}${f.roll ? ` (রোল ${f.roll})` : ""} — ${failureReasonLabel(f.reason)}`).join("; ")}
+                    যাদের SMS পাঠানো যায়নি: {summary.failedStudents.map((f) => `${f.name}${f.roll ? ` (রেজিস্ট্রেশন ${f.roll})` : ""} — ${failureReasonLabel(f.reason)}`).join("; ")}
                   </p>
                   <Button variant="outline" size="sm" onClick={handleRetrySms} disabled={busy}>
                     {busyAction === "retry" ? "পাঠানো হচ্ছে..." : "ব্যর্থ SMS আবার পাঠান"}

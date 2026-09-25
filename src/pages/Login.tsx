@@ -98,7 +98,7 @@ const Login = () => {
   const handleStudentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentPhone.trim() || !studentRoll.trim()) {
-      toast.error("ফোন নম্বর ও রোল নম্বর দিন");
+      toast.error("ফোন নম্বর ও রেজিস্ট্রেশন নম্বর দিন");
       return;
     }
     setSubmitting(true);
@@ -211,7 +211,7 @@ const Login = () => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="student-roll">রোল নম্বর</Label>
+                  <Label htmlFor="student-roll">রেজিস্ট্রেশন নম্বর</Label>
                   <IconInput
                     icon={Hash}
                     id="student-roll"
@@ -220,7 +220,7 @@ const Login = () => {
                     placeholder="যেমন: 07"
                     autoComplete="off"
                   />
-                  <p className="text-xs text-muted-foreground">ভর্তির সময় দেওয়া ফোন নম্বর ও রোল নম্বর মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
+                  <p className="text-xs text-muted-foreground">ভর্তির সময় দেওয়া ফোন নম্বর ও রেজিস্ট্রেশন নম্বর মিললেই লগইন হয়ে যাবে — আলাদা পাসওয়ার্ড লাগবে না</p>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "লগইন হচ্ছে..." : "লগইন"}

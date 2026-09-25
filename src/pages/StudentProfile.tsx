@@ -217,7 +217,7 @@ const StudentProfile = () => {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {student.rollNumber && <Badge variant="outline">রোল: {student.rollNumber}</Badge>}
+                  {student.rollNumber && <Badge variant="outline">রেজিস্ট্রেশন: {student.rollNumber}</Badge>}
                   <Badge variant="outline">{student.class}</Badge>
                   <Badge variant="outline">{student.course}</Badge>
                   {(() => {

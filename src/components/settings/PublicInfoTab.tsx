@@ -15,8 +15,8 @@ import { toast } from "sonner";
  */
 const ALLOWED_FIELDS: { key: string; label: string }[] = [
   { key: "name", label: "নাম" },
-  { key: "registrationId", label: "রেজিস্ট্রেশন আইডি" },
-  { key: "rollNumber", label: "রোল নম্বর" },
+  { key: "registrationId", label: "আইডি" },
+  { key: "rollNumber", label: "রেজিস্ট্রেশন নম্বর" },
   { key: "course", label: "কোর্স" },
   { key: "currentBatch", label: "বর্তমান ব্যাচ" },
   { key: "batchDirector", label: "ব্যাচ ডিরেক্টর" },
@@ -92,7 +92,7 @@ export function PublicInfoTab() {
                 checked={settings.searchMethods.registrationId}
                 onCheckedChange={(v) => save({ searchMethods: { ...settings.searchMethods, registrationId: !!v } })}
               />
-              রেজিস্ট্রেশন আইডি
+              আইডি
             </label>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox

@@ -228,7 +228,7 @@ export default function PaymentReceipt() {
               <InfoRow label="নাম" value={student.name} />
               {/* System ID is ALWAYS shown — the one identifier guaranteed to exist even when Roll is empty (Coaching Reg No / Roll vs System ID spec §14/§21). */}
               <InfoRow label="সিস্টেম আইডি" value={student.registrationId} mono />
-              {student.currentRollNumber && <InfoRow label="রোল" value={student.currentRollNumber} mono />}
+              {student.currentRollNumber && <InfoRow label="রেজিস্ট্রেশন নম্বর" value={student.currentRollNumber} mono />}
               {student.course && <InfoRow label="কোর্স" value={student.course} />}
               {batchName && <InfoRow label="ব্যাচ" value={batchName} />}
               <InfoRow label="মোবাইল" value={student.phone} />
