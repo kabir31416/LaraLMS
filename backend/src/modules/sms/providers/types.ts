@@ -17,6 +17,8 @@ export interface SmsSendResult {
   errorMessage?: string;
   /** The raw provider error code, kept for backend logs/SmsLog only (§11) — never shown to a role below Admin, never returned in a public API. */
   errorCode?: string;
+  /** Set when the request never got a response within the configured timeout — the actual outcome (sent or not) is genuinely unknown, distinct from a confirmed rejection (`ok:false` with no `timedOut`). */
+  timedOut?: boolean;
 }
 
 export interface SmsBalanceResult {

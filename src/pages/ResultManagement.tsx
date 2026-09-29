@@ -30,7 +30,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Search, Pencil, Save, X, Printer, FileSpreadsheet, ArrowLeft, Trophy, Trash2, AlertTriangle } from "lucide-react";
+import { Search, Pencil, Save, X, Printer, FileSpreadsheet, ArrowLeft, Trophy, Trash2, AlertTriangle, MoreVertical } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
@@ -155,23 +156,20 @@ const ResultManagement = () => {
           <p className="text-sm text-muted-foreground">শিক্ষার্থী বা ব্যাচভিত্তিক ফলাফল দেখুন এবং প্রয়োজনে নম্বর সম্পাদনা করুন</p>
         </div>
 
-        <div className="flex justify-end">
-          {/* Delete Results by Date — Admin-only, same as the backend route's
-              own EXAMS_MANAGE-only gate (never a Batch Director permission),
-              since it can reach across every batch on the chosen date. */}
-          {!isDirector && <DeleteResultsByDateDialog />}
-        </div>
-
         <Tabs defaultValue="individual">
           <TabsList>
             <TabsTrigger value="individual">শিক্ষার্থী ফলাফল</TabsTrigger>
             <TabsTrigger value="batch">ব্যাচভিত্তিক ফলাফল</TabsTrigger>
+            <TabsTrigger value="records">ফলাফল রেকর্ড</TabsTrigger>
           </TabsList>
           <TabsContent value="individual" className="mt-4">
             <IndividualResultTab isDirector={isDirector} />
           </TabsContent>
           <TabsContent value="batch" className="mt-4">
             <BatchResultTab isDirector={isDirector} />
+          </TabsContent>
+          <TabsContent value="records" className="mt-4">
+            <ResultRecordsTab isDirector={isDirector} />
           </TabsContent>
         </Tabs>
       </div>
@@ -180,179 +178,408 @@ const ResultManagement = () => {
 };
 
 /* -------------------------------------------------------------------- */
-/* Delete Results by Date (Admin-only)                                   */
+/* Result Records — filter, view, and delete (individual + bulk)         */
 /* -------------------------------------------------------------------- */
 
-interface DeleteResultsPreview {
+interface ResultRecordRow {
+  resultId: string;
+  studentName: string;
+  registrationId: string;
+  rollNumber?: string;
+  batchName: string;
+  subjectName: string;
+  lectureTitle: string;
+  examTitle: string;
+  date: string;
+  fullMarks: number;
+  obtainedMarks: number | null;
+  result: "পাস" | "ফেল" | "অনুপস্থিত";
+}
+
+interface ResultRecordsPreview {
   examCount: number;
   resultCount: number;
   batches: { id: string; name: string }[];
   subjects: { id: string; name: string }[];
 }
 
-function DeleteResultsByDateDialog() {
-  const { batches } = useBatches();
-  const { courses, getSubjectsByCourse } = useAcademic();
+const RECORDS_PAGE_SIZE = 50;
 
-  const [open, setOpen] = useState(false);
-  const [date, setDate] = useState("");
+function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
+  const { user } = useAuth();
+  const { batches } = useBatches();
+  const { courses, getSubjectsByCourse, getLecturesBySubject } = useAcademic();
+
+  const myBatches = useMemo(
+    () => (isDirector && user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : batches),
+    [batches, isDirector, user],
+  );
+
   const [courseId, setCourseId] = useState("all");
   const [batchId, setBatchId] = useState("all");
   const [subjectId, setSubjectId] = useState("all");
+  const [lectureId, setLectureId] = useState("all");
+  const [dateMode, setDateMode] = useState<"exact" | "range">("exact");
+  const [date, setDate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 350);
+  const [page, setPage] = useState(1);
 
-  const [preview, setPreview] = useState<DeleteResultsPreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const filteredBatches = useMemo(
-    () => (courseId !== "all" ? batches.filter((b) => b.courseId === courseId) : batches),
-    [batches, courseId],
+  const filteredBatches = useMemo(() => (courseId !== "all" ? myBatches.filter((b) => b.courseId === courseId) : myBatches), [myBatches, courseId]);
+  const filteredSubjects = useMemo(() => (courseId !== "all" ? getSubjectsByCourse(courseId) : []), [getSubjectsByCourse, courseId]);
+  const filteredLectures = useMemo(
+    () => (courseId !== "all" && subjectId !== "all" ? getLecturesBySubject(courseId, subjectId) : []),
+    [getLecturesBySubject, courseId, subjectId],
   );
-  const filteredSubjects = useMemo(
-    () => (courseId !== "all" ? getSubjectsByCourse(courseId) : []),
-    [getSubjectsByCourse, courseId],
-  );
 
-  // Any filter change invalidates a previously-fetched preview — the delete
-  // call always re-resolves the exact same filter it deletes against, but a
-  // stale preview count shown for a since-changed filter would mislead the
-  // confirmation step.
-  const resetFilters = () => {
-    setDate(""); setCourseId("all"); setBatchId("all"); setSubjectId("all"); setPreview(null);
-  };
-  const onOpenChange = (v: boolean) => { setOpen(v); if (!v) resetFilters(); };
-  const invalidatePreview = () => setPreview(null);
+  useEffect(() => { setBatchId("all"); setSubjectId("all"); setLectureId("all"); }, [courseId]);
+  useEffect(() => { setLectureId("all"); }, [subjectId]);
 
-  const buildFilterBody = () => ({
-    date,
-    courseId: courseId !== "all" ? courseId : undefined,
-    batchId: batchId !== "all" ? batchId : undefined,
-    subjectId: subjectId !== "all" ? subjectId : undefined,
-  });
+  // The exact filter object every one of list/preview/bulk-delete sends —
+  // one place, so the list the admin sees and the bulk operation it confirms
+  // against can never drift apart.
+  const buildFilterParams = useCallback((): Record<string, string> => {
+    const f: Record<string, string> = {};
+    if (dateMode === "exact") { if (date) f.date = date; }
+    else { if (dateFrom) f.dateFrom = dateFrom; if (dateTo) f.dateTo = dateTo; }
+    if (courseId !== "all") f.courseId = courseId;
+    if (batchId !== "all") f.batchId = batchId;
+    if (subjectId !== "all") f.subjectId = subjectId;
+    if (lectureId !== "all") f.lectureId = lectureId;
+    if (debouncedSearch.trim()) f.search = debouncedSearch.trim();
+    return f;
+  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, lectureId, debouncedSearch]);
 
-  const handlePreview = () => {
-    if (!date) { toast({ title: "তারিখ প্রয়োজন", description: "প্রিভিউ দেখতে একটি তারিখ নির্বাচন করুন।" }); return; }
-    setPreviewing(true);
-    api
-      .post<DeleteResultsPreview>("/result-management/delete-by-date/preview", buildFilterBody())
-      .then(setPreview)
+  const [items, setItems] = useState<ResultRecordRow[]>([]);
+  const [meta, setMeta] = useState<ListMeta | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadList = useCallback(() => {
+    setLoading(true);
+    const qs = new URLSearchParams(buildFilterParams());
+    qs.set("page", String(page));
+    qs.set("limit", String(RECORDS_PAGE_SIZE));
+    api.getWithMeta<ResultRecordRow[]>(`/result-management/results?${qs.toString()}`)
+      .then((res) => { setItems(res.data); setMeta((res.meta as unknown as ListMeta) ?? null); })
       .catch((err) => {
-        toast({ title: "প্রিভিউ ব্যর্থ", description: friendlyError(err, "প্রিভিউ লোড করা যায়নি।") });
-        setPreview(null);
+        toast({ title: "লোড ব্যর্থ", description: friendlyError(err, "ফলাফল তালিকা লোড করা যায়নি।") });
+        setItems([]); setMeta(null);
       })
-      .finally(() => setPreviewing(false));
+      .finally(() => setLoading(false));
+  }, [buildFilterParams, page]);
+
+  useEffect(() => { loadList(); }, [loadList]);
+  // Any filter change other than page itself restarts at page 1 — backend-
+  // applied filters, never a client-side slice of an already-fetched page.
+  useEffect(() => { setPage(1); }, [courseId, batchId, subjectId, lectureId, dateMode, date, dateFrom, dateTo, debouncedSearch]);
+
+  // Individual row delete
+  const [rowToDelete, setRowToDelete] = useState<ResultRecordRow | null>(null);
+  const [deletingRow, setDeletingRow] = useState(false);
+  const handleDeleteRow = () => {
+    if (!rowToDelete) return;
+    setDeletingRow(true);
+    api.del(`/result-management/results/${rowToDelete.resultId}`)
+      .then(() => {
+        toast({ title: "মুছে ফেলা হয়েছে", description: `${rowToDelete.studentName}-এর ফলাফল মুছে ফেলা হয়েছে।` });
+        setRowToDelete(null);
+        loadList();
+      })
+      .catch((err) => toast({ title: "ব্যর্থ", description: friendlyError(err, "ফলাফল মুছে ফেলা যায়নি।") }))
+      .finally(() => setDeletingRow(false));
   };
 
-  const handleDelete = () => {
-    setDeleting(true);
-    api
-      .post<{ deletedCount: number }>("/result-management/delete-by-date", buildFilterBody())
+  // Bulk delete by filter — Admin-only (same gate the backend route enforces).
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState<ResultRecordsPreview | null>(null);
+  const [bulkPreviewing, setBulkPreviewing] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (dateMode === "exact") parts.push(date ? `তারিখ: ${date}` : "তারিখ: (নির্বাচিত নেই)");
+    else parts.push(`তারিখ পরিসীমা: ${dateFrom || "শুরু থেকে"} – ${dateTo || "এখন পর্যন্ত"}`);
+    if (courseId !== "all") parts.push(`কোর্স: ${courses.find((c) => c.id === courseId)?.name ?? ""}`);
+    if (batchId !== "all") parts.push(`ব্যাচ: ${filteredBatches.find((b) => b.id === batchId)?.name ?? ""}`);
+    if (subjectId !== "all") parts.push(`বিষয়: ${filteredSubjects.find((s) => s.id === subjectId)?.name ?? ""}`);
+    if (debouncedSearch.trim()) parts.push(`শিক্ষার্থী: "${debouncedSearch.trim()}"`);
+    return parts.join(", ");
+  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, courses, filteredBatches, filteredSubjects, debouncedSearch]);
+
+  const handleBulkOpenChange = (v: boolean) => { setBulkOpen(v); if (!v) setBulkPreview(null); };
+  const handleBulkPreview = () => {
+    setBulkPreviewing(true);
+    api.post<ResultRecordsPreview>("/result-management/results/bulk-delete/preview", buildFilterParams())
+      .then(setBulkPreview)
+      .catch((err) => { toast({ title: "প্রিভিউ ব্যর্থ", description: friendlyError(err, "প্রিভিউ লোড করা যায়নি।") }); setBulkPreview(null); })
+      .finally(() => setBulkPreviewing(false));
+  };
+  const handleBulkDelete = () => {
+    setBulkDeleting(true);
+    api.post<{ deletedCount: number }>("/result-management/results/bulk-delete", buildFilterParams())
       .then((res) => {
         toast({ title: "সম্পন্ন হয়েছে", description: `${res.deletedCount} টি ফলাফল মুছে ফেলা হয়েছে।` });
-        setConfirmOpen(false);
-        setOpen(false);
-        resetFilters();
+        setBulkConfirmOpen(false);
+        setBulkOpen(false);
+        setBulkPreview(null);
+        loadList();
       })
       .catch((err) => toast({ title: "মুছে ফেলা ব্যর্থ", description: friendlyError(err, "ফলাফল মুছে ফেলা যায়নি।") }))
-      .finally(() => setDeleting(false));
+      .finally(() => setBulkDeleting(false));
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="destructive" size="sm"><Trash2 className="h-4 w-4 mr-1" />তারিখ অনুযায়ী ফলাফল মুছুন</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>তারিখ অনুযায়ী ফলাফল মুছুন</DialogTitle>
-          <DialogDescription>
-            নির্বাচিত তারিখের (ও প্রয়োজনে কোর্স/ব্যাচ/বিষয় অনুযায়ী সংকীর্ণ করা) সব প্রাপ্ত নম্বর স্থায়ীভাবে মুছে যাবে —
-            এক্সাম/উপস্থিতি/শিক্ষার্থী তথ্য অপরিবর্তিত থাকবে। মুছে ফেলার আগে প্রিভিউ দেখে নিশ্চিত করুন।
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>তারিখ *</Label>
-            <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); invalidatePreview(); }} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>কোর্স (ঐচ্ছিক)</Label>
-            <Select value={courseId} onValueChange={(v) => { setCourseId(v); setBatchId("all"); setSubjectId("all"); invalidatePreview(); }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">সকল কোর্স</SelectItem>
-                {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>ব্যাচ (ঐচ্ছিক)</Label>
-            <Select value={batchId} onValueChange={(v) => { setBatchId(v); invalidatePreview(); }}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">সকল ব্যাচ</SelectItem>
-                {filteredBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>বিষয় (ঐচ্ছিক)</Label>
-            <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); invalidatePreview(); }} disabled={courseId === "all"}>
-              <SelectTrigger><SelectValue placeholder={courseId === "all" ? "প্রথমে কোর্স নির্বাচন করুন" : undefined} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">সকল বিষয়</SelectItem>
-                {filteredSubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="pt-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">কোর্স</Label>
+              <Select value={courseId} onValueChange={setCourseId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল কোর্স</SelectItem>
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">ব্যাচ</Label>
+              <Select value={batchId} onValueChange={setBatchId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল ব্যাচ</SelectItem>
+                  {filteredBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">বিষয়</Label>
+              <Select value={subjectId} onValueChange={setSubjectId} disabled={courseId === "all"}>
+                <SelectTrigger><SelectValue placeholder={courseId === "all" ? "প্রথমে কোর্স নির্বাচন করুন" : undefined} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল বিষয়</SelectItem>
+                  {filteredSubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">লেকচার</Label>
+              <Select value={lectureId} onValueChange={setLectureId} disabled={subjectId === "all"}>
+                <SelectTrigger><SelectValue placeholder={subjectId === "all" ? "প্রথমে বিষয় নির্বাচন করুন" : undefined} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল লেকচার</SelectItem>
+                  {filteredLectures.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {preview && (
-            <div className={cn("rounded-md border p-3 text-sm space-y-1", preview.resultCount > 0 ? "border-destructive/30 bg-destructive/5" : "border-muted bg-muted/30")}>
-              {preview.resultCount === 0 ? (
-                <p className="text-muted-foreground">এই তারিখে (ও নির্বাচিত ফিল্টারে) কোনো ফলাফল পাওয়া যায়নি।</p>
-              ) : (
-                <>
-                  <p className="font-medium flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-4 w-4" /> {preview.resultCount} টি ফলাফল (রেকর্ড) মুছে যাবে</p>
-                  <p className="text-muted-foreground">{preview.examCount} টি এক্সাম সেশন প্রভাবিত হবে</p>
-                  {preview.batches.length > 0 && <p className="text-muted-foreground">ব্যাচ: {preview.batches.map((b) => b.name).join(", ")}</p>}
-                  {preview.subjects.length > 0 && <p className="text-muted-foreground">বিষয়: {preview.subjects.map((s) => s.name).join(", ")}</p>}
-                </>
-              )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">তারিখ ফিল্টার</Label>
+              <Select value={dateMode} onValueChange={(v) => setDateMode(v as "exact" | "range")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="exact">নির্দিষ্ট তারিখ</SelectItem>
+                  <SelectItem value="range">তারিখ পরিসীমা</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {dateMode === "exact" ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">তারিখ</Label>
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">শুরু</Label>
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">শেষ</Label>
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                </div>
+              </>
+            )}
+            <div className="space-y-1.5 md:col-span-2">
+              <Label className="text-xs">শিক্ষার্থী (নাম/রেজিস্ট্রেশন/রোল/মোবাইল)</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="খুঁজুন..." />
+              </div>
+            </div>
+          </div>
+
+          {!isDirector && (
+            <div className="flex justify-end pt-1">
+              <Dialog open={bulkOpen} onOpenChange={handleBulkOpenChange}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive" size="sm"><Trash2 className="h-4 w-4 mr-1" />ফিল্টার করা ফলাফল মুছুন</Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>ফিল্টার করা ফলাফল মুছুন</DialogTitle>
+                    <DialogDescription>
+                      উপরের নির্বাচিত ফিল্টার অনুযায়ী মিলে যাওয়া সব প্রাপ্ত নম্বর স্থায়ীভাবে মুছে যাবে — এক্সাম সেশন, উপস্থিতি ও
+                      শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে। মুছে ফেলার আগে প্রিভিউ দেখে নিশ্চিত করুন।
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="text-sm rounded-md border p-3 bg-muted/30">
+                    <p className="font-medium mb-1">নির্বাচিত ফিল্টার:</p>
+                    <p className="text-muted-foreground">{filterSummary}</p>
+                  </div>
+
+                  {bulkPreview && (
+                    <div className={cn("rounded-md border p-3 text-sm space-y-1", bulkPreview.resultCount > 0 ? "border-destructive/30 bg-destructive/5" : "border-muted bg-muted/30")}>
+                      {bulkPreview.resultCount === 0 ? (
+                        <p className="text-muted-foreground">এই ফিল্টারে কোনো ফলাফল পাওয়া যায়নি।</p>
+                      ) : (
+                        <>
+                          <p className="font-medium flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-4 w-4" /> {bulkPreview.resultCount} টি ফলাফল (রেকর্ড) মুছে যাবে</p>
+                          <p className="text-muted-foreground">{bulkPreview.examCount} টি এক্সাম সেশন প্রভাবিত হবে</p>
+                          {bulkPreview.batches.length > 0 && <p className="text-muted-foreground">ব্যাচ: {bulkPreview.batches.map((b) => b.name).join(", ")}</p>}
+                          {bulkPreview.subjects.length > 0 && <p className="text-muted-foreground">বিষয়: {bulkPreview.subjects.map((s) => s.name).join(", ")}</p>}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <DialogFooter className="gap-2 sm:gap-2">
+                    <Button variant="outline" onClick={handleBulkPreview} disabled={bulkPreviewing}>
+                      {bulkPreviewing ? "লোড হচ্ছে..." : "প্রিভিউ দেখুন"}
+                    </Button>
+                    <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" disabled={!bulkPreview || bulkPreview.resultCount === 0}>
+                          <Trash2 className="h-4 w-4 mr-1" />মুছে ফেলুন
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>আপনি কি নিশ্চিত?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            নির্বাচিত ফিল্টারের {bulkPreview?.resultCount ?? 0} টি ফলাফল স্থায়ীভাবে মুছে যাবে। এই কাজটি পূর্বাবস্থায়
+                            ফেরানো যাবে না। এক্সাম সেশন, উপস্থিতি ও শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে।
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={bulkDeleting}>বাতিল</AlertDialogCancel>
+                          <AlertDialogAction onClick={(e) => { e.preventDefault(); handleBulkDelete(); }} disabled={bulkDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            {bulkDeleting ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button variant="outline" onClick={handlePreview} disabled={!date || previewing}>
-            {previewing ? "লোড হচ্ছে..." : "প্রিভিউ দেখুন"}
-          </Button>
-          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={!preview || preview.resultCount === 0}>
-                <Trash2 className="h-4 w-4 mr-1" />মুছে ফেলুন
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>আপনি কি নিশ্চিত?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {date} তারিখের {preview?.resultCount ?? 0} টি ফলাফল স্থায়ীভাবে মুছে যাবে। এই কাজটি পূর্বাবস্থায় ফেরানো যাবে না।
-                  এক্সাম সেশন, উপস্থিতি ও শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে — শুধু নম্বরগুলো মুছে যাবে এবং পুনরায় এন্ট্রি করা যাবে।
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={deleting}>বাতিল</AlertDialogCancel>
-                <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDelete(); }} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                  {deleting ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>শিক্ষার্থী</TableHead>
+                <TableHead>ব্যাচ</TableHead>
+                <TableHead>বিষয়/লেকচার</TableHead>
+                <TableHead>এক্সাম</TableHead>
+                <TableHead>তারিখ</TableHead>
+                <TableHead>নম্বর</TableHead>
+                <TableHead>ফলাফল</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+              ) : items.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">কোনো ফলাফল পাওয়া যায়নি</TableCell></TableRow>
+              ) : (
+                items.map((row) => (
+                  <TableRow key={row.resultId}>
+                    <TableCell>
+                      <div className="font-medium">{row.studentName}</div>
+                      <div className="text-xs text-muted-foreground">{row.registrationId}{row.rollNumber ? ` • রোল: ${row.rollNumber}` : ""}</div>
+                    </TableCell>
+                    <TableCell>{row.batchName}</TableCell>
+                    <TableCell>{row.subjectName}{row.lectureTitle !== "-" ? ` / ${row.lectureTitle}` : ""}</TableCell>
+                    <TableCell>{row.examTitle}</TableCell>
+                    <TableCell>{row.date}</TableCell>
+                    <TableCell className="font-semibold">{row.obtainedMarks ?? "অনুপস্থিত"} / {row.fullMarks}</TableCell>
+                    <TableCell><Badge variant="outline">{row.result}</Badge></TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setRowToDelete(row)}>
+                            <Trash2 className="h-4 w-4 mr-2" />ফলাফল মুছুন
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {meta && meta.totalPages > 1 && (
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious onClick={() => setPage((p) => Math.max(1, p - 1))} className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"} />
+            </PaginationItem>
+            {Array.from({ length: meta.totalPages }, (_, i) => i + 1)
+              .filter((p) => p === 1 || p === meta.totalPages || Math.abs(p - page) <= 1)
+              .map((p, idx, arr) => (
+                <PaginationItem key={p}>
+                  {idx > 0 && arr[idx - 1] !== p - 1 && <span className="px-2">...</span>}
+                  <PaginationLink isActive={p === page} onClick={() => setPage(p)} className="cursor-pointer">{p}</PaginationLink>
+                </PaginationItem>
+              ))}
+            <PaginationItem>
+              <PaginationNext onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))} className={page >= meta.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"} />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+
+      <AlertDialog open={!!rowToDelete} onOpenChange={(v) => { if (!v) setRowToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ফলাফল মুছুন?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              {rowToDelete && (
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">{rowToDelete.studentName} ({rowToDelete.registrationId})</p>
+                  <p>{rowToDelete.examTitle} • {rowToDelete.subjectName} • {rowToDelete.date}</p>
+                  <p>এই একক ফলাফলটি স্থায়ীভাবে মুছে যাবে — পূর্বাবস্থায় ফেরানো যাবে না।</p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingRow}>বাতিল</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDeleteRow(); }} disabled={deletingRow} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deletingRow ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 

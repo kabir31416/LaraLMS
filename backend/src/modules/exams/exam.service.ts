@@ -16,6 +16,8 @@ import { buildMeta, parsePagination } from "../../common/utils/pagination";
 import { isEventEnabled, sendSms } from "../sms/sms.service";
 import { PERMISSIONS } from "../rbac/permissions";
 import { RESULT_SMS_VARIABLES, ResultSmsVariable, renderTemplate, validateTemplatePlaceholders } from "./exam.smsTemplate";
+import { mapWithConcurrency } from "../../common/utils/concurrency";
+import { env } from "../../config/env";
 
 /** Batch Directors may only manage exams/results for batches they direct, unless they also hold a broad permission. Exported for reuse by resultManagement.service.ts's mark-edit endpoint — same capability, same permission, just a different UI surface. */
 export async function assertCanActOnBatch(req: Request, batchId: string): Promise<void> {
@@ -299,8 +301,13 @@ export interface FailedSmsStudent {
   studentId: string;
   name: string;
   roll?: string;
-  /** Why this particular student's SMS didn't go out — lets the UI show a precise message instead of a generic failure. */
-  reason: "guardianPhoneMissing" | "gatewayFailed";
+  /**
+   * Why this particular student's SMS didn't go out — lets the UI show a
+   * precise message instead of a generic failure. "timeout" means the
+   * provider never responded within the configured window — the outcome is
+   * genuinely unknown, never reported to the admin as a confirmed failure.
+   */
+  reason: "guardianPhoneMissing" | "gatewayFailed" | "timeout";
 }
 
 export interface SubmitResultSummary {
@@ -459,17 +466,22 @@ export async function submitResult(
   try {
     const template = await resolveResultSmsTemplate();
     const highestMark = await computeHighestMark(exam._id);
-    let smsSent = 0;
-    const failedStudents: FailedSmsStudent[] = [];
 
-    for (const item of data.items) {
+    // Bounded concurrency, not a sequential for-loop and not an unbounded
+    // Promise.all — a full class (30-50+ students) sent one guardian SMS at
+    // a time was the dominant cause of "Send Result" feeling unresponsive
+    // (each provider round trip is 1-3s, multiplied by every student). This
+    // cuts wall-clock time by roughly SMS_BULK_CONCURRENCY while still
+    // respecting the gateway (never more than that many requests in flight
+    // at once). Each worker returns its own outcome rather than mutating a
+    // shared counter/array directly, so results are combined once at the end.
+    const outcomes = await mapWithConcurrency(data.items, env.SMS_BULK_CONCURRENCY, async (item): Promise<{ sent: boolean; failed?: FailedSmsStudent } | null> => {
       const student = studentById.get(item.studentId);
-      if (!student) continue;
+      if (!student) return null;
       const guardian = await guardianService.getPrimary(item.studentId);
       if (!guardian?.phone) {
-        failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" });
         await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "failed" } });
-        continue;
+        return { sent: false, failed: { studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" } };
       }
       const variables = await buildResultSmsVariables({
         student,
@@ -486,12 +498,19 @@ export async function submitResult(
       const message = renderTemplate(template, variables);
       const res = await sendSms({ to: guardian.phone, message, eventType: "result", studentId: item.studentId });
       if (res.ok) {
-        smsSent++;
         await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });
-      } else {
-        failedStudents.push({ studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: "gatewayFailed" });
-        await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "failed" } });
+        return { sent: true };
       }
+      await OfflineResult.updateOne({ examId: exam._id, studentId: item.studentId }, { $set: { smsStatus: "failed" } });
+      return { sent: false, failed: { studentId: item.studentId, name: student.name, roll: student.currentRollNumber, reason: res.status === "timeout" ? "timeout" : "gatewayFailed" } };
+    });
+
+    let smsSent = 0;
+    const failedStudents: FailedSmsStudent[] = [];
+    for (const outcome of outcomes) {
+      if (!outcome) continue;
+      if (outcome.sent) smsSent++;
+      else if (outcome.failed) failedStudents.push(outcome.failed);
     }
 
     await recordAudit({
@@ -539,15 +558,14 @@ export async function resendSms(req: Request, examId: string, studentIds: string
 
   const template = await resolveResultSmsTemplate();
   const highestMark = await computeHighestMark(exam._id);
-  let smsSent = 0;
-  const failedStudents: FailedSmsStudent[] = [];
-  for (const student of students) {
+
+  // Same bounded-concurrency shape as submitResult — see its comment.
+  const outcomes = await mapWithConcurrency(students, env.SMS_BULK_CONCURRENCY, async (student): Promise<{ sent: boolean; failed?: FailedSmsStudent } | null> => {
     const sid = String(student._id);
     const guardian = await guardianService.getPrimary(sid);
     if (!guardian?.phone) {
-      failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" });
       await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "failed" } });
-      continue;
+      return { sent: false, failed: { studentId: sid, name: student.name, roll: student.currentRollNumber, reason: "guardianPhoneMissing" } };
     }
     const variables = await buildResultSmsVariables({
       student,
@@ -564,12 +582,19 @@ export async function resendSms(req: Request, examId: string, studentIds: string
     const message = renderTemplate(template, variables);
     const res = await sendSms({ to: guardian.phone, message, eventType: "result", studentId: sid });
     if (res.ok) {
-      smsSent++;
       await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "sent", smsSentAt: new Date() } });
-    } else {
-      failedStudents.push({ studentId: sid, name: student.name, roll: student.currentRollNumber, reason: "gatewayFailed" });
-      await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "failed" } });
+      return { sent: true };
     }
+    await OfflineResult.updateOne({ examId, studentId: sid }, { $set: { smsStatus: "failed" } });
+    return { sent: false, failed: { studentId: sid, name: student.name, roll: student.currentRollNumber, reason: res.status === "timeout" ? "timeout" : "gatewayFailed" } };
+  });
+
+  let smsSent = 0;
+  const failedStudents: FailedSmsStudent[] = [];
+  for (const outcome of outcomes) {
+    if (!outcome) continue;
+    if (outcome.sent) smsSent++;
+    else if (outcome.failed) failedStudents.push(outcome.failed);
   }
 
   await recordAudit({

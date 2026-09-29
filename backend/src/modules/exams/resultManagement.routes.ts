@@ -4,8 +4,10 @@ import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
 import {
   batchResultsQuerySchema,
-  deleteResultsByDateSchema,
+  listResultRecordsQuerySchema,
   listStudentResultsQuerySchema,
+  resultIdParamSchema,
+  resultRecordFilterBodySchema,
   studentIdParamSchema,
   topStudentsQuerySchema,
   updateResultMarkSchema,
@@ -56,20 +58,36 @@ router.patch(
   validate(updateResultMarkSchema),
   controller.updateResultMark,
 );
-// Delete Results by Date — deliberately Admin-only (EXAMS_MANAGE), never the
-// own-batch permission: unlike every other route here, this can reach across
-// every batch on the given date, not just batches a Batch Director directs.
+// Result Records — the filtered, backend-paginated list the deletion UX is
+// built on top of. Same read tier as every other list here.
+router.get(
+  "/results",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.EXAMS_READ_OWN_BATCH, PERMISSIONS.RESULTS_READ, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(listResultRecordsQuerySchema),
+  controller.listResultRecords,
+);
+// Bulk delete-by-filter — deliberately Admin-only (EXAMS_MANAGE), never the
+// own-batch permission: unlike every other route here, a filter can reach
+// across every batch/date it matches, not just batches a Batch Director directs.
 router.post(
-  "/delete-by-date/preview",
+  "/results/bulk-delete/preview",
   requirePermission(PERMISSIONS.EXAMS_MANAGE),
-  validate(deleteResultsByDateSchema),
-  controller.previewDeleteResultsByDate,
+  validate(resultRecordFilterBodySchema),
+  controller.previewDeleteResultRecords,
 );
 router.post(
-  "/delete-by-date",
+  "/results/bulk-delete",
   requirePermission(PERMISSIONS.EXAMS_MANAGE),
-  validate(deleteResultsByDateSchema),
-  controller.deleteResultsByDate,
+  validate(resultRecordFilterBodySchema),
+  controller.deleteResultRecordsBulk,
+);
+// Individual row delete — same permission tier as editing a mark (PATCH
+// above): a Batch Director may delete only a result in a batch they direct.
+router.delete(
+  "/results/:resultId",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(resultIdParamSchema),
+  controller.deleteOneResult,
 );
 
 export default router;

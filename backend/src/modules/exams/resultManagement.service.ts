@@ -501,70 +501,219 @@ export async function updateResultMark(req: Request, resultId: string, marks: nu
 }
 
 /**
- * Delete Results by Date — Admin-only (never a Batch Director's own-batch
- * permission, since this can reach across every batch on a given date).
- * Deletes ONLY the per-student OfflineResult rows for exams matching the
- * given date (+ optional Course/Batch/Subject/Exam narrowing) — never the
- * OfflineExam "definition" documents themselves (so the exam session stays
- * on record and can simply be re-entered), and never AttendanceEntry,
- * Student, Payment, or BatchEnrollment documents, which this feature has no
- * business touching at all.
+ * Result Records — the flat, filterable, backend-paginated list this
+ * feature's row-level and bulk delete workflows are both built on top of.
+ * Reuses the exact same OfflineExam/OfflineResult collections and
+ * grade/percentage math (gradeResult, above) as every other view in this
+ * module — never a separate result model or a duplicate calculation.
  */
-export interface DeleteResultsByDateFilter {
-  /** yyyy-mm-dd — the exact OfflineExam.date field every exam is already stored/queried by, so this can never drift onto an adjacent day by timezone conversion. */
-  date: string;
+export interface ResultRecordFilter {
+  /** yyyy-mm-dd, exact match on OfflineExam.date. Mutually exclusive with dateFrom/dateTo in practice (both can be sent; date wins), but never combined server-side in a way that could touch an adjacent day — this is a plain string compare, never a Date/timezone conversion. */
+  date?: string;
+  dateFrom?: string;
+  dateTo?: string;
   courseId?: string;
   batchId?: string;
   subjectId?: string;
+  lectureId?: string;
   examId?: string;
+  /** Free-text — same searchable fields as the main Student List (name/phone/roll/registrationId), so "Student" and "Registration ID" are really one filter, not two separate lookups. */
+  search?: string;
 }
 
-function assertCanDeleteResults(req: Request): void {
+function assertCanBulkDeleteResults(req: Request): void {
   const perms = req.user!.permissions;
   if (!perms.includes("*") && !perms.includes(PERMISSIONS.EXAMS_MANAGE)) {
     throw ApiError.forbidden("Missing permission");
   }
 }
 
-/** Resolves the exact set of OfflineExam ids the given filter matches — shared by the preview and the actual delete so they can never disagree on scope. */
-async function resolveDeleteExamIds(filter: DeleteResultsByDateFilter): Promise<string[]> {
-  const examFilter: Record<string, unknown> = { date: filter.date };
+/**
+ * Resolves the exact set of OfflineExam ids a filter's date/course/batch/
+ * subject/lecture/exam criteria match — shared by the list, the bulk-delete
+ * preview, and the bulk delete itself so all three can never disagree on
+ * scope. `restrictToBatchIds`, when given (a Batch Director's own-batch
+ * readScope), narrows the result server-side regardless of what batchId/
+ * courseId the caller asked for — a crafted request can never see or touch
+ * a batch outside that scope.
+ */
+async function resolveResultExamIds(filter: ResultRecordFilter, restrictToBatchIds?: string[]): Promise<string[]> {
+  const examFilter: Record<string, unknown> = {};
+  if (filter.date) {
+    examFilter.date = filter.date;
+  } else if (filter.dateFrom || filter.dateTo) {
+    examFilter.date = {
+      ...(filter.dateFrom ? { $gte: filter.dateFrom } : {}),
+      ...(filter.dateTo ? { $lte: filter.dateTo } : {}),
+    };
+  }
   if (filter.examId) examFilter._id = filter.examId;
-  if (filter.batchId) examFilter.batchId = filter.batchId;
   if (filter.subjectId) examFilter.subjectId = filter.subjectId;
+  if (filter.lectureId) examFilter.lectureId = filter.lectureId;
 
+  // batchId + restrictToBatchIds + courseId can all narrow the same field —
+  // resolve them into a single, mutually-consistent batchId constraint
+  // rather than letting a later assignment silently clobber an earlier one.
+  let allowedBatchIds: string[] | undefined;
+  if (restrictToBatchIds) allowedBatchIds = restrictToBatchIds;
   if (filter.courseId) {
-    if (filter.batchId) {
-      // A batchId narrower than the course was also given — it must actually
-      // belong to that course, otherwise the two filters contradict each
-      // other and must match nothing rather than silently ignoring one.
-      const batch = await Batch.findById(filter.batchId).select("courseId");
-      if (!batch || String(batch.courseId) !== filter.courseId) return [];
-    } else {
-      const batchIds = await Batch.find({ courseId: filter.courseId }).distinct("_id");
-      examFilter.batchId = { $in: batchIds };
-    }
+    const courseBatchIds = (await Batch.find({ courseId: filter.courseId }).distinct("_id")).map(String);
+    allowedBatchIds = allowedBatchIds ? allowedBatchIds.filter((id) => courseBatchIds.includes(id)) : courseBatchIds;
+  }
+  if (filter.batchId) {
+    if (allowedBatchIds && !allowedBatchIds.includes(filter.batchId)) return []; // contradicts course/own-batch scope — match nothing, never silently ignore the narrower filter
+    examFilter.batchId = filter.batchId;
+  } else if (allowedBatchIds) {
+    examFilter.batchId = { $in: allowedBatchIds };
   }
 
   const ids = await OfflineExam.find(examFilter).distinct("_id");
   return ids.map(String);
 }
 
-export interface DeleteResultsPreview {
+/** Resolves a free-text search into the matching Student ids, or undefined when no search was given (meaning "don't narrow by student at all"). An empty array means the search matched nobody — callers must treat that as "zero results", never as "no filter". */
+async function resolveSearchStudentIds(search?: string): Promise<string[] | undefined> {
+  if (!search || !search.trim()) return undefined;
+  const filter = buildSearchFilter(search, ["name", "phone", "currentRollNumber", "registrationId"]);
+  return (await Student.find(filter).distinct("_id")).map(String);
+}
+
+export interface ResultRecordRow {
+  resultId: string;
+  studentId: string;
+  studentName: string;
+  registrationId: string;
+  rollNumber?: string;
+  batchName: string;
+  courseName: string | null;
+  subjectName: string;
+  lectureTitle: string;
+  examTitle: string;
+  date: string;
+  fullMarks: number;
+  obtainedMarks: number | null;
+  percentage: number | null;
+  grade: string;
+  result: "পাস" | "ফেল" | "অনুপস্থিত";
+  isPublished: boolean;
+}
+
+/**
+ * The filtered, backend-paginated result list the "Result Records" tab
+ * renders — every filter (date/range/course/batch/subject/lecture/exam/
+ * student) is applied server-side before pagination, never fetched whole
+ * and filtered in the browser. A Batch Director only ever sees rows from
+ * batches they direct (readScope), same as every other read in this module.
+ */
+export async function listResultRecords(
+  req: Request,
+  filter: ResultRecordFilter,
+  params: { page?: string; limit?: string },
+): Promise<{ items: ResultRecordRow[]; meta: ReturnType<typeof buildMeta> }> {
+  const scope = await readScope(req);
+  const page = Math.max(1, Number(params.page) || 1);
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(params.limit) || 50));
+  const skip = (page - 1) * limit;
+
+  const examIds = await resolveResultExamIds(filter, scope?.batchIds);
+  if (examIds.length === 0) return { items: [], meta: buildMeta(page, limit, 0) };
+
+  const resultFilter: Record<string, unknown> = { examId: { $in: examIds } };
+  const searchStudentIds = await resolveSearchStudentIds(filter.search);
+  if (searchStudentIds) {
+    if (searchStudentIds.length === 0) return { items: [], meta: buildMeta(page, limit, 0) };
+    resultFilter.studentId = { $in: searchStudentIds };
+  }
+
+  const [total, results] = await Promise.all([
+    OfflineResult.countDocuments(resultFilter),
+    OfflineResult.find(resultFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+  ]);
+  if (results.length === 0) return { items: [], meta: buildMeta(page, limit, total) };
+
+  const examIdsOnPage = Array.from(new Set(results.map((r) => String(r.examId))));
+  const studentIdsOnPage = Array.from(new Set(results.map((r) => String(r.studentId))));
+  const [exams, students, settings] = await Promise.all([
+    OfflineExam.find({ _id: { $in: examIdsOnPage } }),
+    Student.find({ _id: { $in: studentIdsOnPage } }).select("name registrationId currentRollNumber"),
+    getSettings(),
+  ]);
+  const examById = new Map(exams.map((e) => [String(e._id), e]));
+  const studentById = new Map(students.map((s) => [String(s._id), s]));
+
+  const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
+  const subjectIds = Array.from(new Set(exams.map((e) => String(e.subjectId))));
+  const lectureIds = Array.from(new Set(exams.filter((e) => e.lectureId).map((e) => String(e.lectureId))));
+  const [batches, subjects, lectures] = await Promise.all([
+    Batch.find({ _id: { $in: batchIds } }).select("name courseId"),
+    Subject.find({ _id: { $in: subjectIds } }).select("name"),
+    Lecture.find({ _id: { $in: lectureIds } }).select("title"),
+  ]);
+  const batchById = new Map(batches.map((b) => [String(b._id), b]));
+  const subjectById = new Map(subjects.map((s) => [String(s._id), s.name]));
+  const lectureById = new Map(lectures.map((l) => [String(l._id), l.title]));
+  const courseIds = Array.from(new Set(batches.map((b) => (b.courseId ? String(b.courseId) : null)).filter((id): id is string => id !== null)));
+  const { Course } = await import("../courses/course.model");
+  const courses = courseIds.length ? await Course.find({ _id: { $in: courseIds } }).select("name") : [];
+  const courseNameById = new Map(courses.map((c) => [String(c._id), c.name]));
+
+  const items: ResultRecordRow[] = results.map((r) => {
+    const exam = examById.get(String(r.examId));
+    const student = studentById.get(String(r.studentId));
+    const batch = exam ? batchById.get(String(exam.batchId)) : undefined;
+    const { percentage, grade, result } = gradeResult(r.marks, exam?.fullMarks ?? 0, settings.gradeScale, settings.passingPercentage);
+    return {
+      resultId: String(r._id),
+      studentId: String(r.studentId),
+      studentName: student?.name ?? "-",
+      registrationId: student?.registrationId ?? "-",
+      rollNumber: student?.currentRollNumber,
+      batchName: batch?.name ?? "-",
+      courseName: batch?.courseId ? courseNameById.get(String(batch.courseId)) ?? null : null,
+      subjectName: exam ? subjectById.get(String(exam.subjectId)) ?? "-" : "-",
+      lectureTitle: exam?.lectureId ? lectureById.get(String(exam.lectureId)) ?? "-" : "-",
+      examTitle: exam?.title ?? "-",
+      date: exam?.date ?? "-",
+      fullMarks: exam?.fullMarks ?? 0,
+      obtainedMarks: r.marks,
+      percentage,
+      grade,
+      result,
+      isPublished: exam?.isPublished ?? false,
+    };
+  });
+
+  return { items, meta: buildMeta(page, limit, total) };
+}
+
+export interface ResultRecordsPreview {
   examCount: number;
   resultCount: number;
   batches: { id: string; name: string }[];
   subjects: { id: string; name: string }[];
 }
 
-/** Preview — what "Delete Results by Date" would affect, shown before the admin confirms. Read-only, no permission side effect beyond the same Admin gate the delete itself enforces. */
-export async function previewDeleteResultsByDate(req: Request, filter: DeleteResultsByDateFilter): Promise<DeleteResultsPreview> {
-  assertCanDeleteResults(req);
-  const examIds = await resolveDeleteExamIds(filter);
+/**
+ * Bulk-delete preview — Admin-only, deliberately never the own-batch
+ * permission: unlike row-level delete (below), a bulk filter can reach
+ * across every batch/date matched, not just batches a Batch Director
+ * directs. Shares resolveResultExamIds with the actual delete so the two
+ * can never disagree about what's in scope.
+ */
+export async function previewDeleteResultRecords(req: Request, filter: ResultRecordFilter): Promise<ResultRecordsPreview> {
+  assertCanBulkDeleteResults(req);
+  const examIds = await resolveResultExamIds(filter);
   if (examIds.length === 0) return { examCount: 0, resultCount: 0, batches: [], subjects: [] };
 
+  const resultFilter: Record<string, unknown> = { examId: { $in: examIds } };
+  const searchStudentIds = await resolveSearchStudentIds(filter.search);
+  if (searchStudentIds) {
+    if (searchStudentIds.length === 0) return { examCount: examIds.length, resultCount: 0, batches: [], subjects: [] };
+    resultFilter.studentId = { $in: searchStudentIds };
+  }
+
   const [resultCount, exams] = await Promise.all([
-    OfflineResult.countDocuments({ examId: { $in: examIds } }),
+    OfflineResult.countDocuments(resultFilter),
     OfflineExam.find({ _id: { $in: examIds } }).select("batchId subjectId"),
   ]);
   const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
@@ -583,27 +732,70 @@ export async function previewDeleteResultsByDate(req: Request, filter: DeleteRes
 }
 
 /**
- * Deletes exactly the OfflineResult rows `previewDeleteResultsByDate` would
- * have reported for the same filter — never a broader set. A repeated call
- * with the same filter after the first delete simply matches zero exams'
- * worth of results (deleteMany is naturally idempotent), so a double-click
- * or accidental resubmit can never delete twice or affect a second date.
+ * Deletes exactly the OfflineResult rows `previewDeleteResultRecords` would
+ * report for the same filter — never a broader set, and never a client-
+ * supplied id list or count (the filter is re-resolved from scratch here,
+ * server-side). Only the per-student OfflineResult rows are removed — never
+ * the OfflineExam "definition" documents (the exam session stays on record
+ * and can simply be re-entered), and never AttendanceEntry, Student,
+ * Payment, or BatchEnrollment documents, which this feature has no business
+ * touching. Naturally idempotent: a repeated call with the same filter
+ * after the first delete matches zero remaining results, so a double-click
+ * or resubmit can never delete twice or drift outside the original scope.
  */
-export async function deleteResultsByDate(req: Request, filter: DeleteResultsByDateFilter): Promise<{ deletedCount: number }> {
-  assertCanDeleteResults(req);
-  const examIds = await resolveDeleteExamIds(filter);
+export async function deleteResultRecordsBulk(req: Request, filter: ResultRecordFilter): Promise<{ deletedCount: number }> {
+  assertCanBulkDeleteResults(req);
+  const examIds = await resolveResultExamIds(filter);
   if (examIds.length === 0) return { deletedCount: 0 };
 
-  const { deletedCount } = await OfflineResult.deleteMany({ examId: { $in: examIds } });
+  const resultFilter: Record<string, unknown> = { examId: { $in: examIds } };
+  const searchStudentIds = await resolveSearchStudentIds(filter.search);
+  if (searchStudentIds) {
+    if (searchStudentIds.length === 0) return { deletedCount: 0 };
+    resultFilter.studentId = { $in: searchStudentIds };
+  }
+
+  const { deletedCount } = await OfflineResult.deleteMany(resultFilter);
 
   await recordAudit({
     req,
-    action: "result.delete-by-date",
+    action: "result.bulk-delete",
     module: "exams",
     targetCollection: "offlineresults",
-    before: { date: filter.date, courseId: filter.courseId, batchId: filter.batchId, subjectId: filter.subjectId, examId: filter.examId, examIds },
+    before: { filter, examIds },
     after: { deletedCount: deletedCount ?? 0 },
   });
 
   return { deletedCount: deletedCount ?? 0 };
+}
+
+/**
+ * Individual "Delete Result" row action — the same permission tier as
+ * updateResultMark (editing a mark): a Batch Director may delete only a
+ * result belonging to a batch they direct, enforced the same way
+ * (assertCanActOnBatch). This grants no new capability beyond what
+ * OFFLINE_RESULTS_MANAGE_OWN_BATCH already allows for editing; it's the
+ * same authority reachable from a "Delete" action instead of an edit box.
+ * Records a before-snapshot in the audit log since the document itself is
+ * gone afterward and can't be reconstructed from the log alone otherwise.
+ */
+export async function deleteOneResult(req: Request, resultId: string): Promise<{ deletedCount: number }> {
+  const result = await OfflineResult.findById(resultId);
+  if (!result) throw ApiError.notFound("Result not found");
+  const exam = await OfflineExam.findById(result.examId);
+  if (!exam) throw ApiError.notFound("Exam not found");
+  await assertCanActOnBatch(req, String(exam.batchId));
+
+  await OfflineResult.deleteOne({ _id: result._id });
+
+  await recordAudit({
+    req,
+    action: "result.delete",
+    module: "exams",
+    targetCollection: "offlineresults",
+    targetId: String(result._id),
+    before: { studentId: String(result.studentId), examId: String(exam._id), examTitle: exam.title, date: exam.date, marks: result.marks },
+  });
+
+  return { deletedCount: 1 };
 }

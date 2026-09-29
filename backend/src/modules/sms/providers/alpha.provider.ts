@@ -1,3 +1,4 @@
+import { env } from "../../../config/env";
 import { logger } from "../../../logger/logger";
 import { alphaErrorMessage } from "../sms.constants";
 import { toGatewayFormat } from "../sms.util";
@@ -39,7 +40,7 @@ export function createAlphaProvider(config: AlphaSmsConfig): SmsProvider {
         if (config.senderId) body.set("sender_id", config.senderId);
         if (config.contentId) body.set("content_id", config.contentId);
 
-        const res = await fetch(SEND_URL, { method: "POST", body });
+        const res = await fetch(SEND_URL, { method: "POST", body, signal: AbortSignal.timeout(env.SMS_TIMEOUT_MS) });
         const json = (await res.json().catch(() => undefined)) as AlphaResponse<{ request_id: number }> | undefined;
         if (!json) {
           return { ok: false, errorMessage: "Alpha SMS থেকে অপ্রত্যাশিত সাড়া পাওয়া গেছে" };
@@ -49,6 +50,10 @@ export function createAlphaProvider(config: AlphaSmsConfig): SmsProvider {
         }
         return { ok: false, errorCode: String(json.error), errorMessage: alphaErrorMessage(json.error) };
       } catch (err) {
+        if (err instanceof Error && err.name === "TimeoutError") {
+          logger.warn({ to }, "Alpha SMS send timed out — actual outcome unknown");
+          return { ok: false, timedOut: true, errorMessage: "Alpha SMS সময়মতো সাড়া দেয়নি — ফলাফল অনিশ্চিত" };
+        }
         logger.error({ err }, "Alpha SMS send failed");
         return { ok: false, errorMessage: "Alpha SMS-এর সাথে সংযোগ করা যায়নি" };
       }
@@ -58,7 +63,7 @@ export function createAlphaProvider(config: AlphaSmsConfig): SmsProvider {
       if (!config.apiKey) return { ok: false, errorMessage: "Alpha SMS API Key কনফিগার করা নেই" };
       try {
         const qs = new URLSearchParams({ api_key: config.apiKey });
-        const res = await fetch(`${BALANCE_URL}?${qs.toString()}`);
+        const res = await fetch(`${BALANCE_URL}?${qs.toString()}`, { signal: AbortSignal.timeout(env.SMS_TIMEOUT_MS) });
         const json = (await res.json().catch(() => undefined)) as AlphaResponse<{ balance: string }> | undefined;
         if (!json) return { ok: false, errorMessage: "Alpha SMS থেকে অপ্রত্যাশিত সাড়া পাওয়া গেছে" };
         if (json.error === 0) return { ok: true, balance: json.data?.balance };
@@ -94,7 +99,7 @@ export async function getAlphaReport(apiKey: string, requestId: string): Promise
   if (!apiKey) return { ok: false, errorMessage: "Alpha SMS API Key কনফিগার করা নেই" };
   try {
     const qs = new URLSearchParams({ api_key: apiKey });
-    const res = await fetch(`${reportUrl(requestId)}?${qs.toString()}`);
+    const res = await fetch(`${reportUrl(requestId)}?${qs.toString()}`, { signal: AbortSignal.timeout(env.SMS_TIMEOUT_MS) });
     const json = (await res.json().catch(() => undefined)) as
       | AlphaResponse<{ request_status: string; recipients: AlphaReportRecipient[] }>
       | undefined;
