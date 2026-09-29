@@ -3,6 +3,29 @@ import type { AttendanceEntry, AttendanceStatus, OfflineExam, OfflineResult } fr
 import { api } from "@/lib/apiClient";
 
 /**
+ * The backend caps every list response at MAX_PAGE_SIZE (100) regardless of
+ * the `limit` query param. A single student can easily accumulate more than
+ * 100 attendance days (daily class over a few months) or more than 100 exam
+ * rows across a full course, so a single `limit=100` request silently drops
+ * anything older than the newest 100 — the student's own history/dashboard
+ * would then look incomplete even though every record is safely in the DB.
+ * Pages through until every record is fetched (capped at a generous 50
+ * pages / 5000 rows as a runaway-loop guard) rather than adding a second,
+ * duplicate "unlimited" endpoint.
+ */
+async function fetchAllPages<T>(path: string, limit = 100): Promise<T[]> {
+  const sep = path.includes("?") ? "&" : "?";
+  const all: T[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const { data, meta } = await api.getWithMeta<T[]>(`${path}${sep}limit=${limit}&page=${page}`);
+    all.push(...data);
+    const totalPages = typeof meta?.totalPages === "number" ? meta.totalPages : 1;
+    if (page >= totalPages || data.length === 0) break;
+  }
+  return all;
+}
+
+/**
  * Attendance/Offline-Exam/Offline-Result are now backed by the real API
  * (Phase 3, Modules 18-20). Unlike Student/Batch/Staff/Payment, this context
  * deliberately does NOT keep one global cached array in memory — attendance
@@ -137,7 +160,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const getByStudent = useCallback(async (studentId: string): Promise<AttendanceEntry[]> => {
-    const docs = await api.get<ApiAttendanceEntry[]>(`/attendance?studentId=${studentId}&limit=100&sortBy=date&sortOrder=desc`);
+    const docs = await fetchAllPages<ApiAttendanceEntry>(`/attendance?studentId=${studentId}&sortBy=date&sortOrder=desc`);
     return docs.map(entryFromApi);
   }, []);
 
@@ -146,13 +169,13 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const listExams = useCallback(async (params?: { batchId?: string; courseSubjectId?: string; subjectId?: string; lectureId?: string; date?: string }): Promise<OfflineExam[]> => {
-    const qs = new URLSearchParams({ limit: "100", sortBy: "date", sortOrder: "desc" });
+    const qs = new URLSearchParams({ sortBy: "date", sortOrder: "desc" });
     if (params?.batchId) qs.set("batchId", params.batchId);
     if (params?.courseSubjectId) qs.set("courseSubjectId", params.courseSubjectId);
     if (params?.subjectId) qs.set("subjectId", params.subjectId);
     if (params?.lectureId) qs.set("lectureId", params.lectureId);
     if (params?.date) qs.set("date", params.date);
-    const docs = await api.get<ApiOfflineExam[]>(`/exams?${qs.toString()}`);
+    const docs = await fetchAllPages<ApiOfflineExam>(`/exams?${qs.toString()}`);
     return docs.map(examFromApi);
   }, []);
 
@@ -192,7 +215,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const getResultsByStudent = useCallback(async (studentId: string): Promise<OfflineResult[]> => {
-    const docs = await api.get<ApiOfflineResult[]>(`/results?studentId=${studentId}&limit=100`);
+    const docs = await fetchAllPages<ApiOfflineResult>(`/results?studentId=${studentId}`);
     return docs.map(resultFromApi);
   }, []);
 

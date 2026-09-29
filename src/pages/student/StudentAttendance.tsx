@@ -7,17 +7,25 @@ import { useAttendance } from "@/contexts/AttendanceContext";
 import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 export default function StudentAttendance() {
   const { user, student } = useStudentSelf();
   const { getByStudent, attendancePercent } = useAttendance();
   const [list, setList] = useState<AttendanceEntry[]>([]);
   const [pct, setPct] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
-    getByStudent(student.id).then((entries) => { if (!cancelled) setList(entries); }).catch(() => {});
+    setLoading(true);
+    setLoadError(false);
+    getByStudent(student.id)
+      .then((entries) => { if (!cancelled) setList(entries); })
+      .catch(() => { if (!cancelled) { setLoadError(true); toast.error("উপস্থিতি লোড করা যায়নি"); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
     attendancePercent(student.id).then((p) => { if (!cancelled) setPct(p); }).catch(() => {});
     return () => { cancelled = true; };
   }, [student, getByStudent, attendancePercent]);
@@ -63,7 +71,9 @@ export default function StudentAttendance() {
             <Table>
               <TableHeader><TableRow><TableHead>তারিখ</TableHead><TableHead>স্ট্যাটাস</TableHead><TableHead>উৎস</TableHead></TableRow></TableHeader>
               <TableBody>
-                {list.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">কোনো তথ্য নেই</TableCell></TableRow> :
+                {loading ? <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow> :
+                  loadError ? <TableRow><TableCell colSpan={3} className="text-center py-8 text-destructive">উপস্থিতি লোড করা যায়নি — আবার চেষ্টা করুন</TableCell></TableRow> :
+                  list.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">কোনো তথ্য নেই</TableCell></TableRow> :
                   list.map((e) => <TableRow key={e.id}>
                     <TableCell>{e.date}</TableCell>
                     <TableCell><Badge className={e.status === "Present" ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}>{e.status === "Present" ? "উপস্থিত" : "অনুপস্থিত"}</Badge></TableCell>

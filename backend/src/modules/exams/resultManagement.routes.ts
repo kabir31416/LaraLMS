@@ -4,6 +4,7 @@ import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
 import {
   batchResultsQuerySchema,
+  deleteResultsByDateSchema,
   listStudentResultsQuerySchema,
   studentIdParamSchema,
   topStudentsQuerySchema,
@@ -54,6 +55,21 @@ router.patch(
   requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
   validate(updateResultMarkSchema),
   controller.updateResultMark,
+);
+// Delete Results by Date — deliberately Admin-only (EXAMS_MANAGE), never the
+// own-batch permission: unlike every other route here, this can reach across
+// every batch on the given date, not just batches a Batch Director directs.
+router.post(
+  "/delete-by-date/preview",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE),
+  validate(deleteResultsByDateSchema),
+  controller.previewDeleteResultsByDate,
+);
+router.post(
+  "/delete-by-date",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE),
+  validate(deleteResultsByDateSchema),
+  controller.deleteResultsByDate,
 );
 
 export default router;

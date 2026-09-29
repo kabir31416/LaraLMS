@@ -8,6 +8,7 @@ import type { OfflineExam, OfflineResult } from "@/types/attendance";
 import { Badge } from "@/components/ui/badge";
 import { Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export default function StudentDashboard() {
   const { user, student, batch } = useStudentSelf();
@@ -15,19 +16,28 @@ export default function StudentDashboard() {
   const [pct, setPct] = useState(0);
   const [latest, setLatest] = useState<OfflineResult | null>(null);
   const [latestExam, setLatestExam] = useState<OfflineExam | null>(null);
+  const [loadingResult, setLoadingResult] = useState(true);
 
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
-    attendancePercent(student.id).then((p) => { if (!cancelled) setPct(p); }).catch(() => {});
+    attendancePercent(student.id).then((p) => { if (!cancelled) setPct(p); }).catch(() => {
+      if (!cancelled) toast.error("উপস্থিতির হার লোড করা যায়নি");
+    });
     getResultsByStudent(student.id).then(async (results) => {
       // Results come back newest-first (backend sorts by createdAt desc).
       const mostRecent = results[0];
-      if (cancelled || !mostRecent) return;
+      if (cancelled) return;
+      if (!mostRecent) { setLoadingResult(false); return; }
       setLatest(mostRecent);
       const exams = await listExams();
-      if (!cancelled) setLatestExam(exams.find((e) => e.id === mostRecent.examId) || null);
-    }).catch(() => {});
+      if (!cancelled) {
+        setLatestExam(exams.find((e) => e.id === mostRecent.examId) || null);
+        setLoadingResult(false);
+      }
+    }).catch(() => {
+      if (!cancelled) { setLoadingResult(false); toast.error("ফলাফল লোড করা যায়নি"); }
+    });
     return () => { cancelled = true; };
   }, [student, attendancePercent, getResultsByStudent, listExams]);
 
@@ -46,7 +56,7 @@ export default function StudentDashboard() {
           <StatCard title="উপস্থিতি %" value={`${pct}%`} icon={ClipboardCheck} variant="success" />
           <StatCard title="মোট পরিশোধিত" value={`৳ ${student.paid.toLocaleString()}`} icon={DollarSign} variant="info" />
           <StatCard title="মোট বকেয়া" value={`৳ ${student.due.toLocaleString()}`} icon={AlertCircle} variant="warning" />
-          <StatCard title="সর্বশেষ ফলাফল" value={latest && latestExam ? `${latest.marks ?? "অনু."} / ${latestExam.fullMarks}` : "—"} icon={Award} variant="primary" />
+          <StatCard title="সর্বশেষ ফলাফল" value={loadingResult ? "…" : latest && latestExam ? `${latest.marks ?? "অনু."} / ${latestExam.fullMarks}` : "—"} icon={Award} variant="primary" />
         </div>
 
         <Card>

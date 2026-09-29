@@ -42,8 +42,26 @@ export async function readScope(req: Request): Promise<{ batchIds?: string[] } |
   }
   if (perms.includes(PERMISSIONS.RESULTS_READ_OWN)) {
     if (!req.user!.studentId) throw ApiError.forbidden("No linked student record");
-    const student = await Student.findById(req.user!.studentId).select("currentBatchId");
-    return { batchIds: student?.currentBatchId ? [String(student.currentBatchId)] : [] };
+    // A student's own `/results` read (listResults above) is never batch-
+    // restricted — it returns every OfflineResult they've ever had, across
+    // every batch. Scoping their `/exams` read to ONLY currentBatchId (as
+    // this used to do) meant the Student Dashboard/Results page — which
+    // joins those two lists client-side on examId — silently lost any
+    // result from a batch the student was later transferred out of, since
+    // the exam it belonged to could never be found. Scope to every batch
+    // they actually have a result in (plus their current batch, for a
+    // freshly-assigned batch with no results yet) instead of just the
+    // current one, so that join always succeeds for real historical data.
+    const [student, resultExamIds] = await Promise.all([
+      Student.findById(req.user!.studentId).select("currentBatchId"),
+      OfflineResult.find({ studentId: req.user!.studentId }).distinct("examId"),
+    ]);
+    const resultBatchIds = resultExamIds.length
+      ? await OfflineExam.find({ _id: { $in: resultExamIds } }).distinct("batchId")
+      : [];
+    const batchIds = new Set(resultBatchIds.map(String));
+    if (student?.currentBatchId) batchIds.add(String(student.currentBatchId));
+    return { batchIds: Array.from(batchIds) };
   }
   throw ApiError.forbidden("Missing permission");
 }

@@ -26,3 +26,11 @@ export const getBatchResults = asyncHandler(async (req: Request, res: Response) 
 export const updateResultMark = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, await service.updateResultMark(req, req.params.resultId, req.body.marks));
 });
+
+export const previewDeleteResultsByDate = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.previewDeleteResultsByDate(req, req.body));
+});
+
+export const deleteResultsByDate = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.deleteResultsByDate(req, req.body));
+});

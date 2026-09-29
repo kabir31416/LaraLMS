@@ -12,6 +12,7 @@ import { buildMeta, buildSearchFilter } from "../../common/utils/pagination";
 import { pageIdsByRoll, reorderByIds } from "../../common/utils/rollSort";
 import { MAX_PAGE_SIZE } from "../../config/constants";
 import { assertCanActOnBatch, computeGrade, readScope } from "./exam.service";
+import { PERMISSIONS } from "../rbac/permissions";
 
 /**
  * Result Management (internal Admin/Batch Director module) — a viewing +
@@ -497,4 +498,112 @@ export async function updateResultMark(req: Request, resultId: string, marks: nu
     result: resultStatus,
     isPublished: exam.isPublished,
   };
+}
+
+/**
+ * Delete Results by Date — Admin-only (never a Batch Director's own-batch
+ * permission, since this can reach across every batch on a given date).
+ * Deletes ONLY the per-student OfflineResult rows for exams matching the
+ * given date (+ optional Course/Batch/Subject/Exam narrowing) — never the
+ * OfflineExam "definition" documents themselves (so the exam session stays
+ * on record and can simply be re-entered), and never AttendanceEntry,
+ * Student, Payment, or BatchEnrollment documents, which this feature has no
+ * business touching at all.
+ */
+export interface DeleteResultsByDateFilter {
+  /** yyyy-mm-dd — the exact OfflineExam.date field every exam is already stored/queried by, so this can never drift onto an adjacent day by timezone conversion. */
+  date: string;
+  courseId?: string;
+  batchId?: string;
+  subjectId?: string;
+  examId?: string;
+}
+
+function assertCanDeleteResults(req: Request): void {
+  const perms = req.user!.permissions;
+  if (!perms.includes("*") && !perms.includes(PERMISSIONS.EXAMS_MANAGE)) {
+    throw ApiError.forbidden("Missing permission");
+  }
+}
+
+/** Resolves the exact set of OfflineExam ids the given filter matches — shared by the preview and the actual delete so they can never disagree on scope. */
+async function resolveDeleteExamIds(filter: DeleteResultsByDateFilter): Promise<string[]> {
+  const examFilter: Record<string, unknown> = { date: filter.date };
+  if (filter.examId) examFilter._id = filter.examId;
+  if (filter.batchId) examFilter.batchId = filter.batchId;
+  if (filter.subjectId) examFilter.subjectId = filter.subjectId;
+
+  if (filter.courseId) {
+    if (filter.batchId) {
+      // A batchId narrower than the course was also given — it must actually
+      // belong to that course, otherwise the two filters contradict each
+      // other and must match nothing rather than silently ignoring one.
+      const batch = await Batch.findById(filter.batchId).select("courseId");
+      if (!batch || String(batch.courseId) !== filter.courseId) return [];
+    } else {
+      const batchIds = await Batch.find({ courseId: filter.courseId }).distinct("_id");
+      examFilter.batchId = { $in: batchIds };
+    }
+  }
+
+  const ids = await OfflineExam.find(examFilter).distinct("_id");
+  return ids.map(String);
+}
+
+export interface DeleteResultsPreview {
+  examCount: number;
+  resultCount: number;
+  batches: { id: string; name: string }[];
+  subjects: { id: string; name: string }[];
+}
+
+/** Preview — what "Delete Results by Date" would affect, shown before the admin confirms. Read-only, no permission side effect beyond the same Admin gate the delete itself enforces. */
+export async function previewDeleteResultsByDate(req: Request, filter: DeleteResultsByDateFilter): Promise<DeleteResultsPreview> {
+  assertCanDeleteResults(req);
+  const examIds = await resolveDeleteExamIds(filter);
+  if (examIds.length === 0) return { examCount: 0, resultCount: 0, batches: [], subjects: [] };
+
+  const [resultCount, exams] = await Promise.all([
+    OfflineResult.countDocuments({ examId: { $in: examIds } }),
+    OfflineExam.find({ _id: { $in: examIds } }).select("batchId subjectId"),
+  ]);
+  const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
+  const subjectIds = Array.from(new Set(exams.map((e) => String(e.subjectId))));
+  const [batches, subjects] = await Promise.all([
+    Batch.find({ _id: { $in: batchIds } }).select("name"),
+    Subject.find({ _id: { $in: subjectIds } }).select("name"),
+  ]);
+
+  return {
+    examCount: examIds.length,
+    resultCount,
+    batches: batches.map((b) => ({ id: String(b._id), name: b.name })),
+    subjects: subjects.map((s) => ({ id: String(s._id), name: s.name })),
+  };
+}
+
+/**
+ * Deletes exactly the OfflineResult rows `previewDeleteResultsByDate` would
+ * have reported for the same filter — never a broader set. A repeated call
+ * with the same filter after the first delete simply matches zero exams'
+ * worth of results (deleteMany is naturally idempotent), so a double-click
+ * or accidental resubmit can never delete twice or affect a second date.
+ */
+export async function deleteResultsByDate(req: Request, filter: DeleteResultsByDateFilter): Promise<{ deletedCount: number }> {
+  assertCanDeleteResults(req);
+  const examIds = await resolveDeleteExamIds(filter);
+  if (examIds.length === 0) return { deletedCount: 0 };
+
+  const { deletedCount } = await OfflineResult.deleteMany({ examId: { $in: examIds } });
+
+  await recordAudit({
+    req,
+    action: "result.delete-by-date",
+    module: "exams",
+    targetCollection: "offlineresults",
+    before: { date: filter.date, courseId: filter.courseId, batchId: filter.batchId, subjectId: filter.subjectId, examId: filter.examId, examIds },
+    after: { deletedCount: deletedCount ?? 0 },
+  });
+
+  return { deletedCount: deletedCount ?? 0 };
 }
