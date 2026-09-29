@@ -519,6 +519,14 @@ export interface ResultRecordFilter {
   examId?: string;
   /** Free-text — same searchable fields as the main Student List (name/phone/roll/registrationId), so "Student" and "Registration ID" are really one filter, not two separate lookups. */
   search?: string;
+  /**
+   * OfflineExam.isPublished as the string "true"/"false" — matches how every
+   * other filter field here arrives (raw query-string/JSON-string values
+   * from the controller, never trusted as already-typed booleans).
+   * Converted explicitly in resolveResultExamIds, never assigned straight
+   * into a Mongo filter as a string. Omitted or any other value means "either".
+   */
+  isPublished?: string;
 }
 
 function assertCanBulkDeleteResults(req: Request): void {
@@ -550,6 +558,8 @@ async function resolveResultExamIds(filter: ResultRecordFilter, restrictToBatchI
   if (filter.examId) examFilter._id = filter.examId;
   if (filter.subjectId) examFilter.subjectId = filter.subjectId;
   if (filter.lectureId) examFilter.lectureId = filter.lectureId;
+  if (filter.isPublished === "true") examFilter.isPublished = true;
+  else if (filter.isPublished === "false") examFilter.isPublished = false;
 
   // batchId + restrictToBatchIds + courseId can all narrow the same field —
   // resolve them into a single, mutually-consistent batchId constraint
@@ -599,11 +609,75 @@ export interface ResultRecordRow {
 }
 
 /**
+ * Joins a page of raw OfflineResult docs with their exam/subject/lecture/
+ * batch/course/student data — the exact shape both `listResultRecords` and
+ * the bulk-delete preview's sample use, so the two can never disagree about
+ * what a "result record" looks like. Bulk-queried (never one lookup per
+ * row) regardless of how many docs are passed in.
+ */
+async function enrichResultDocs(results: InstanceType<typeof OfflineResult>[]): Promise<ResultRecordRow[]> {
+  if (results.length === 0) return [];
+
+  const examIds = Array.from(new Set(results.map((r) => String(r.examId))));
+  const studentIds = Array.from(new Set(results.map((r) => String(r.studentId))));
+  const [exams, students, settings] = await Promise.all([
+    OfflineExam.find({ _id: { $in: examIds } }),
+    Student.find({ _id: { $in: studentIds } }).select("name registrationId currentRollNumber"),
+    getSettings(),
+  ]);
+  const examById = new Map(exams.map((e) => [String(e._id), e]));
+  const studentById = new Map(students.map((s) => [String(s._id), s]));
+
+  const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
+  const subjectIds = Array.from(new Set(exams.map((e) => String(e.subjectId))));
+  const lectureIds = Array.from(new Set(exams.filter((e) => e.lectureId).map((e) => String(e.lectureId))));
+  const [batches, subjects, lectures] = await Promise.all([
+    Batch.find({ _id: { $in: batchIds } }).select("name courseId"),
+    Subject.find({ _id: { $in: subjectIds } }).select("name"),
+    Lecture.find({ _id: { $in: lectureIds } }).select("title"),
+  ]);
+  const batchById = new Map(batches.map((b) => [String(b._id), b]));
+  const subjectById = new Map(subjects.map((s) => [String(s._id), s.name]));
+  const lectureById = new Map(lectures.map((l) => [String(l._id), l.title]));
+  const courseIds = Array.from(new Set(batches.map((b) => (b.courseId ? String(b.courseId) : null)).filter((id): id is string => id !== null)));
+  const { Course } = await import("../courses/course.model");
+  const courses = courseIds.length ? await Course.find({ _id: { $in: courseIds } }).select("name") : [];
+  const courseNameById = new Map(courses.map((c) => [String(c._id), c.name]));
+
+  return results.map((r) => {
+    const exam = examById.get(String(r.examId));
+    const student = studentById.get(String(r.studentId));
+    const batch = exam ? batchById.get(String(exam.batchId)) : undefined;
+    const { percentage, grade, result } = gradeResult(r.marks, exam?.fullMarks ?? 0, settings.gradeScale, settings.passingPercentage);
+    return {
+      resultId: String(r._id),
+      studentId: String(r.studentId),
+      studentName: student?.name ?? "-",
+      registrationId: student?.registrationId ?? "-",
+      rollNumber: student?.currentRollNumber,
+      batchName: batch?.name ?? "-",
+      courseName: batch?.courseId ? courseNameById.get(String(batch.courseId)) ?? null : null,
+      subjectName: exam ? subjectById.get(String(exam.subjectId)) ?? "-" : "-",
+      lectureTitle: exam?.lectureId ? lectureById.get(String(exam.lectureId)) ?? "-" : "-",
+      examTitle: exam?.title ?? "-",
+      date: exam?.date ?? "-",
+      fullMarks: exam?.fullMarks ?? 0,
+      obtainedMarks: r.marks,
+      percentage,
+      grade,
+      result,
+      isPublished: exam?.isPublished ?? false,
+    };
+  });
+}
+
+/**
  * The filtered, backend-paginated result list the "Result Records" tab
  * renders — every filter (date/range/course/batch/subject/lecture/exam/
- * student) is applied server-side before pagination, never fetched whole
- * and filtered in the browser. A Batch Director only ever sees rows from
- * batches they direct (readScope), same as every other read in this module.
+ * student/publish-status) is applied server-side before pagination, never
+ * fetched whole and filtered in the browser. A Batch Director only ever
+ * sees rows from batches they direct (readScope), same as every other read
+ * in this module.
  */
 export async function listResultRecords(
   req: Request,
@@ -629,105 +703,69 @@ export async function listResultRecords(
     OfflineResult.countDocuments(resultFilter),
     OfflineResult.find(resultFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
   ]);
-  if (results.length === 0) return { items: [], meta: buildMeta(page, limit, total) };
-
-  const examIdsOnPage = Array.from(new Set(results.map((r) => String(r.examId))));
-  const studentIdsOnPage = Array.from(new Set(results.map((r) => String(r.studentId))));
-  const [exams, students, settings] = await Promise.all([
-    OfflineExam.find({ _id: { $in: examIdsOnPage } }),
-    Student.find({ _id: { $in: studentIdsOnPage } }).select("name registrationId currentRollNumber"),
-    getSettings(),
-  ]);
-  const examById = new Map(exams.map((e) => [String(e._id), e]));
-  const studentById = new Map(students.map((s) => [String(s._id), s]));
-
-  const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
-  const subjectIds = Array.from(new Set(exams.map((e) => String(e.subjectId))));
-  const lectureIds = Array.from(new Set(exams.filter((e) => e.lectureId).map((e) => String(e.lectureId))));
-  const [batches, subjects, lectures] = await Promise.all([
-    Batch.find({ _id: { $in: batchIds } }).select("name courseId"),
-    Subject.find({ _id: { $in: subjectIds } }).select("name"),
-    Lecture.find({ _id: { $in: lectureIds } }).select("title"),
-  ]);
-  const batchById = new Map(batches.map((b) => [String(b._id), b]));
-  const subjectById = new Map(subjects.map((s) => [String(s._id), s.name]));
-  const lectureById = new Map(lectures.map((l) => [String(l._id), l.title]));
-  const courseIds = Array.from(new Set(batches.map((b) => (b.courseId ? String(b.courseId) : null)).filter((id): id is string => id !== null)));
-  const { Course } = await import("../courses/course.model");
-  const courses = courseIds.length ? await Course.find({ _id: { $in: courseIds } }).select("name") : [];
-  const courseNameById = new Map(courses.map((c) => [String(c._id), c.name]));
-
-  const items: ResultRecordRow[] = results.map((r) => {
-    const exam = examById.get(String(r.examId));
-    const student = studentById.get(String(r.studentId));
-    const batch = exam ? batchById.get(String(exam.batchId)) : undefined;
-    const { percentage, grade, result } = gradeResult(r.marks, exam?.fullMarks ?? 0, settings.gradeScale, settings.passingPercentage);
-    return {
-      resultId: String(r._id),
-      studentId: String(r.studentId),
-      studentName: student?.name ?? "-",
-      registrationId: student?.registrationId ?? "-",
-      rollNumber: student?.currentRollNumber,
-      batchName: batch?.name ?? "-",
-      courseName: batch?.courseId ? courseNameById.get(String(batch.courseId)) ?? null : null,
-      subjectName: exam ? subjectById.get(String(exam.subjectId)) ?? "-" : "-",
-      lectureTitle: exam?.lectureId ? lectureById.get(String(exam.lectureId)) ?? "-" : "-",
-      examTitle: exam?.title ?? "-",
-      date: exam?.date ?? "-",
-      fullMarks: exam?.fullMarks ?? 0,
-      obtainedMarks: r.marks,
-      percentage,
-      grade,
-      result,
-      isPublished: exam?.isPublished ?? false,
-    };
-  });
-
+  const items = await enrichResultDocs(results);
   return { items, meta: buildMeta(page, limit, total) };
 }
 
 export interface ResultRecordsPreview {
   examCount: number;
   resultCount: number;
+  /** Distinct students affected — a single student can appear in several matching results (multiple subjects/exams), so this is never just resultCount. */
+  affectedStudentCount: number;
   batches: { id: string; name: string }[];
   subjects: { id: string; name: string }[];
+  /** A bounded, backend-computed sample of the actual matching records (never the frontend's own count/guess) so the confirmation dialog can show real rows, not just a number. */
+  sample: ResultRecordRow[];
+  sampleTruncated: boolean;
 }
+
+const PREVIEW_SAMPLE_LIMIT = 20;
 
 /**
  * Bulk-delete preview — Admin-only, deliberately never the own-batch
  * permission: unlike row-level delete (below), a bulk filter can reach
  * across every batch/date matched, not just batches a Batch Director
  * directs. Shares resolveResultExamIds with the actual delete so the two
- * can never disagree about what's in scope.
+ * can never disagree about what's in scope, and its sample reuses the same
+ * enrichResultDocs join listResultRecords uses — never a second, divergent
+ * "preview" shape.
  */
 export async function previewDeleteResultRecords(req: Request, filter: ResultRecordFilter): Promise<ResultRecordsPreview> {
   assertCanBulkDeleteResults(req);
   const examIds = await resolveResultExamIds(filter);
-  if (examIds.length === 0) return { examCount: 0, resultCount: 0, batches: [], subjects: [] };
+  if (examIds.length === 0) return { examCount: 0, resultCount: 0, affectedStudentCount: 0, batches: [], subjects: [], sample: [], sampleTruncated: false };
 
   const resultFilter: Record<string, unknown> = { examId: { $in: examIds } };
   const searchStudentIds = await resolveSearchStudentIds(filter.search);
   if (searchStudentIds) {
-    if (searchStudentIds.length === 0) return { examCount: examIds.length, resultCount: 0, batches: [], subjects: [] };
+    if (searchStudentIds.length === 0) {
+      return { examCount: examIds.length, resultCount: 0, affectedStudentCount: 0, batches: [], subjects: [], sample: [], sampleTruncated: false };
+    }
     resultFilter.studentId = { $in: searchStudentIds };
   }
 
-  const [resultCount, exams] = await Promise.all([
+  const [resultCount, affectedStudentIds, exams, sampleDocs] = await Promise.all([
     OfflineResult.countDocuments(resultFilter),
+    OfflineResult.find(resultFilter).distinct("studentId"),
     OfflineExam.find({ _id: { $in: examIds } }).select("batchId subjectId"),
+    OfflineResult.find(resultFilter).sort({ createdAt: -1 }).limit(PREVIEW_SAMPLE_LIMIT),
   ]);
   const batchIds = Array.from(new Set(exams.map((e) => String(e.batchId))));
   const subjectIds = Array.from(new Set(exams.map((e) => String(e.subjectId))));
-  const [batches, subjects] = await Promise.all([
+  const [batches, subjects, sample] = await Promise.all([
     Batch.find({ _id: { $in: batchIds } }).select("name"),
     Subject.find({ _id: { $in: subjectIds } }).select("name"),
+    enrichResultDocs(sampleDocs),
   ]);
 
   return {
     examCount: examIds.length,
     resultCount,
+    affectedStudentCount: affectedStudentIds.length,
     batches: batches.map((b) => ({ id: String(b._id), name: b.name })),
     subjects: subjects.map((s) => ({ id: String(s._id), name: s.name })),
+    sample,
+    sampleTruncated: resultCount > sample.length,
   };
 }
 
@@ -762,7 +800,7 @@ export async function deleteResultRecordsBulk(req: Request, filter: ResultRecord
     action: "result.bulk-delete",
     module: "exams",
     targetCollection: "offlineresults",
-    before: { filter, examIds },
+    before: { mode: "filtered-bulk", filter, examIds, matchedCount: deletedCount ?? 0 },
     after: { deletedCount: deletedCount ?? 0 },
   });
 
@@ -794,8 +832,75 @@ export async function deleteOneResult(req: Request, resultId: string): Promise<{
     module: "exams",
     targetCollection: "offlineresults",
     targetId: String(result._id),
-    before: { studentId: String(result.studentId), examId: String(exam._id), examTitle: exam.title, date: exam.date, marks: result.marks },
+    before: { mode: "individual", studentId: String(result.studentId), examId: String(exam._id), examTitle: exam.title, date: exam.date, marks: result.marks },
   });
 
   return { deletedCount: 1 };
+}
+
+/**
+ * Delete Selected Results — Mode B's "selected rows" path (distinct from
+ * the filtered bulk delete above): the caller supplies exact resultIds
+ * (checked in the already-permission-scoped Result Records list on the
+ * frontend), and this re-validates every single one server-side rather
+ * than trusting that selection. Same permission tier as individual delete/
+ * edit (OFFLINE_RESULTS_MANAGE_OWN_BATCH, own-batch scoped for a Batch
+ * Director) — selecting several rows one can already edit individually
+ * grants no new capability. A row belonging to a batch the caller can't
+ * act on, or an id that no longer exists (e.g. already deleted by someone
+ * else), is skipped and reported rather than failing the whole request —
+ * partial success is real here since each row is its own independent
+ * permission check, unlike the single atomic deleteMany the filtered-bulk
+ * path uses.
+ */
+export interface DeleteSelectedResult {
+  requested: number;
+  deletedCount: number;
+  skipped: { resultId: string; reason: "not_found" | "forbidden" }[];
+}
+
+export async function deleteSelectedResults(req: Request, resultIds: string[]): Promise<DeleteSelectedResult> {
+  const uniqueIds = Array.from(new Set(resultIds));
+  const results = await OfflineResult.find({ _id: { $in: uniqueIds } });
+  const resultById = new Map(results.map((r) => [String(r._id), r]));
+
+  const examIds = Array.from(new Set(results.map((r) => String(r.examId))));
+  const exams = await OfflineExam.find({ _id: { $in: examIds } });
+  const examById = new Map(exams.map((e) => [String(e._id), e]));
+
+  const toDelete: string[] = [];
+  const skipped: DeleteSelectedResult["skipped"] = [];
+  const auditEntries: { resultId: string; studentId: string; examId: string; examTitle: string; date: string; marks: number | null }[] = [];
+
+  for (const id of uniqueIds) {
+    const result = resultById.get(id);
+    if (!result) { skipped.push({ resultId: id, reason: "not_found" }); continue; }
+    const exam = examById.get(String(result.examId));
+    if (!exam) { skipped.push({ resultId: id, reason: "not_found" }); continue; }
+    try {
+      await assertCanActOnBatch(req, String(exam.batchId));
+    } catch (err) {
+      skipped.push({ resultId: id, reason: err instanceof ApiError && err.statusCode === 404 ? "not_found" : "forbidden" });
+      continue;
+    }
+    toDelete.push(id);
+    auditEntries.push({ resultId: id, studentId: String(result.studentId), examId: String(exam._id), examTitle: exam.title, date: exam.date, marks: result.marks });
+  }
+
+  let deletedCount = 0;
+  if (toDelete.length > 0) {
+    const res = await OfflineResult.deleteMany({ _id: { $in: toDelete } });
+    deletedCount = res.deletedCount ?? 0;
+  }
+
+  await recordAudit({
+    req,
+    action: "result.delete-selected",
+    module: "exams",
+    targetCollection: "offlineresults",
+    before: { mode: "selected", requested: uniqueIds.length, deleted: auditEntries, skipped },
+    after: { deletedCount },
+  });
+
+  return { requested: uniqueIds.length, deletedCount, skipped };
 }
