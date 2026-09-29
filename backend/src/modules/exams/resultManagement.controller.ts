@@ -44,3 +44,7 @@ export const deleteResultRecordsBulk = asyncHandler(async (req: Request, res: Re
 export const deleteOneResult = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, await service.deleteOneResult(req, req.params.resultId));
 });
+
+export const deleteSelectedResults = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.deleteSelectedResults(req, req.body.resultIds));
+});

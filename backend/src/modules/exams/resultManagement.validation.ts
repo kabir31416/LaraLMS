@@ -45,6 +45,7 @@ const resultRecordFilterShape = {
   lectureId: z.string().length(24).optional(),
   examId: z.string().length(24).optional(),
   search: z.string().trim().optional(),
+  isPublished: z.enum(["true", "false"]).optional(),
 };
 
 export const listResultRecordsQuerySchema = z.object({
@@ -54,3 +55,10 @@ export const listResultRecordsQuerySchema = z.object({
 export const resultRecordFilterBodySchema = z.object({ body: z.object(resultRecordFilterShape) });
 
 export const resultIdParamSchema = z.object({ params: z.object({ resultId: z.string().length(24) }) });
+
+/** Mode B's "selected rows" delete — a bounded list of exact resultIds (never an unbounded/unvalidated array), each re-validated for permission server-side in the service layer. */
+export const deleteSelectedResultsSchema = z.object({
+  body: z.object({
+    resultIds: z.array(z.string().length(24)).min(1, "অন্তত একটি ফলাফল নির্বাচন করুন").max(500, "একবারে সর্বোচ্চ ৫০০ টি ফলাফল মুছা যাবে"),
+  }),
+});

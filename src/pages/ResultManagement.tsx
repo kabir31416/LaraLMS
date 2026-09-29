@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -194,13 +195,23 @@ interface ResultRecordRow {
   fullMarks: number;
   obtainedMarks: number | null;
   result: "পাস" | "ফেল" | "অনুপস্থিত";
+  isPublished: boolean;
 }
 
 interface ResultRecordsPreview {
   examCount: number;
   resultCount: number;
+  affectedStudentCount: number;
   batches: { id: string; name: string }[];
   subjects: { id: string; name: string }[];
+  sample: ResultRecordRow[];
+  sampleTruncated: boolean;
+}
+
+interface DeleteSelectedSummary {
+  requested: number;
+  deletedCount: number;
+  skipped: { resultId: string; reason: "not_found" | "forbidden" }[];
 }
 
 const RECORDS_PAGE_SIZE = 50;
@@ -209,6 +220,7 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
   const { user } = useAuth();
   const { batches } = useBatches();
   const { courses, getSubjectsByCourse, getLecturesBySubject } = useAcademic();
+  const { listExams } = useAttendance();
 
   const myBatches = useMemo(
     () => (isDirector && user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : batches),
@@ -219,6 +231,8 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
   const [batchId, setBatchId] = useState("all");
   const [subjectId, setSubjectId] = useState("all");
   const [lectureId, setLectureId] = useState("all");
+  const [examId, setExamId] = useState("all");
+  const [publishFilter, setPublishFilter] = useState<"all" | "published" | "unpublished">("all");
   const [dateMode, setDateMode] = useState<"exact" | "range">("exact");
   const [date, setDate] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -234,8 +248,19 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
     [getLecturesBySubject, courseId, subjectId],
   );
 
-  useEffect(() => { setBatchId("all"); setSubjectId("all"); setLectureId("all"); }, [courseId]);
-  useEffect(() => { setLectureId("all"); }, [subjectId]);
+  const [examOptions, setExamOptions] = useState<{ id: string; title: string; date: string }[]>([]);
+  useEffect(() => {
+    if (batchId === "all") { setExamOptions([]); return; }
+    let cancelled = false;
+    listExams({ batchId, subjectId: subjectId !== "all" ? subjectId : undefined, lectureId: lectureId !== "all" ? lectureId : undefined })
+      .then((exams) => { if (!cancelled) setExamOptions(exams.map((e) => ({ id: e.id, title: e.title, date: e.date }))); })
+      .catch(() => { if (!cancelled) setExamOptions([]); });
+    return () => { cancelled = true; };
+  }, [batchId, subjectId, lectureId, listExams]);
+
+  useEffect(() => { setBatchId("all"); setSubjectId("all"); setLectureId("all"); setExamId("all"); }, [courseId]);
+  useEffect(() => { setLectureId("all"); setExamId("all"); }, [subjectId]);
+  useEffect(() => { setExamId("all"); }, [batchId, lectureId]);
 
   // The exact filter object every one of list/preview/bulk-delete sends —
   // one place, so the list the admin sees and the bulk operation it confirms
@@ -248,13 +273,21 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
     if (batchId !== "all") f.batchId = batchId;
     if (subjectId !== "all") f.subjectId = subjectId;
     if (lectureId !== "all") f.lectureId = lectureId;
+    if (examId !== "all") f.examId = examId;
+    if (publishFilter !== "all") f.isPublished = publishFilter === "published" ? "true" : "false";
     if (debouncedSearch.trim()) f.search = debouncedSearch.trim();
     return f;
-  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, lectureId, debouncedSearch]);
+  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, lectureId, examId, publishFilter, debouncedSearch]);
 
   const [items, setItems] = useState<ResultRecordRow[]>([]);
   const [meta, setMeta] = useState<ListMeta | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Selection — a Map (not just a Set of ids) so a row selected on one page
+  // still has its display data (name/exam/date) available for the confirm
+  // dialog even after the admin has navigated to another page.
+  const [selectedRows, setSelectedRows] = useState<Map<string, ResultRecordRow>>(new Map());
+  const clearSelection = () => setSelectedRows(new Map());
 
   const loadList = useCallback(() => {
     setLoading(true);
@@ -272,10 +305,21 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
 
   useEffect(() => { loadList(); }, [loadList]);
   // Any filter change other than page itself restarts at page 1 — backend-
-  // applied filters, never a client-side slice of an already-fetched page.
-  useEffect(() => { setPage(1); }, [courseId, batchId, subjectId, lectureId, dateMode, date, dateFrom, dateTo, debouncedSearch]);
+  // applied filters, never a client-side slice of an already-fetched page —
+  // and clears selection, since "selected rows" only ever makes sense
+  // relative to the filter that produced them.
+  useEffect(() => {
+    setPage(1);
+    clearSelection();
+  }, [courseId, batchId, subjectId, lectureId, examId, publishFilter, dateMode, date, dateFrom, dateTo, debouncedSearch]);
+  // If a deletion empties out the current page (e.g. the last page's only
+  // rows were just removed), fall back to the new last page rather than
+  // showing a stuck, empty page.
+  useEffect(() => {
+    if (meta && meta.totalPages >= 1 && page > meta.totalPages) setPage(meta.totalPages);
+  }, [meta, page]);
 
-  // Individual row delete
+  // Mode A — individual row delete
   const [rowToDelete, setRowToDelete] = useState<ResultRecordRow | null>(null);
   const [deletingRow, setDeletingRow] = useState(false);
   const handleDeleteRow = () => {
@@ -285,13 +329,62 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
       .then(() => {
         toast({ title: "মুছে ফেলা হয়েছে", description: `${rowToDelete.studentName}-এর ফলাফল মুছে ফেলা হয়েছে।` });
         setRowToDelete(null);
+        setSelectedRows((prev) => { const next = new Map(prev); next.delete(rowToDelete.resultId); return next; });
         loadList();
       })
       .catch((err) => toast({ title: "ব্যর্থ", description: friendlyError(err, "ফলাফল মুছে ফেলা যায়নি।") }))
       .finally(() => setDeletingRow(false));
   };
 
-  // Bulk delete by filter — Admin-only (same gate the backend route enforces).
+  // Selection helpers
+  const currentPageAllSelected = items.length > 0 && items.every((r) => selectedRows.has(r.resultId));
+  const currentPageSomeSelected = items.some((r) => selectedRows.has(r.resultId));
+  const toggleRow = (row: ResultRecordRow, checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev);
+      if (checked) next.set(row.resultId, row);
+      else next.delete(row.resultId);
+      return next;
+    });
+  };
+  const toggleCurrentPage = (checked: boolean) => {
+    setSelectedRows((prev) => {
+      const next = new Map(prev);
+      items.forEach((r) => { if (checked) next.set(r.resultId, r); else next.delete(r.resultId); });
+      return next;
+    });
+  };
+
+  // Mode B (part 1) — delete the explicitly checked rows, never "everything matching the filter"
+  const [selectedDeleteOpen, setSelectedDeleteOpen] = useState(false);
+  const [selectedDeleting, setSelectedDeleting] = useState(false);
+  const [selectedSummary, setSelectedSummary] = useState<DeleteSelectedSummary | null>(null);
+  const handleDeleteSelected = () => {
+    setSelectedDeleting(true);
+    setSelectedSummary(null);
+    api.post<DeleteSelectedSummary>("/result-management/results/delete-selected", { resultIds: Array.from(selectedRows.keys()) })
+      .then((res) => {
+        setSelectedSummary(res);
+        if (res.skipped.length === 0) {
+          toast({ title: "মুছে ফেলা হয়েছে", description: `${res.deletedCount} টি নির্বাচিত ফলাফল মুছে ফেলা হয়েছে।` });
+          setSelectedDeleteOpen(false);
+          clearSelection();
+        } else {
+          toast({ title: "আংশিক সম্পন্ন", description: `${res.deletedCount}/${res.requested} টি মুছে ফেলা হয়েছে — ${res.skipped.length} টি বাদ দেওয়া হয়েছে।` });
+          // Keep only the skipped ones selected so the admin can see exactly which rows failed and why.
+          setSelectedRows((prev) => {
+            const next = new Map<string, ResultRecordRow>();
+            for (const s of res.skipped) { const row = prev.get(s.resultId); if (row) next.set(s.resultId, row); }
+            return next;
+          });
+        }
+        loadList();
+      })
+      .catch((err) => toast({ title: "ব্যর্থ", description: friendlyError(err, "নির্বাচিত ফলাফল মুছে ফেলা যায়নি।") }))
+      .finally(() => setSelectedDeleting(false));
+  };
+
+  // Mode B (part 2) — bulk delete by filter, Admin-only (same gate the backend route enforces).
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<ResultRecordsPreview | null>(null);
   const [bulkPreviewing, setBulkPreviewing] = useState(false);
@@ -304,9 +397,11 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
     if (courseId !== "all") parts.push(`কোর্স: ${courses.find((c) => c.id === courseId)?.name ?? ""}`);
     if (batchId !== "all") parts.push(`ব্যাচ: ${filteredBatches.find((b) => b.id === batchId)?.name ?? ""}`);
     if (subjectId !== "all") parts.push(`বিষয়: ${filteredSubjects.find((s) => s.id === subjectId)?.name ?? ""}`);
+    if (examId !== "all") parts.push(`এক্সাম: ${examOptions.find((e) => e.id === examId)?.title ?? ""}`);
+    if (publishFilter !== "all") parts.push(`স্ট্যাটাস: ${publishFilter === "published" ? "প্রকাশিত" : "অপ্রকাশিত"}`);
     if (debouncedSearch.trim()) parts.push(`শিক্ষার্থী: "${debouncedSearch.trim()}"`);
     return parts.join(", ");
-  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, courses, filteredBatches, filteredSubjects, debouncedSearch]);
+  }, [dateMode, date, dateFrom, dateTo, courseId, batchId, subjectId, examId, publishFilter, courses, filteredBatches, filteredSubjects, examOptions, debouncedSearch]);
 
   const handleBulkOpenChange = (v: boolean) => { setBulkOpen(v); if (!v) setBulkPreview(null); };
   const handleBulkPreview = () => {
@@ -324,6 +419,7 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
         setBulkConfirmOpen(false);
         setBulkOpen(false);
         setBulkPreview(null);
+        clearSelection();
         loadList();
       })
       .catch((err) => toast({ title: "মুছে ফেলা ব্যর্থ", description: friendlyError(err, "ফলাফল মুছে ফেলা যায়নি।") }))
@@ -379,6 +475,27 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="space-y-1.5">
+              <Label className="text-xs">এক্সাম</Label>
+              <Select value={examId} onValueChange={setExamId} disabled={batchId === "all"}>
+                <SelectTrigger><SelectValue placeholder={batchId === "all" ? "প্রথমে ব্যাচ নির্বাচন করুন" : undefined} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সকল এক্সাম</SelectItem>
+                  {examOptions.map((e) => <SelectItem key={e.id} value={e.id}>{e.title} ({e.date})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">প্রকাশনার অবস্থা</Label>
+              <Select value={publishFilter} onValueChange={(v) => setPublishFilter(v as typeof publishFilter)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">সব</SelectItem>
+                  <SelectItem value="published">প্রকাশিত</SelectItem>
+                  <SelectItem value="unpublished">অপ্রকাশিত</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs">তারিখ ফিল্টার</Label>
               <Select value={dateMode} onValueChange={(v) => setDateMode(v as "exact" | "range")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -394,7 +511,7 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
             ) : (
-              <>
+              <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs">শুরু</Label>
                   <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -403,14 +520,15 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
                   <Label className="text-xs">শেষ</Label>
                   <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
                 </div>
-              </>
-            )}
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-xs">শিক্ষার্থী (নাম/রেজিস্ট্রেশন/রোল/মোবাইল)</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="খুঁজুন..." />
               </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">শিক্ষার্থী (নাম/রেজিস্ট্রেশন নম্বর/রোল/মোবাইল)</Label>
+            <div className="relative max-w-md">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="খুঁজুন..." />
             </div>
           </div>
 
@@ -418,11 +536,11 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
             <div className="flex justify-end pt-1">
               <Dialog open={bulkOpen} onOpenChange={handleBulkOpenChange}>
                 <DialogTrigger asChild>
-                  <Button variant="destructive" size="sm"><Trash2 className="h-4 w-4 mr-1" />ফিল্টার করা ফলাফল মুছুন</Button>
+                  <Button variant="destructive" size="sm"><Trash2 className="h-4 w-4 mr-1" />ফিল্টার অনুযায়ী ফলাফল মুছুন</Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>ফিল্টার করা ফলাফল মুছুন</DialogTitle>
+                    <DialogTitle>ফলাফল মুছে ফেলার পূর্বদৃশ্য</DialogTitle>
                     <DialogDescription>
                       উপরের নির্বাচিত ফিল্টার অনুযায়ী মিলে যাওয়া সব প্রাপ্ত নম্বর স্থায়ীভাবে মুছে যাবে — এক্সাম সেশন, উপস্থিতি ও
                       শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে। মুছে ফেলার আগে প্রিভিউ দেখে নিশ্চিত করুন।
@@ -435,16 +553,47 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
                   </div>
 
                   {bulkPreview && (
-                    <div className={cn("rounded-md border p-3 text-sm space-y-1", bulkPreview.resultCount > 0 ? "border-destructive/30 bg-destructive/5" : "border-muted bg-muted/30")}>
-                      {bulkPreview.resultCount === 0 ? (
-                        <p className="text-muted-foreground">এই ফিল্টারে কোনো ফলাফল পাওয়া যায়নি।</p>
-                      ) : (
-                        <>
-                          <p className="font-medium flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-4 w-4" /> {bulkPreview.resultCount} টি ফলাফল (রেকর্ড) মুছে যাবে</p>
-                          <p className="text-muted-foreground">{bulkPreview.examCount} টি এক্সাম সেশন প্রভাবিত হবে</p>
-                          {bulkPreview.batches.length > 0 && <p className="text-muted-foreground">ব্যাচ: {bulkPreview.batches.map((b) => b.name).join(", ")}</p>}
-                          {bulkPreview.subjects.length > 0 && <p className="text-muted-foreground">বিষয়: {bulkPreview.subjects.map((s) => s.name).join(", ")}</p>}
-                        </>
+                    <div className="space-y-2">
+                      <div className={cn("rounded-md border p-3 text-sm space-y-1", bulkPreview.resultCount > 0 ? "border-destructive/30 bg-destructive/5" : "border-muted bg-muted/30")}>
+                        {bulkPreview.resultCount === 0 ? (
+                          <p className="text-muted-foreground">এই ফিল্টারে কোনো ফলাফল পাওয়া যায়নি — মুছে ফেলা যাবে না।</p>
+                        ) : (
+                          <>
+                            <p className="font-medium flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-4 w-4" /> মোট প্রভাবিত রেকর্ড: {bulkPreview.resultCount} টি</p>
+                            <p className="text-muted-foreground">প্রভাবিত শিক্ষার্থী: {bulkPreview.affectedStudentCount} জন</p>
+                            <p className="text-muted-foreground">{bulkPreview.examCount} টি এক্সাম সেশন প্রভাবিত হবে</p>
+                            {bulkPreview.batches.length > 0 && <p className="text-muted-foreground">ব্যাচ: {bulkPreview.batches.map((b) => b.name).join(", ")}</p>}
+                            {bulkPreview.subjects.length > 0 && <p className="text-muted-foreground">বিষয়: {bulkPreview.subjects.map((s) => s.name).join(", ")}</p>}
+                          </>
+                        )}
+                      </div>
+
+                      {bulkPreview.sample.length > 0 && (
+                        <div className="rounded-md border max-h-56 overflow-y-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">শিক্ষার্থী</TableHead>
+                                <TableHead className="text-xs">বিষয়</TableHead>
+                                <TableHead className="text-xs">তারিখ</TableHead>
+                                <TableHead className="text-xs">নম্বর</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {bulkPreview.sample.map((r) => (
+                                <TableRow key={r.resultId}>
+                                  <TableCell className="text-xs">{r.studentName} ({r.registrationId})</TableCell>
+                                  <TableCell className="text-xs">{r.subjectName}</TableCell>
+                                  <TableCell className="text-xs">{r.date}</TableCell>
+                                  <TableCell className="text-xs">{r.obtainedMarks ?? "অনুপস্থিত"} / {r.fullMarks}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          {bulkPreview.sampleTruncated && (
+                            <p className="text-xs text-muted-foreground px-3 py-1.5 border-t">...এবং আরও {bulkPreview.resultCount - bulkPreview.sample.length} টি রেকর্ড</p>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -456,21 +605,21 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
                     <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
                       <AlertDialogTrigger asChild>
                         <Button variant="destructive" disabled={!bulkPreview || bulkPreview.resultCount === 0}>
-                          <Trash2 className="h-4 w-4 mr-1" />মুছে ফেলুন
+                          <Trash2 className="h-4 w-4 mr-1" />নিশ্চিত করুন
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>আপনি কি নিশ্চিত?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            নির্বাচিত ফিল্টারের {bulkPreview?.resultCount ?? 0} টি ফলাফল স্থায়ীভাবে মুছে যাবে। এই কাজটি পূর্বাবস্থায়
-                            ফেরানো যাবে না। এক্সাম সেশন, উপস্থিতি ও শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে।
+                            নির্বাচিত ফিল্টারের {bulkPreview?.resultCount ?? 0} টি ফলাফল ({bulkPreview?.affectedStudentCount ?? 0} জন শিক্ষার্থীর) স্থায়ীভাবে মুছে যাবে।
+                            এই কাজটি পূর্বাবস্থায় ফেরানো যাবে না। এক্সাম সেশন, উপস্থিতি ও শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে।
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel disabled={bulkDeleting}>বাতিল</AlertDialogCancel>
                           <AlertDialogAction onClick={(e) => { e.preventDefault(); handleBulkDelete(); }} disabled={bulkDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            {bulkDeleting ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
+                            {bulkDeleting ? "মুছে ফেলা হচ্ছে..." : "নিশ্চিত করুন"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -483,11 +632,35 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
         </CardContent>
       </Card>
 
+      {selectedRows.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <span className="font-medium">{selectedRows.size} টি নির্বাচিত</span>
+          <Button variant="ghost" size="sm" className="h-7" onClick={clearSelection}>নির্বাচন পরিষ্কার করুন</Button>
+          <Button variant="destructive" size="sm" className="h-7 ml-auto" onClick={() => setSelectedDeleteOpen(true)}>
+            <Trash2 className="h-3.5 w-3.5 mr-1" />নির্বাচিত ফলাফল মুছুন
+          </Button>
+          {currentPageAllSelected && meta && meta.total > items.length && (
+            <p className="w-full text-xs text-muted-foreground">
+              শুধু এই পাতার {items.length} টি নির্বাচিত হয়েছে — এই ফিল্টারে মোট {meta.total} টি ফলাফল আছে।
+              সবগুলো মুছতে চাইলে উপরের "ফিল্টার অনুযায়ী ফলাফল মুছুন" ব্যবহার করুন।
+            </p>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={currentPageAllSelected ? true : currentPageSomeSelected ? "indeterminate" : false}
+                    onCheckedChange={(v) => toggleCurrentPage(!!v)}
+                    disabled={items.length === 0}
+                    aria-label="এই পাতার সব নির্বাচন করুন"
+                  />
+                </TableHead>
                 <TableHead>শিক্ষার্থী</TableHead>
                 <TableHead>ব্যাচ</TableHead>
                 <TableHead>বিষয়/লেকচার</TableHead>
@@ -500,12 +673,19 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow>
               ) : items.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">কোনো ফলাফল পাওয়া যায়নি</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">কোনো ফলাফল পাওয়া যায়নি</TableCell></TableRow>
               ) : (
                 items.map((row) => (
-                  <TableRow key={row.resultId}>
+                  <TableRow key={row.resultId} data-state={selectedRows.has(row.resultId) ? "selected" : undefined}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedRows.has(row.resultId)}
+                        onCheckedChange={(v) => toggleRow(row, !!v)}
+                        aria-label={`${row.studentName}-এর ফলাফল নির্বাচন করুন`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium">{row.studentName}</div>
                       <div className="text-xs text-muted-foreground">{row.registrationId}{row.rollNumber ? ` • রোল: ${row.rollNumber}` : ""}</div>
@@ -557,6 +737,7 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
         </Pagination>
       )}
 
+      {/* Mode A — individual delete confirmation */}
       <AlertDialog open={!!rowToDelete} onOpenChange={(v) => { if (!v) setRowToDelete(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -565,7 +746,8 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
               {rowToDelete && (
                 <div className="space-y-1">
                   <p className="font-medium text-foreground">{rowToDelete.studentName} ({rowToDelete.registrationId})</p>
-                  <p>{rowToDelete.examTitle} • {rowToDelete.subjectName} • {rowToDelete.date}</p>
+                  <p>{rowToDelete.batchName} • {rowToDelete.examTitle} • {rowToDelete.subjectName} • {rowToDelete.date}</p>
+                  <p>প্রাপ্ত নম্বর: {rowToDelete.obtainedMarks ?? "অনুপস্থিত"} / {rowToDelete.fullMarks}</p>
                   <p>এই একক ফলাফলটি স্থায়ীভাবে মুছে যাবে — পূর্বাবস্থায় ফেরানো যাবে না।</p>
                 </div>
               )}
@@ -574,11 +756,64 @@ function ResultRecordsTab({ isDirector }: { isDirector: boolean }) {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingRow}>বাতিল</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDeleteRow(); }} disabled={deletingRow} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {deletingRow ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
+              {deletingRow ? "মুছে ফেলা হচ্ছে..." : "নিশ্চিত করুন"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Mode B (selected rows) — preview + confirmation, and a post-operation summary when partial */}
+      <Dialog open={selectedDeleteOpen} onOpenChange={(v) => { setSelectedDeleteOpen(v); if (!v) setSelectedSummary(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>নির্বাচিত ফলাফল মুছুন</DialogTitle>
+            <DialogDescription>নিচের {selectedRows.size} টি নির্বাচিত ফলাফল স্থায়ীভাবে মুছে যাবে।</DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border max-h-64 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">শিক্ষার্থী</TableHead>
+                  <TableHead className="text-xs">এক্সাম/বিষয়</TableHead>
+                  <TableHead className="text-xs">তারিখ</TableHead>
+                  <TableHead className="text-xs">নম্বর</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from(selectedRows.values()).map((r) => {
+                  const skip = selectedSummary?.skipped.find((s) => s.resultId === r.resultId);
+                  return (
+                    <TableRow key={r.resultId}>
+                      <TableCell className="text-xs">{r.studentName} ({r.registrationId})</TableCell>
+                      <TableCell className="text-xs">{r.examTitle} / {r.subjectName}</TableCell>
+                      <TableCell className="text-xs">{r.date}</TableCell>
+                      <TableCell className="text-xs">
+                        {r.obtainedMarks ?? "অনুপস্থিত"} / {r.fullMarks}
+                        {skip && <span className="block text-destructive">{skip.reason === "forbidden" ? "অনুমতি নেই — বাদ" : "পাওয়া যায়নি — বাদ"}</span>}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          {selectedSummary && (
+            <div className={cn("rounded-md border p-3 text-sm", selectedSummary.skipped.length > 0 ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20")}>
+              <p>সফলভাবে মুছে ফেলা হয়েছে: {selectedSummary.deletedCount} / {selectedSummary.requested}</p>
+              {selectedSummary.skipped.length > 0 && <p>বাদ দেওয়া হয়েছে (অনুমতি/অস্তিত্ব সমস্যা): {selectedSummary.skipped.length} টি</p>}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedDeleteOpen(false)} disabled={selectedDeleting}>বাতিল</Button>
+            <Button variant="destructive" onClick={handleDeleteSelected} disabled={selectedDeleting || selectedRows.size === 0}>
+              {selectedDeleting ? "মুছে ফেলা হচ্ছে..." : "নিশ্চিত করুন"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

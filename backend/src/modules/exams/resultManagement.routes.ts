@@ -4,6 +4,7 @@ import { requirePermission } from "../../common/middlewares/rbac.middleware";
 import { validate } from "../../common/middlewares/validate.middleware";
 import {
   batchResultsQuerySchema,
+  deleteSelectedResultsSchema,
   listResultRecordsQuerySchema,
   listStudentResultsQuerySchema,
   resultIdParamSchema,
@@ -88,6 +89,15 @@ router.delete(
   requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
   validate(resultIdParamSchema),
   controller.deleteOneResult,
+);
+// Selected-rows delete (Mode B) — same permission tier as individual delete/
+// edit above; the service layer re-validates every id's batch ownership
+// itself and skips (never silently drops) any row the caller can't act on.
+router.post(
+  "/results/delete-selected",
+  requirePermission(PERMISSIONS.EXAMS_MANAGE, PERMISSIONS.OFFLINE_RESULTS_MANAGE_OWN_BATCH),
+  validate(deleteSelectedResultsSchema),
+  controller.deleteSelectedResults,
 );
 
 export default router;
