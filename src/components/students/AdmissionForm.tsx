@@ -255,7 +255,17 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={dob} onSelect={setDob} disabled={(date) => date > new Date()} initialFocus className="p-3 pointer-events-auto" />
+                      <Calendar
+                        mode="single"
+                        selected={dob}
+                        onSelect={setDob}
+                        disabled={(date) => date > new Date()}
+                        initialFocus
+                        className="p-3 pointer-events-auto"
+                        captionLayout="dropdown"
+                        fromYear={new Date().getFullYear() - 90}
+                        toYear={new Date().getFullYear()}
+                      />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -298,7 +308,16 @@ export function AdmissionForm({ open, onOpenChange, editStudent }: AdmissionForm
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={admissionDate} onSelect={setAdmissionDate} initialFocus className="p-3 pointer-events-auto" />
+                      <Calendar
+                        mode="single"
+                        selected={admissionDate}
+                        onSelect={setAdmissionDate}
+                        initialFocus
+                        className="p-3 pointer-events-auto"
+                        captionLayout="dropdown"
+                        fromYear={new Date().getFullYear() - 20}
+                        toYear={new Date().getFullYear() + 1}
+                      />
                     </PopoverContent>
                   </Popover>
                 </div>

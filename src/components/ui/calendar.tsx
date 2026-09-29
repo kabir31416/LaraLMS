@@ -15,8 +15,19 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center",
+        caption: "flex justify-center pt-1 relative items-center gap-1",
         caption_label: "text-sm font-medium",
+        // Used only when `captionLayout` is "dropdown"/"dropdown-buttons" (react-
+        // day-picker v8) — lets year selection jump directly via a native
+        // <select> instead of clicking the prev-month arrow repeatedly across
+        // many years. Each dropdown is a transparent <select> absolutely
+        // positioned over the visible, Tailwind-styled label span.
+        caption_dropdowns: "flex items-center gap-1",
+        dropdown_month: "relative inline-flex items-center rounded-md border border-input bg-background px-2 py-1 hover:bg-accent hover:text-accent-foreground transition-colors",
+        dropdown_year: "relative inline-flex items-center rounded-md border border-input bg-background px-2 py-1 hover:bg-accent hover:text-accent-foreground transition-colors",
+        dropdown: "absolute inset-0 z-10 w-full cursor-pointer appearance-none opacity-0",
+        dropdown_icon: "ml-1 h-3.5 w-3.5 opacity-50",
+        vhidden: "sr-only",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),

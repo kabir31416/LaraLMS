@@ -18,7 +18,19 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Search, Pencil, Save, X, Printer, FileSpreadsheet, ArrowLeft, Trophy } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Search, Pencil, Save, X, Printer, FileSpreadsheet, ArrowLeft, Trophy, Trash2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ApiClientError } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
@@ -28,6 +40,7 @@ import { api } from "@/lib/apiClient";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { printReport, exportExcel } from "@/lib/exporters";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 /**
  * Result Management — an internal Admin/Batch Director viewing + editing
@@ -142,6 +155,13 @@ const ResultManagement = () => {
           <p className="text-sm text-muted-foreground">শিক্ষার্থী বা ব্যাচভিত্তিক ফলাফল দেখুন এবং প্রয়োজনে নম্বর সম্পাদনা করুন</p>
         </div>
 
+        <div className="flex justify-end">
+          {/* Delete Results by Date — Admin-only, same as the backend route's
+              own EXAMS_MANAGE-only gate (never a Batch Director permission),
+              since it can reach across every batch on the chosen date. */}
+          {!isDirector && <DeleteResultsByDateDialog />}
+        </div>
+
         <Tabs defaultValue="individual">
           <TabsList>
             <TabsTrigger value="individual">শিক্ষার্থী ফলাফল</TabsTrigger>
@@ -158,6 +178,183 @@ const ResultManagement = () => {
     </DashboardLayout>
   );
 };
+
+/* -------------------------------------------------------------------- */
+/* Delete Results by Date (Admin-only)                                   */
+/* -------------------------------------------------------------------- */
+
+interface DeleteResultsPreview {
+  examCount: number;
+  resultCount: number;
+  batches: { id: string; name: string }[];
+  subjects: { id: string; name: string }[];
+}
+
+function DeleteResultsByDateDialog() {
+  const { batches } = useBatches();
+  const { courses, getSubjectsByCourse } = useAcademic();
+
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState("");
+  const [courseId, setCourseId] = useState("all");
+  const [batchId, setBatchId] = useState("all");
+  const [subjectId, setSubjectId] = useState("all");
+
+  const [preview, setPreview] = useState<DeleteResultsPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const filteredBatches = useMemo(
+    () => (courseId !== "all" ? batches.filter((b) => b.courseId === courseId) : batches),
+    [batches, courseId],
+  );
+  const filteredSubjects = useMemo(
+    () => (courseId !== "all" ? getSubjectsByCourse(courseId) : []),
+    [getSubjectsByCourse, courseId],
+  );
+
+  // Any filter change invalidates a previously-fetched preview — the delete
+  // call always re-resolves the exact same filter it deletes against, but a
+  // stale preview count shown for a since-changed filter would mislead the
+  // confirmation step.
+  const resetFilters = () => {
+    setDate(""); setCourseId("all"); setBatchId("all"); setSubjectId("all"); setPreview(null);
+  };
+  const onOpenChange = (v: boolean) => { setOpen(v); if (!v) resetFilters(); };
+  const invalidatePreview = () => setPreview(null);
+
+  const buildFilterBody = () => ({
+    date,
+    courseId: courseId !== "all" ? courseId : undefined,
+    batchId: batchId !== "all" ? batchId : undefined,
+    subjectId: subjectId !== "all" ? subjectId : undefined,
+  });
+
+  const handlePreview = () => {
+    if (!date) { toast({ title: "তারিখ প্রয়োজন", description: "প্রিভিউ দেখতে একটি তারিখ নির্বাচন করুন।" }); return; }
+    setPreviewing(true);
+    api
+      .post<DeleteResultsPreview>("/result-management/delete-by-date/preview", buildFilterBody())
+      .then(setPreview)
+      .catch((err) => {
+        toast({ title: "প্রিভিউ ব্যর্থ", description: friendlyError(err, "প্রিভিউ লোড করা যায়নি।") });
+        setPreview(null);
+      })
+      .finally(() => setPreviewing(false));
+  };
+
+  const handleDelete = () => {
+    setDeleting(true);
+    api
+      .post<{ deletedCount: number }>("/result-management/delete-by-date", buildFilterBody())
+      .then((res) => {
+        toast({ title: "সম্পন্ন হয়েছে", description: `${res.deletedCount} টি ফলাফল মুছে ফেলা হয়েছে।` });
+        setConfirmOpen(false);
+        setOpen(false);
+        resetFilters();
+      })
+      .catch((err) => toast({ title: "মুছে ফেলা ব্যর্থ", description: friendlyError(err, "ফলাফল মুছে ফেলা যায়নি।") }))
+      .finally(() => setDeleting(false));
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="destructive" size="sm"><Trash2 className="h-4 w-4 mr-1" />তারিখ অনুযায়ী ফলাফল মুছুন</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>তারিখ অনুযায়ী ফলাফল মুছুন</DialogTitle>
+          <DialogDescription>
+            নির্বাচিত তারিখের (ও প্রয়োজনে কোর্স/ব্যাচ/বিষয় অনুযায়ী সংকীর্ণ করা) সব প্রাপ্ত নম্বর স্থায়ীভাবে মুছে যাবে —
+            এক্সাম/উপস্থিতি/শিক্ষার্থী তথ্য অপরিবর্তিত থাকবে। মুছে ফেলার আগে প্রিভিউ দেখে নিশ্চিত করুন।
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>তারিখ *</Label>
+            <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); invalidatePreview(); }} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>কোর্স (ঐচ্ছিক)</Label>
+            <Select value={courseId} onValueChange={(v) => { setCourseId(v); setBatchId("all"); setSubjectId("all"); invalidatePreview(); }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">সকল কোর্স</SelectItem>
+                {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>ব্যাচ (ঐচ্ছিক)</Label>
+            <Select value={batchId} onValueChange={(v) => { setBatchId(v); invalidatePreview(); }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">সকল ব্যাচ</SelectItem>
+                {filteredBatches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>বিষয় (ঐচ্ছিক)</Label>
+            <Select value={subjectId} onValueChange={(v) => { setSubjectId(v); invalidatePreview(); }} disabled={courseId === "all"}>
+              <SelectTrigger><SelectValue placeholder={courseId === "all" ? "প্রথমে কোর্স নির্বাচন করুন" : undefined} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">সকল বিষয়</SelectItem>
+                {filteredSubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {preview && (
+            <div className={cn("rounded-md border p-3 text-sm space-y-1", preview.resultCount > 0 ? "border-destructive/30 bg-destructive/5" : "border-muted bg-muted/30")}>
+              {preview.resultCount === 0 ? (
+                <p className="text-muted-foreground">এই তারিখে (ও নির্বাচিত ফিল্টারে) কোনো ফলাফল পাওয়া যায়নি।</p>
+              ) : (
+                <>
+                  <p className="font-medium flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-4 w-4" /> {preview.resultCount} টি ফলাফল (রেকর্ড) মুছে যাবে</p>
+                  <p className="text-muted-foreground">{preview.examCount} টি এক্সাম সেশন প্রভাবিত হবে</p>
+                  {preview.batches.length > 0 && <p className="text-muted-foreground">ব্যাচ: {preview.batches.map((b) => b.name).join(", ")}</p>}
+                  {preview.subjects.length > 0 && <p className="text-muted-foreground">বিষয়: {preview.subjects.map((s) => s.name).join(", ")}</p>}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" onClick={handlePreview} disabled={!date || previewing}>
+            {previewing ? "লোড হচ্ছে..." : "প্রিভিউ দেখুন"}
+          </Button>
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={!preview || preview.resultCount === 0}>
+                <Trash2 className="h-4 w-4 mr-1" />মুছে ফেলুন
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>আপনি কি নিশ্চিত?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {date} তারিখের {preview?.resultCount ?? 0} টি ফলাফল স্থায়ীভাবে মুছে যাবে। এই কাজটি পূর্বাবস্থায় ফেরানো যাবে না।
+                  এক্সাম সেশন, উপস্থিতি ও শিক্ষার্থীর তথ্য অপরিবর্তিত থাকবে — শুধু নম্বরগুলো মুছে যাবে এবং পুনরায় এন্ট্রি করা যাবে।
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleting}>বাতিল</AlertDialogCancel>
+                <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDelete(); }} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  {deleting ? "মুছে ফেলা হচ্ছে..." : "হ্যাঁ, মুছে ফেলুন"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /* -------------------------------------------------------------------- */
 /* Individual Result                                                     */

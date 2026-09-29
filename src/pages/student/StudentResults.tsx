@@ -8,6 +8,7 @@ import { useStudentSelf } from "./useStudentSelf";
 import { Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { gradeFor } from "@/lib/grading";
+import { toast } from "sonner";
 
 export default function StudentResults() {
   const { user, student } = useStudentSelf();
@@ -15,13 +16,20 @@ export default function StudentResults() {
   const { getSubject, getLecture, settings } = useAcademic();
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!student) return;
     let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
     Promise.all([listExams(), getResultsByStudent(student.id)])
       .then(([e, r]) => { if (!cancelled) { setExams(e); setResults(r); } })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) { setLoadError(true); toast.error("ফলাফল লোড করা যায়নি"); }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [student, listExams, getResultsByStudent]);
 
@@ -44,7 +52,9 @@ export default function StudentResults() {
             <Table>
               <TableHeader><TableRow><TableHead>এক্সাম</TableHead><TableHead>সাবজেক্ট</TableHead><TableHead>লেকচার</TableHead><TableHead>তারিখ</TableHead><TableHead>নম্বর</TableHead><TableHead>গ্রেড</TableHead></TableRow></TableHeader>
               <TableBody>
-                {rows.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">কোনো ফলাফল নেই</TableCell></TableRow> :
+                {loading ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">লোড হচ্ছে...</TableCell></TableRow> :
+                  loadError ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-destructive">ফলাফল লোড করা যায়নি — আবার চেষ্টা করুন</TableCell></TableRow> :
+                  rows.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">কোনো ফলাফল নেই</TableCell></TableRow> :
                   rows.map((r) => <TableRow key={r.result.id}>
                     <TableCell className="font-medium">{r.exam.title}</TableCell>
                     <TableCell>{r.subject || "—"}</TableCell>
