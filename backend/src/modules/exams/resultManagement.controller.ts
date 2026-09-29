@@ -27,10 +27,20 @@ export const updateResultMark = asyncHandler(async (req: Request, res: Response)
   sendSuccess(res, await service.updateResultMark(req, req.params.resultId, req.body.marks));
 });
 
-export const previewDeleteResultsByDate = asyncHandler(async (req: Request, res: Response) => {
-  sendSuccess(res, await service.previewDeleteResultsByDate(req, req.body));
+export const listResultRecords = asyncHandler(async (req: Request, res: Response) => {
+  const { page, limit, ...filter } = req.query as Record<string, string | undefined>;
+  const { items, meta } = await service.listResultRecords(req, filter, { page, limit });
+  sendSuccess(res, items, 200, meta);
 });
 
-export const deleteResultsByDate = asyncHandler(async (req: Request, res: Response) => {
-  sendSuccess(res, await service.deleteResultsByDate(req, req.body));
+export const previewDeleteResultRecords = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.previewDeleteResultRecords(req, req.body));
+});
+
+export const deleteResultRecordsBulk = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.deleteResultRecordsBulk(req, req.body));
+});
+
+export const deleteOneResult = asyncHandler(async (req: Request, res: Response) => {
+  sendSuccess(res, await service.deleteOneResult(req, req.params.resultId));
 });

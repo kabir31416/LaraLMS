@@ -320,7 +320,11 @@ export async function create(
     logger.warn({ err }, "Failed to auto-post payment to accounts ledger");
   }
 
-  await sendPaymentSms(data.studentId, paidAmount, receiptNo);
+  // Deliberately NOT awaited — nothing below depends on the SMS having
+  // completed, and sendPaymentSms() never throws (it catches everything
+  // internally), so awaiting it here only ever added a slow gateway's
+  // latency to the admin's "payment recorded" response for no benefit.
+  void sendPaymentSms(data.studentId, paidAmount, receiptNo);
 
   return doc;
 }

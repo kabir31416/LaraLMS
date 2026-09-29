@@ -32,13 +32,25 @@ export const updateResultMarkSchema = z.object({
   body: z.object({ marks: z.number().min(0).nullable() }),
 });
 
-/** Shared by both the preview and the actual "Delete Results by Date" call so they can never validate the filter differently. */
-export const deleteResultsByDateSchema = z.object({
-  body: z.object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "তারিখ অবশ্যই YYYY-MM-DD ফরম্যাটে হতে হবে"),
-    courseId: z.string().length(24).optional(),
-    batchId: z.string().length(24).optional(),
-    subjectId: z.string().length(24).optional(),
-    examId: z.string().length(24).optional(),
-  }),
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "তারিখ অবশ্যই YYYY-MM-DD ফরম্যাটে হতে হবে");
+
+/** Shared filter shape for the Result Records list, the bulk-delete preview, and the bulk delete itself — kept in one place so all three can never validate the filter differently. */
+const resultRecordFilterShape = {
+  date: isoDate.optional(),
+  dateFrom: isoDate.optional(),
+  dateTo: isoDate.optional(),
+  courseId: z.string().length(24).optional(),
+  batchId: z.string().length(24).optional(),
+  subjectId: z.string().length(24).optional(),
+  lectureId: z.string().length(24).optional(),
+  examId: z.string().length(24).optional(),
+  search: z.string().trim().optional(),
+};
+
+export const listResultRecordsQuerySchema = z.object({
+  query: z.object({ ...resultRecordFilterShape, page: z.string().optional(), limit: z.string().optional() }),
 });
+
+export const resultRecordFilterBodySchema = z.object({ body: z.object(resultRecordFilterShape) });
+
+export const resultIdParamSchema = z.object({ params: z.object({ resultId: z.string().length(24) }) });

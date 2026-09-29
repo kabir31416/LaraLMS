@@ -825,12 +825,13 @@ export async function create(req: Request, body: Record<string, unknown> & Guard
 
   const fresh = await getDocOrThrow(String(doc._id));
   // Admission SMS §6 — fires only after the student (and any admission-time
-  // payment above) is fully committed; never awaited-to-block the response
-  // in spirit (it IS awaited so a slow gateway doesn't race the caller
-  // reading the freshly-created student, but sendAdmissionSms() itself
-  // never throws, so a gateway failure can never surface as an admission
-  // failure).
-  await sendAdmissionSms(String(doc._id));
+  // payment above) is fully committed. Deliberately NOT awaited: `fresh` was
+  // already read above, so nothing in this response depends on the SMS
+  // having completed, and sendAdmissionSms() never throws (it catches
+  // everything internally) — awaiting it here only ever added a slow
+  // gateway's latency to the admin's "student created" response for no
+  // benefit. Fire-and-forget lets that response return immediately.
+  void sendAdmissionSms(String(doc._id));
   return withGuardian(fresh);
 }
 

@@ -70,6 +70,7 @@ export function createBulkSmsBdProvider(config: BulkSmsBdConfig): SmsProvider {
             number: toGatewayFormat(to),
             message,
           }),
+          signal: AbortSignal.timeout(env.SMS_TIMEOUT_MS),
         });
         const text = await res.text();
         const code = extractResponseCode(text);
@@ -86,6 +87,10 @@ export function createBulkSmsBdProvider(config: BulkSmsBdConfig): SmsProvider {
         }
         return { ok: true };
       } catch (err) {
+        if (err instanceof Error && err.name === "TimeoutError") {
+          logger.warn({ to }, "BulkSMSBD send timed out — actual outcome unknown");
+          return { ok: false, timedOut: true, errorMessage: "BulkSMSBD সময়মতো সাড়া দেয়নি — ফলাফল অনিশ্চিত" };
+        }
         logger.error({ err }, "BulkSMSBD send failed");
         return { ok: false, errorMessage: "BulkSMSBD-এর সাথে সংযোগ করা যায়নি" };
       }
@@ -95,7 +100,7 @@ export function createBulkSmsBdProvider(config: BulkSmsBdConfig): SmsProvider {
       if (!config.apiKey) return { ok: false, errorMessage: "BulkSMSBD কনফিগার করা নেই" };
       try {
         const qs = new URLSearchParams({ api_key: config.apiKey });
-        const res = await fetch(`${BALANCE_URL}?${qs.toString()}`);
+        const res = await fetch(`${BALANCE_URL}?${qs.toString()}`, { signal: AbortSignal.timeout(env.SMS_TIMEOUT_MS) });
         const text = await res.text();
         const balance = extractBalance(text);
         if (balance !== undefined) return { ok: true, balance };

@@ -53,6 +53,26 @@ const envSchema = z.object({
   SMS_API_KEY: z.string().optional().default(""),
   SMS_SENDER_ID: z.string().optional().default(""),
   SMS_API_URL: z.string().optional().default("http://bulksmsbd.net/api/smsapi"),
+  /**
+   * Hard bound on a single provider HTTP call (BulkSMSBD/Alpha's `send`,
+   * `getBalance`, and Alpha's report lookup) — neither gateway's client here
+   * previously set a timeout at all, so a hung connection could block the
+   * caller indefinitely (Node's global fetch has no default timeout). 15s is
+   * comfortably above either gateway's typical response time (a few seconds)
+   * without being so short that a normal-but-slightly-slow response gets
+   * misreported as a failure.
+   */
+  SMS_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(15000),
+  /**
+   * How many guardian SMS the Result-SMS loop (exam.service.ts's
+   * submitResult/resendSms) sends concurrently instead of one at a time.
+   * Sequential sending was the dominant cause of "Send Result" feeling slow
+   * for a full class (N students x 1-3s each, awaited one by one). A modest
+   * bounded concurrency keeps the guardian gateway from being hit with an
+   * unlimited burst (Promise.all over the whole class) while still cutting
+   * wall-clock time by roughly this factor.
+   */
+  SMS_BULK_CONCURRENCY: z.coerce.number().int().positive().optional().default(5),
   /** Closing signature line on the Result Entry guardian SMS (exams/exam.service.ts's buildResultSms) — the coaching centre's own name, not a gateway credential. */
   SMS_SIGNATURE: z.string().optional().default("LaraLMS"),
   /**

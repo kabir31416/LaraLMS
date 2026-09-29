@@ -74,7 +74,18 @@ export const SmsSettings = model<SmsSettingsDoc>("SmsSettings", smsSettingsSchem
 
 // -------------------- SMS History / Log (§14) --------------------
 
-export const SMS_LOG_STATUSES = ["sent", "failed", "disabled"] as const;
+/**
+ * "sent" here means the provider ACCEPTED the request (BulkSMSBD/Alpha both
+ * only confirm submission, not delivery — neither gateway pushes a delivery
+ * webhook in this codebase; Alpha's report endpoint is a best-effort pull
+ * looked up on demand, not surfaced as a log status). Treat "sent" as
+ * "submitted to the gateway", never as "confirmed delivered to the handset".
+ * "pending" is written before the provider call so a hung/crashed request
+ * still leaves an auditable row; "timeout" means the provider never
+ * responded within SMS_TIMEOUT_MS — the actual outcome is genuinely
+ * unknown, not a confirmed failure.
+ */
+export const SMS_LOG_STATUSES = ["pending", "sent", "failed", "timeout", "disabled"] as const;
 export type SmsLogStatus = (typeof SMS_LOG_STATUSES)[number];
 
 /** "test"/"login" are real sends that happen outside the 4 toggleable events (Test SMS §15, existing login-credential SMS) — kept in the same log for one unified history, never a parallel table. */

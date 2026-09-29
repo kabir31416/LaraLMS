@@ -16,11 +16,11 @@ import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUp
 import { useCallback, useEffect, useState } from "react";
 import { useBatches } from "@/contexts/BatchContext";
 import { useStaff } from "@/contexts/StaffContext";
-import { usePayments } from "@/contexts/PaymentContext";
+import { fromApi as paymentFromApi, type ApiPayment } from "@/contexts/PaymentContext";
 import { useAttendance } from "@/contexts/AttendanceContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { gradeFor } from "@/lib/grading";
-import type { Student } from "@/types/student";
+import type { Student, Payment } from "@/types/student";
 import type { AttendanceEntry, OfflineExam, OfflineResult } from "@/types/attendance";
 import { api } from "@/lib/apiClient";
 import type { ChanceResult } from "@/types/chanceResult";
@@ -30,7 +30,6 @@ const StudentProfile = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { uploadStudentPhoto, deleteStudentPhoto } = useStudents();
-  const { getPayments } = usePayments();
   const { batches } = useBatches();
   const { getStaff } = useStaff();
   const { getByStudent, getResultsByStudent, listExams } = useAttendance();
@@ -46,6 +45,8 @@ const StudentProfile = () => {
   const [attendanceLoaded, setAttendanceLoaded] = useState(false);
   const [admissionLoaded, setAdmissionLoaded] = useState(false);
   const [materialsLoaded, setMaterialsLoaded] = useState(false);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
 
   // Core profile info is loaded on its own, directly by ID — never by
   // pulling it out of StudentContext's ≤100-row global list (that list
@@ -90,7 +91,12 @@ const StudentProfile = () => {
     Promise.all([
       getByStudent(student.id),
       getResultsByStudent(student.id),
-      listExams(student.batchId ? { batchId: student.batchId } : undefined),
+      // No batchId filter — an admin's own exam read is unrestricted
+      // server-side, and narrowing it to the student's CURRENT batch would
+      // silently drop results from any batch they were later transferred
+      // out of (the same bug already fixed on the student's own dashboard;
+      // see StudentDashboard.tsx).
+      listExams(),
     ]).then(([a, r, e]) => {
       if (cancelled) return;
       setAttendance(a);
@@ -126,6 +132,35 @@ const StudentProfile = () => {
     return () => { cancelled = true; };
   }, [student, activeTab, materialsLoaded]);
 
+  // Payments — a direct, server-filtered/paginated `/payments?studentId=...`
+  // fetch (the same pattern FeeManagement.tsx's Payment History already
+  // uses), NOT PaymentContext's `getPayments()`. That context caches a
+  // single global, un-scoped list capped at 100 rows system-wide — once a
+  // coaching centre records more than 100 payments total, any student's
+  // older payments silently fall out of that cache and this tab would show
+  // partial/empty history despite the rows existing in Mongo. Backs both
+  // the "ফি তথ্য" (installment count) and "পেমেন্ট" tabs, so either opening
+  // triggers it — same lazy-load convention as the attendance/results fetch.
+  useEffect(() => {
+    if (!student || paymentsLoaded) return;
+    if (activeTab !== "fees" && activeTab !== "payments") return;
+    setPaymentsLoaded(true);
+    let cancelled = false;
+    (async () => {
+      const all: Payment[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const res = await api.getWithMeta<ApiPayment[]>(`/payments?studentId=${student.id}&limit=100&page=${page}`);
+        all.push(...res.data.map(paymentFromApi));
+        const totalPages = typeof (res.meta as { totalPages?: number } | undefined)?.totalPages === "number" ? (res.meta as { totalPages: number }).totalPages : 1;
+        if (page >= totalPages || res.data.length === 0) break;
+      }
+      return all;
+    })()
+      .then((all) => { if (!cancelled) setPayments(all); })
+      .catch(() => { if (!cancelled) setPayments([]); });
+    return () => { cancelled = true; };
+  }, [student, activeTab, paymentsLoaded]);
+
   if (studentLoading) {
     return (
       <DashboardLayout>
@@ -149,8 +184,6 @@ const StudentProfile = () => {
     );
   }
 
-  const payments = getPayments(student.id);
-
   const present = attendance.filter((a) => a.status === "Present").length;
   const absent = attendance.filter((a) => a.status === "Absent").length;
   const attendanceRate = attendance.length > 0 ? Math.round((present / attendance.length) * 100) : 0;
@@ -164,7 +197,10 @@ const StudentProfile = () => {
     })
     .filter((r): r is ResultRow => r !== null);
 
-  const installmentCount = payments.length;
+  // Material purchases are a separate ledger from tuition (payment.service.ts
+  // excludes them from Student.paid/due/totalFee) — counting them here would
+  // overstate how many tuition installments were actually paid.
+  const installmentCount = payments.filter((p) => p.source !== "material").length;
 
   return (
     <DashboardLayout>

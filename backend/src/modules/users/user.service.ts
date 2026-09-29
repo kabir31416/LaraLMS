@@ -143,7 +143,7 @@ async function resolveIdentifierCollision(
   await existing.save();
 
   await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(existing._id), before, after: { identifier: existing.identifier, roleId: existing.roleId } });
-  await notifyStudentCredential(existing.identifier, effectivePassword, input.linkedStudentId);
+  void notifyStudentCredential(existing.identifier, effectivePassword, input.linkedStudentId); // fire-and-forget — see notifyStudentCredential's own comment; never throws, nothing below depends on it
   return { user: existing, tempPassword };
 }
 
@@ -213,7 +213,7 @@ export async function createUser(req: Request, input: CreateUserInput, retriesLe
   }
 
   await recordAudit({ req, action: "user.create", module: "users", targetCollection: "users", targetId: String(user._id), after: { identifier: user.identifier, roleId: user.roleId } });
-  await notifyStudentCredential(user.identifier, effectivePassword, input.linkedStudentId);
+  void notifyStudentCredential(user.identifier, effectivePassword, input.linkedStudentId); // fire-and-forget — see above
   return { user, tempPassword };
 }
 
@@ -293,7 +293,7 @@ export async function resetCredentials(req: Request, id: string, patch: { identi
   }
 
   await recordAudit({ req, action: "user.reset-credentials", module: "users", targetCollection: "users", targetId: id, before, after: { identifier: user.identifier } });
-  await notifyStudentCredential(user.identifier, patch.password, user.linkedStudentId);
+  void notifyStudentCredential(user.identifier, patch.password, user.linkedStudentId); // fire-and-forget — see above
   return user;
 }
 

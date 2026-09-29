@@ -221,24 +221,56 @@ export interface SendSmsResult {
   errorMessage?: string;
 }
 
-async function writeLog(params: SendSmsParams, provider: SmsProviderName, result: Partial<SendSmsResult>, status: SmsLogStatus): Promise<void> {
+/** Written BEFORE the provider call so a hung/crashed request still leaves an auditable row (previously the log was only written after the provider call resolved — a request that never resolved left no trace at all). */
+async function writePendingLog(params: SendSmsParams, provider: SmsProviderName): Promise<SmsLogDoc | null> {
   try {
-    await SmsLog.create({
+    return await SmsLog.create({
       studentId: params.studentId,
       staffId: params.staffId,
       recipient: params.to,
       eventType: params.eventType,
       provider,
       message: params.message,
-      status,
-      providerRequestId: result.providerRequestId,
-      errorCode: result.errorCode,
-      errorMessage: result.errorMessage,
-      sentForDate: params.eventType === "birthday" ? new Date().toISOString().slice(0, 10) : undefined,
-      sentAt: status === "sent" ? new Date() : undefined,
+      status: "pending",
     });
   } catch (err) {
-    logger.error({ err }, "Failed to write SMS log");
+    logger.error({ err }, "Failed to write pending SMS log");
+    return null;
+  }
+}
+
+/** Updates the pending row in place once the outcome is known (sent/failed/timeout/disabled). Falls back to inserting a fresh row if the pending write itself failed above, so the final outcome is never lost either way. */
+async function finalizeLog(
+  pendingDoc: SmsLogDoc | null,
+  params: SendSmsParams,
+  provider: SmsProviderName,
+  result: Partial<SendSmsResult>,
+  status: SmsLogStatus,
+): Promise<void> {
+  const fields = {
+    status,
+    providerRequestId: result.providerRequestId,
+    errorCode: result.errorCode,
+    errorMessage: result.errorMessage,
+    sentForDate: params.eventType === "birthday" ? new Date().toISOString().slice(0, 10) : undefined,
+    sentAt: status === "sent" ? new Date() : undefined,
+  };
+  try {
+    if (pendingDoc) {
+      await SmsLog.updateOne({ _id: pendingDoc._id }, { $set: fields });
+    } else {
+      await SmsLog.create({
+        studentId: params.studentId,
+        staffId: params.staffId,
+        recipient: params.to,
+        eventType: params.eventType,
+        provider,
+        message: params.message,
+        ...fields,
+      });
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to finalize SMS log");
   }
 }
 
@@ -257,15 +289,21 @@ export async function sendSms(params: SendSmsParams): Promise<SendSmsResult> {
     if ((SMS_EVENT_TYPES as readonly string[]).includes(params.eventType)) {
       const enabled = await isEventEnabled(params.eventType as SmsEventType);
       if (!enabled) {
-        await writeLog(params, (await getSettingsDoc()).activeProvider, {}, "disabled");
+        const { activeProvider } = await getSettingsDoc();
+        await finalizeLog(null, params, activeProvider, {}, "disabled");
         return { ok: false, status: "disabled" };
       }
     }
 
     const { provider, name } = await resolveActiveProvider();
+    // Written before the provider call resolves — see writePendingLog's
+    // comment for why (a hung/timed-out request must still be auditable).
+    const pendingDoc = await writePendingLog(params, name);
     const sendResult = await provider.send({ to: params.to, message: params.message });
-    const status: SmsLogStatus = sendResult.ok ? "sent" : "failed";
-    await writeLog(params, name, sendResult, status);
+    // A timeout means the actual outcome is unknown — never reported as a
+    // confirmed "failed", which would wrongly imply the provider rejected it.
+    const status: SmsLogStatus = sendResult.timedOut ? "timeout" : sendResult.ok ? "sent" : "failed";
+    await finalizeLog(pendingDoc, params, name, sendResult, status);
     return { ok: sendResult.ok, status, providerRequestId: sendResult.providerRequestId, errorCode: sendResult.errorCode, errorMessage: sendResult.errorMessage };
   } catch (err) {
     logger.error({ err }, "sendSms failed unexpectedly");
