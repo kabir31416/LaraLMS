@@ -22,9 +22,10 @@ interface HubCard {
 }
 
 const CARDS: HubCard[] = [
+  {to: "/studententry", icon: UserPlus, title: "শিক্ষার্থী তথ্য পূরণ", description: "প্রোফাইল তথ্য ও ছবি হালনাগাদ করুন" },
   { to: "/info/search", icon: Search, title: "শিক্ষার্থী তথ্য অনুসন্ধান", description: "মোবাইল নম্বর দিয়ে আপনার তথ্য খুঁজুন" },
-  { to: "/marksheet", icon: FileText, title: "মার্কশিট", description: "আপনার পরীক্ষার ফলাফল দেখুন ও ডাউনলোড করুন" },
-  { to: "/studententry", icon: UserPlus, title: "শিক্ষার্থী তথ্য পূরণ", description: "প্রোফাইল তথ্য ও ছবি হালনাগাদ করুন" },
+  { to: "/marksheet", icon: FileText, title: "মার্কশিট", description: "আপনার পরীক্ষার ফলাফল দেখুন ও ডাউনলোড করুন" }
+  
 ];
 
 export default function PublicInfo() {
@@ -47,7 +48,7 @@ export default function PublicInfo() {
           )}
           {institution?.name && <p className="text-sm font-semibold text-primary">{institution.name}</p>}
           <h1 className="text-2xl font-bold">শিক্ষার্থী তথ্য কেন্দ্র</h1>
-          <p className="text-sm text-muted-foreground">নিচের যেকোনো একটি অপশন বেছে নিন — লগইন প্রয়োজন নেই</p>
+          <p className="text-sm text-muted-foreground">নিচের যেকোনো একটি অপশন বেছে নিন</p>
         </div>
 
         <div className="space-y-3">
