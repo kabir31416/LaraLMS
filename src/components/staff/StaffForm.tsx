@@ -272,6 +272,11 @@ export function StaffForm({ open, onOpenChange, editStaff }: Props) {
                 ? "এডমিনের জন্য এই আইডি শুধু পরিচয় হিসেবে ব্যবহৃত হয় — লগইন হয় মোবাইল ও পাসওয়ার্ড দিয়ে (নিচে দেখুন)"
                 : "মোবাইল নম্বর ও এই আইডি দিয়েই স্টাফ পোর্টালে লগইন করা যাবে (পাসওয়ার্ড লাগবে না)"}
             </p>
+            {form.staffType.startsWith("Mess ") && (
+              <p className="text-xs text-muted-foreground">
+                মেস স্টাফ: “মেস সেটআপ” থেকে কোনো মেসে যুক্ত করার পর শুধু সেই মেসের তথ্য দেখতে ও কাজ করতে পারবেন।
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>ইমেইল</Label>

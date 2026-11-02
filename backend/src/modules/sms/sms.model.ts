@@ -89,7 +89,8 @@ export const SMS_LOG_STATUSES = ["pending", "sent", "failed", "timeout", "disabl
 export type SmsLogStatus = (typeof SMS_LOG_STATUSES)[number];
 
 /** "test"/"login" are real sends that happen outside the 4 toggleable events (Test SMS §15, existing login-credential SMS) — kept in the same log for one unified history, never a parallel table. */
-export const SMS_LOG_EVENT_TYPES = [...SMS_EVENT_TYPES, "login", "test"] as const;
+/** "mess" (Mess Management notices / payment confirmations) is log-only like "login"/"test": never gated by the 4 event toggles, sent only when an operator explicitly asks for it. */
+export const SMS_LOG_EVENT_TYPES = [...SMS_EVENT_TYPES, "login", "test", "mess"] as const;
 export type SmsLogEventType = (typeof SMS_LOG_EVENT_TYPES)[number];
 
 export interface SmsLogDoc extends Document {

@@ -1,6 +1,12 @@
 import { Schema, model, Document } from "mongoose";
 
-export const STAFF_TYPES = ["Admin", "Teacher", "Staff", "Batch Director"] as const;
+/**
+ * "Mess Manager"/"Mess Accountant"/"Mess Caretaker" are additive (Mess
+ * Management) — each gets its own Staff Portal role (auth.service.ts's
+ * STAFF_TYPE_TO_ROLE), limited to the Messes the staff member is assigned
+ * to. Mess "Support Staff" are ordinary "Staff" rows assigned to a Mess.
+ */
+export const STAFF_TYPES = ["Admin", "Teacher", "Staff", "Batch Director", "Mess Manager", "Mess Accountant", "Mess Caretaker"] as const;
 export const STAFF_STATUS = ["সক্রিয়", "নিষ্ক্রিয়"] as const; // matches the frontend's existing Bengali enum exactly
 
 export interface StaffDoc extends Document {

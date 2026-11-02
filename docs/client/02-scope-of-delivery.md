@@ -31,6 +31,7 @@ Exactly what was built, verified module by module against the running code — n
 | Public Marksheet | ✅ Delivered | No-login individual result lookup and batch master sheet; togglable, rate-limited. |
 | Student Portal | ✅ Delivered | Dashboard, profile (with self-editable section), attendance, results, payments, material history, notices. |
 | Settings | ✅ Delivered | Institution, Academic, Student, Result, Finance, Material, Public, Audit Log sections — see the User Manual's Settings section for the full field list. |
+| Mess / Hostel Management | 🔵 Delivered in code — Requires Verification | Multi-Mess setup, rooms/seats, memberships for existing students, reservations, monthly billing, Mess payments (separate from course fees), deposit & settlement, expenses, complaints/maintenance, notices, Student Portal page, reports, Mess Settings. See Document 10; database-backed flows still need a live test-database run (§10.13). Meal Management is not included. |
 | Authentication / Security | ✅ Delivered | bcrypt password hashing, JWT access/refresh separation, rate limiting, audit logging, duplicate-payment protection, enforced forced-password-change flow with self-service Change Password (added in v1.1). |
 
 ## 2.2 Partially Delivered
@@ -49,6 +50,7 @@ Exactly what was built, verified module by module against the running code — n
 - **Online exam-taking (student self-attempt) interface** — permission keys for it exist in the access-control catalogue, but no screen was found that lets a student actually take an exam online; all exam/result entry in the current system is offline, entered by staff.
 - **Notice file attachments** — a notice is text-only (title, description, priority, dates); no attachment field exists.
 - **Role Management screen** — see Partially Delivered above.
+- **Mess Meal Management** (meal entry, meal count, meal rate, meal billing) — deliberately out of scope for the first Mess release; see Document 10 §10.12.
 - **Deployment automation** (Docker, CI/CD pipeline, hosting scripts) — none exists in the repository; deployment is a manual build-and-run process today.
 
 ## 2.4 Future Development (Suggested, Not Committed)

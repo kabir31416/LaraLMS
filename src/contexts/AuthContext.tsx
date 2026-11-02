@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, ApiClientError, getAccessToken, onSessionExpired, setAccessToken, setHasRefreshCapability } from "@/lib/apiClient";
 
-export type Role = "Admin" | "Batch Director" | "Student";
+/** "Mess Staff" covers the three Mess staff portal roles (mess_manager / mess_accountant / mess_caretaker); what each may do is decided by `permissions`, not by the display role. */
+export type Role = "Admin" | "Batch Director" | "Student" | "Mess Staff";
 
 export interface AuthUser {
   id: string;
@@ -66,6 +67,7 @@ interface StaffLoginResponse {
     staffId?: string;
     staffType: string;
     role: string;
+    permissions?: string[];
   };
 }
 
@@ -95,6 +97,7 @@ const STAFF_SESSION_KEY = "laralms_staff_session";
 function toDisplayRole(backendRole: string): Role {
   if (backendRole === "batch_director") return "Batch Director";
   if (backendRole === "student") return "Student";
+  if (backendRole.startsWith("mess_")) return "Mess Staff";
   return "Admin";
 }
 
@@ -140,6 +143,8 @@ function staffToAuthUser(s: StaffLoginResponse["staff"]): AuthUser {
     name: s.name,
     role: toDisplayRole(s.role),
     mustChangePassword: false,
+    // Mess staff portal logins carry their (fixed) permission set so nav items can be shown/hidden; the token remains the only thing the backend trusts.
+    permissions: s.permissions,
   };
 }
 

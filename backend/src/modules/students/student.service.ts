@@ -194,7 +194,7 @@ function escapeRegex(s: string): string {
  * itself, so that helper stays a generic single-collection utility other
  * modules can keep using unchanged.
  */
-async function buildSearchFilterWithGuardian(search: unknown): Promise<Record<string, unknown>> {
+export async function buildSearchFilterWithGuardian(search: unknown): Promise<Record<string, unknown>> {
   const base = buildSearchFilter(search, ["name", "phone", "registrationId", "currentRollNumber", "admissionRoll"]);
   if (typeof search !== "string" || !search.trim()) return base;
   const { Guardian } = await import("../guardians/guardian.model");

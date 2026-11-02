@@ -18,6 +18,7 @@ export function Topbar() {
   const initial = user?.name?.charAt(0) || "অ";
   const roleLabel = user?.role === "Batch Director" ? "ব্যাচ ডিরেক্টর"
     : user?.role === "Student" ? "শিক্ষার্থী"
+    : user?.role === "Mess Staff" ? "মেস স্টাফ"
     : "প্রশাসক";
 
   const handleLogout = () => {

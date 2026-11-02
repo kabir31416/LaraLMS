@@ -188,8 +188,12 @@ export async function studentLogin(phone: string, rollNumber: string) {
  * "Admin" so a Staff row of that type can't also get in through the
  * phone+staffId door.
  */
-const STAFF_TYPE_TO_ROLE: Partial<Record<StaffDoc["staffType"], "batch_director">> = {
+const STAFF_TYPE_TO_ROLE: Partial<Record<StaffDoc["staffType"], "batch_director" | "mess_manager" | "mess_accountant" | "mess_caretaker">> = {
   "Batch Director": "batch_director",
+  // Mess Management staff portal — scoped to assigned Messes in mess.scope.ts.
+  "Mess Manager": "mess_manager",
+  "Mess Accountant": "mess_accountant",
+  "Mess Caretaker": "mess_caretaker",
 };
 
 /**
@@ -213,7 +217,12 @@ export async function staffLogin(phone: string, staffId: string) {
 
   const roleName = STAFF_TYPE_TO_ROLE[staff.staffType];
   if (!roleName) {
-    throw ApiError.forbidden("এই স্টাফ টাইপের জন্য এখনো কোনো পোর্টাল চালু নেই — Batch Director ছাড়া অন্য কেউ এই লগইন ব্যবহার করতে পারবে না");
+    throw ApiError.forbidden("এই স্টাফ টাইপের জন্য এখনো কোনো পোর্টাল চালু নেই — শুধু Batch Director ও মেস স্টাফ এই লগইন ব্যবহার করতে পারবেন");
+  }
+  // Mess staff only: an inactive (নিষ্ক্রিয়) account can no longer reach Mess
+  // money/member data. Batch Director behavior is left exactly as it was.
+  if (roleName !== "batch_director" && staff.status === "নিষ্ক্রিয়") {
+    throw ApiError.forbidden("এই স্টাফ অ্যাকাউন্টটি নিষ্ক্রিয় করা হয়েছে");
   }
 
   const accessToken = signAccessToken(
@@ -236,6 +245,9 @@ export async function staffLogin(phone: string, staffId: string) {
       staffId: staff.staffId,
       staffType: staff.staffType,
       role: roleName,
+      // Surfaced so the portal UI can show/hide nav items (the token is still
+      // the only thing the backend trusts).
+      permissions: DEFAULT_ROLE_PERMISSIONS[roleName],
     },
   };
 }

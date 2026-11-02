@@ -1,12 +1,15 @@
-export type StaffType = "Admin" | "Teacher" | "Staff" | "Batch Director";
+export type StaffType = "Admin" | "Teacher" | "Staff" | "Batch Director" | "Mess Manager" | "Mess Accountant" | "Mess Caretaker";
 export type StaffStatus = "সক্রিয়" | "নিষ্ক্রিয়";
 
-export const STAFF_TYPES: StaffType[] = ["Admin", "Teacher", "Staff", "Batch Director"];
+export const STAFF_TYPES: StaffType[] = ["Admin", "Teacher", "Staff", "Batch Director", "Mess Manager", "Mess Accountant", "Mess Caretaker"];
 export const STAFF_TYPE_LABELS: Record<StaffType, string> = {
   Admin: "অ্যাডমিন",
   Teacher: "শিক্ষক",
   Staff: "স্টাফ",
   "Batch Director": "ব্যাচ ডিরেক্টর",
+  "Mess Manager": "মেস ম্যানেজার",
+  "Mess Accountant": "মেস হিসাবরক্ষক",
+  "Mess Caretaker": "মেস কেয়ারটেকার",
 };
 
 export interface Staff {
