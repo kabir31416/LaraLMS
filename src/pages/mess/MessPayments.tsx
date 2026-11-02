@@ -12,7 +12,7 @@ import { MessPage, useMessScope } from "@/components/mess/MessShell";
 import { Pager, ReasonDialog, ReceivePaymentDialog, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
-import { errMsg, MEMBERSHIP_STATUS_LABELS, PURPOSE_LABELS, qs, refName, tk, usePagedList, type Membership, type MessPayment } from "@/lib/mess";
+import { errMsg, MEMBERSHIP_STATUS_LABELS, periodName, PURPOSE_LABELS, qs, refName, tk, usePagedList, type Membership, type MessPayment } from "@/lib/mess";
 import { MESS_FINANCE_APPROVE, MESS_PAYMENTS_CANCEL, MESS_PAYMENTS_COLLECT } from "@/lib/permissions";
 import { exportExcel } from "@/lib/exporters";
 
@@ -47,18 +47,18 @@ export default function MessPayments() {
   return (
     <MessPage
       title="মেস পেমেন্ট"
-      subtitle="ভাড়া/বকেয়া/অগ্রিম ও জামানত সংগ্রহ — কোর্স ফি থেকে সম্পূর্ণ আলাদা হিসাব"
+      subtitle="ডাইনিং চার্জ ও অগ্রিম/জামানত সংগ্রহ — কোর্স ফি থেকে সম্পূর্ণ আলাদা হিসাব"
       actions={can(MESS_PAYMENTS_COLLECT) && <Button onClick={() => setPickOpen(true)}><Coins className="h-4 w-4 mr-1" />পেমেন্ট গ্রহণ</Button>}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">ভাড়া / বকেয়া / অগ্রিম (ফিল্টার অনুযায়ী)</p><p className="text-lg font-bold">{tk(totals.rent)}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">জামানত সংগ্রহ (আয় নয়)</p><p className="text-lg font-bold">{tk(totals.deposit)}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">ডাইনিং চার্জ আদায় (ফিল্টার অনুযায়ী)</p><p className="text-lg font-bold">{tk(totals.rent)}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">অগ্রিম / জামানত সংগ্রহ (আয় নয়)</p><p className="text-lg font-bold">{tk(totals.deposit)}</p></CardContent></Card>
       </div>
       <Card>
         <CardHeader>
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-2">
             <SearchInput value={search} onChange={setSearch} className="col-span-2" />
-            <Select value={purpose} onValueChange={setPurpose}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব ধরন</SelectItem><SelectItem value="rent">{PURPOSE_LABELS.rent}</SelectItem><SelectItem value="deposit">{PURPOSE_LABELS.deposit}</SelectItem></SelectContent></Select>
+            <Select value={purpose} onValueChange={setPurpose}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব ধরন</SelectItem><SelectItem value="rent">{PURPOSE_LABELS.rent}</SelectItem><SelectItem value="deposit">{PURPOSE_LABELS.deposit}</SelectItem><SelectItem value="initial">{PURPOSE_LABELS.initial}</SelectItem></SelectContent></Select>
             <Select value={method} onValueChange={setMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব পদ্ধতি</SelectItem>{paymentMethods.map((m) => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}</SelectContent></Select>
             <Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">সক্রিয়</SelectItem><SelectItem value="cancelled">বাতিল</SelectItem><SelectItem value="any">সব</SelectItem></SelectContent></Select>
             <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="থেকে" />
@@ -80,7 +80,7 @@ export default function MessPayments() {
                   <TableCell>{p.date}</TableCell>
                   <TableCell><p className="font-medium">{p.studentId?.name}</p><p className="text-xs text-muted-foreground">{p.studentId?.registrationId} • {typeof p.membershipId === "object" && p.membershipId ? p.membershipId.membershipNo : typeof p.reservationId === "object" && p.reservationId ? `রিজার্ভেশন ${p.reservationId.reservationNo}` : ""}</p></TableCell>
                   <TableCell className="text-sm">{refName(p.messId)}</TableCell>
-                  <TableCell className="text-sm">{PURPOSE_LABELS[p.purpose]}</TableCell>
+                  <TableCell className="text-sm">{PURPOSE_LABELS[p.purpose]}{p.purpose === "initial" && p.allocation && <p className="text-[11px] text-muted-foreground">ডাইনিং {tk(p.allocation.rent)} + অগ্রিম {tk(p.allocation.deposit)}</p>}{p.billingMonth && <p className="text-[11px] text-muted-foreground">{periodName(p.billingMonth)}</p>}</TableCell>
                   <TableCell className="text-sm">{p.method}{p.reference && <p className="text-xs text-muted-foreground">{p.reference}</p>}</TableCell>
                   <TableCell className="text-right font-medium">{tk(p.amount)}</TableCell>
                   <TableCell>{p.status === "cancelled" ? <StatusBadge status="cancelled" label="বাতিল" /> : p.verified ? <StatusBadge status="approved" label="যাচাইকৃত" /> : <StatusBadge status="pending" label="যাচাই বাকি" />}</TableCell>

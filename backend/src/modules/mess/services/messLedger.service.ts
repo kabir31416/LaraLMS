@@ -13,10 +13,10 @@ import { logger } from "../../../logger/logger";
  * from the source documents themselves:
  *
  *   charges  = Σ live bills' currentCharges + Σ completed settlements' damageCharges
- *   credits  = Σ active rent payments + Σ deposit applied to dues − Σ advance refunded
+ *   credits  = Σ dining share of active payments + Σ deposit applied to dues − Σ advance refunded
  *   due      = max(0, charges − credits)      advance = max(0, credits − charges)
  *
- *   deposit balance = Σ active deposit payments − applied − deducted − refunded
+ *   deposit balance = Σ advance/deposit share of active payments − applied − deducted − refunded
  *
  * A refundable security deposit is tracked entirely apart from rent dues and
  * is never counted as income.
@@ -33,6 +33,23 @@ export interface LedgerBalances extends MembershipBalance {
 
 type SumRow = { _id: string | null; total: number };
 
+/**
+ * The dining-charge and advance/deposit share of a MessPayment, as aggregation
+ * expressions. New payments store `allocation` explicitly (an "initial"
+ * admission receipt covers both); rows written before that field existed fall
+ * back to their purpose. Every Mess total that splits collection into "rent"
+ * vs "deposit" must use these — never `$amount` grouped by purpose — so one
+ * taka is never counted on both sides.
+ */
+export const PAYMENT_RENT_PART = { $ifNull: ["$allocation.rent", { $cond: [{ $eq: ["$purpose", "deposit"] }, 0, "$amount"] }] };
+export const PAYMENT_DEPOSIT_PART = { $ifNull: ["$allocation.deposit", { $cond: [{ $eq: ["$purpose", "deposit"] }, "$amount", 0] }] };
+
+/** Same split for an in-memory payment row. */
+export function paymentPortions(p: { purpose: string; amount: number; allocation?: { rent?: number; deposit?: number } | null }): { rent: number; deposit: number } {
+  if (p.allocation && typeof p.allocation.rent === "number" && typeof p.allocation.deposit === "number") return { rent: p.allocation.rent, deposit: p.allocation.deposit };
+  return p.purpose === "deposit" ? { rent: 0, deposit: p.amount } : { rent: p.amount, deposit: 0 };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function sumBy(model: Model<any>, match: Record<string, unknown>, field: string, groupField?: string): Promise<SumRow[]> {
   return model.aggregate<SumRow>([{ $match: match }, { $group: { _id: groupField ? `$${groupField}` : null, total: { $sum: `$${field}` } } }]);
@@ -46,7 +63,10 @@ export async function computeBalances(membershipId: Types.ObjectId): Promise<Led
       { $match: { membershipId, status: "completed" } },
       { $group: { _id: null, damage: { $sum: "$damageCharges" }, advanceRefund: { $sum: "$advanceRefund" } } },
     ]),
-    sumBy(MessPayment, { membershipId, status: "active" }, "amount", "purpose"),
+    MessPayment.aggregate<{ _id: null; rent: number; deposit: number }>([
+      { $match: { membershipId, status: "active" } },
+      { $group: { _id: null, rent: { $sum: PAYMENT_RENT_PART }, deposit: { $sum: PAYMENT_DEPOSIT_PART } } },
+    ]),
     MessDepositTransaction.aggregate<{ _id: string; total: number }>([
       {
         $match: {
@@ -65,8 +85,8 @@ export async function computeBalances(membershipId: Types.ObjectId): Promise<Led
   const billCharges = money(billRows[0]?.total ?? 0);
   const settlementCharges = money(settlementRows[0]?.damage ?? 0);
   const advanceRefunded = money(settlementRows[0]?.advanceRefund ?? 0);
-  const rentPaid = money(paymentRows.find((r) => r._id === "rent")?.total ?? 0);
-  const depositCollected = money(paymentRows.find((r) => r._id === "deposit")?.total ?? 0);
+  const rentPaid = money(paymentRows[0]?.rent ?? 0);
+  const depositCollected = money(paymentRows[0]?.deposit ?? 0);
   const depositApplied = money(depositTxRows.find((r) => r._id === "apply_to_due")?.total ?? 0);
   const depositDeducted = money(depositTxRows.find((r) => r._id === "deduct")?.total ?? 0);
   const depositRefunded = money(depositTxRows.find((r) => r._id === "refund")?.total ?? 0);

@@ -64,8 +64,8 @@ export async function getMyMess(req: Request) {
   const [balances, bills, payments, depositTransactions, settlements, notices, complaints] = await Promise.all([
     computeBalances(currentId),
     MessBill.find({ membershipId: currentId, status: { $ne: "cancelled" } }).sort({ period: -1 }).limit(24).select("-ledgerSeqApplied -generatedBy").lean(),
-    MessPayment.find({ studentId, status: "active" }).sort({ date: -1, createdAt: -1 }).limit(50).select("receiptNo purpose amount method date reference membershipId").lean(),
-    MessDepositTransaction.find({ membershipId: currentId, status: { $nin: ["cancelled"] } }).sort({ createdAt: -1 }).limit(50).select("txNo type amount status date reason").lean(),
+    MessPayment.find({ studentId, status: "active" }).sort({ date: -1, createdAt: -1 }).limit(50).select("receiptNo purpose amount allocation billingMonth dueBefore balanceAfter method date reference membershipId").lean(),
+    MessDepositTransaction.find({ membershipId: currentId, status: { $nin: ["cancelled"] } }).sort({ createdAt: -1 }).limit(50).select("txNo type amount status date reason period source").lean(),
     MessSettlement.find({ studentId, status: { $ne: "cancelled" } }).sort({ createdAt: -1 }).limit(10).select("-createdBy -approvedBy -completedBy -activeKey").lean(),
     MessNotice.find(visibleNoticeFilter(studentId, openMessIds)).sort({ publishDate: -1 }).limit(50).select("title body type publishDate expiryDate readBy audience").lean(),
     MessComplaint.find({ studentId }).sort({ createdAt: -1 }).limit(50).select("ticketNo kind category title description priority status date history.status history.note history.at").lean(),

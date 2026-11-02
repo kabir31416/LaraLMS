@@ -16,6 +16,10 @@ import { hasPerm, messScopeFilter } from "../mess.scope";
 import { PERMISSIONS } from "../../rbac/permissions";
 import { currentPeriod, money, toObjectId } from "../mess.utils";
 import { expireOverdueReservations, resolveStudentFilter } from "./messMembership.service";
+import { PAYMENT_DEPOSIT_PART, PAYMENT_RENT_PART } from "./messLedger.service";
+import { getMessSettings } from "./messSettings.service";
+import { messSmsAttention } from "./messSms.service";
+import { monthKeysEnding } from "../../../common/utils/localDate";
 
 /**
  * Mess reports are all server-side aggregates or paginated lists. Reports
@@ -56,9 +60,9 @@ export async function dashboard(req: Request) {
       { $match: { ...scope, period, status: { $ne: "cancelled" } } },
       { $group: { _id: null, total: { $sum: "$currentCharges" }, due: { $sum: "$dueAmount" }, count: { $sum: 1 } } },
     ]),
-    MessPayment.aggregate<{ _id: string; total: number }>([
+    MessPayment.aggregate<{ _id: null; rent: number; deposit: number; count: number }>([
       { $match: { ...scope, status: "active", date: { $gte: monthStart, $lte: monthEnd } } },
-      { $group: { _id: "$purpose", total: { $sum: "$amount" } } },
+      { $group: { _id: null, rent: { $sum: PAYMENT_RENT_PART }, deposit: { $sum: PAYMENT_DEPOSIT_PART }, count: { $sum: 1 } } },
     ]),
     MessMembership.aggregate<{ _id: null; due: number; advance: number; deposit: number }>([
       { $match: scope },
@@ -73,6 +77,33 @@ export async function dashboard(req: Request) {
     MessDepositTransaction.countDocuments({ ...scope, status: "pending" }),
     MessSettlement.countDocuments({ ...scope, status: { $in: ["pending", "approved"] } }),
   ]);
+  const [previousDueRows, recentAdmissions, recentCheckouts, messRuns, settings, sms] = await Promise.all([
+    // Due still open on bills from earlier months ("পূর্বের বকেয়া") vs this month's bills.
+    MessBill.aggregate<{ _id: null; due: number; members: string[] }>([
+      { $match: { ...scope, period: { $lt: period }, status: { $in: ["unpaid", "partial"] } } },
+      { $group: { _id: null, due: { $sum: "$dueAmount" }, members: { $addToSet: "$membershipId" } } },
+    ]),
+    MessMembership.find({ ...scope, status: { $nin: ["pending", "cancelled"] } })
+      .sort({ joiningDate: -1, createdAt: -1 })
+      .limit(6)
+      .select("membershipNo studentId messId seatId joiningDate status")
+      .populate("studentId", "name registrationId")
+      .populate("messId", "name")
+      .populate("seatId", "seatNumber")
+      .lean(),
+    MessMembership.find({ ...scope, status: "left", leftDate: { $exists: true } })
+      .sort({ leftDate: -1 })
+      .limit(6)
+      .select("membershipNo studentId messId leftDate status")
+      .populate("studentId", "name registrationId")
+      .populate("messId", "name")
+      .lean(),
+    Mess.find({ ...(scope.messId ? { _id: scope.messId } : {}), status: "active" }).select("name billingDay autoBilledPeriod autoBillingLastRun").lean(),
+    getMessSettings(),
+    messSmsAttention(scope.messId ? (scope.messId instanceof Types.ObjectId ? [scope.messId] : (scope.messId as { $in: Types.ObjectId[] }).$in) : null),
+  ]);
+  const billedThisMonth = messRuns.filter((m) => m.autoBilledPeriod === period).length;
+  const lastRuns = messRuns.map((m) => m.autoBillingLastRun).filter((r): r is NonNullable<typeof r> => !!r && r.period === period);
   const seatCounts: Record<string, number> = { available: 0, reserved: 0, occupied: 0, maintenance: 0, inactive: 0 };
   for (const s of seats) seatCounts[s._id] = s.count;
   const memberCounts: Record<string, number> = { active: 0, on_leave: 0, notice_given: 0, approved: 0 };
@@ -97,8 +128,26 @@ export async function dashboard(req: Request) {
     monthBilled: fin(money(billed[0]?.total ?? 0)),
     monthBillDue: fin(money(billed[0]?.due ?? 0)),
     monthBillCount: billed[0]?.count ?? 0,
-    monthRentCollected: fin(money(collected.find((c) => c._id === "rent")?.total ?? 0)),
-    monthDepositCollected: fin(money(collected.find((c) => c._id === "deposit")?.total ?? 0)),
+    monthRentCollected: fin(money(collected[0]?.rent ?? 0)),
+    monthDepositCollected: fin(money(collected[0]?.deposit ?? 0)),
+    monthCollected: fin(money((collected[0]?.rent ?? 0) + (collected[0]?.deposit ?? 0))),
+    monthPaymentCount: collected[0]?.count ?? 0,
+    previousDue: fin(money(previousDueRows[0]?.due ?? 0)),
+    previousDueMembers: previousDueRows[0]?.members.length ?? 0,
+    recentAdmissions,
+    recentCheckouts,
+    sms: { failed: sms.failed, pending: sms.pending },
+    autoBilling: {
+      enabled: settings.autoBillingEnabled,
+      period,
+      billingDay: settings.billingDay,
+      messes: messRuns.length,
+      billedThisMonth,
+      created: lastRuns.reduce((s2, r) => s2 + (r.created ?? 0), 0),
+      failed: lastRuns.reduce((s2, r) => s2 + (r.failed ?? 0), 0),
+      errors: lastRuns.filter((r) => r.error).length,
+      lastRunAt: lastRuns.map((r) => r.at).sort().pop() ?? null,
+    },
     totalDue: fin(money(balances[0]?.due ?? 0)),
     totalAdvance: fin(money(balances[0]?.advance ?? 0)),
     depositsHeld: fin(money(balances[0]?.deposit ?? 0)),
@@ -160,22 +209,96 @@ export async function collection(req: Request) {
   const match: Record<string, unknown> = { ...scope, status: "active", ...rangeMatch("date", r) };
   if (typeof req.query.method === "string" && req.query.method) match.method = req.query.method;
   if (typeof req.query.purpose === "string" && req.query.purpose) match.purpose = req.query.purpose;
-  const [byDate, byMethod, byMess] = await Promise.all([
+  // Dining-charge vs advance/deposit share of each receipt (an admission receipt carries both) — never $amount grouped by purpose.
+  const sums = { rent: { $sum: PAYMENT_RENT_PART }, deposit: { $sum: PAYMENT_DEPOSIT_PART }, total: { $sum: "$amount" }, count: { $sum: 1 } };
+  const [byDate, byMethod, byMess, byMonth] = await Promise.all([
+    MessPayment.aggregate([{ $match: match }, { $group: { _id: "$date", ...sums } }, { $sort: { _id: -1 } }, { $limit: 400 }]),
+    MessPayment.aggregate([{ $match: match }, { $group: { _id: "$method", ...sums } }, { $sort: { total: -1 } }]),
     MessPayment.aggregate([
       { $match: match },
-      { $group: { _id: { date: "$date", purpose: "$purpose" }, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-      { $sort: { "_id.date": -1 } },
-      { $limit: 400 },
+      { $group: { _id: "$messId", ...sums } },
+      { $lookup: { from: "messes", localField: "_id", foreignField: "_id", as: "mess" } },
+      { $project: { rent: 1, deposit: 1, total: 1, count: 1, messName: { $arrayElemAt: ["$mess.name", 0] } } },
     ]),
-    MessPayment.aggregate([{ $match: match }, { $group: { _id: { method: "$method", purpose: "$purpose" }, total: { $sum: "$amount" }, count: { $sum: 1 } } }, { $sort: { total: -1 } }]),
-    MessPayment.aggregate([
-      { $match: match },
-      { $group: { _id: { messId: "$messId", purpose: "$purpose" }, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-      { $lookup: { from: "messes", localField: "_id.messId", foreignField: "_id", as: "mess" } },
-      { $project: { total: 1, count: 1, purpose: "$_id.purpose", messName: { $arrayElemAt: ["$mess.name", 0] } } },
+    MessPayment.aggregate([{ $match: match }, { $group: { _id: { $substrBytes: ["$date", 0, 7] }, ...sums } }, { $sort: { _id: -1 } }, { $limit: 36 }]),
+  ]);
+  return { byDate, byMethod, byMess, byMonth };
+}
+
+/**
+ * Month-wise billing vs collection for the last N months: what was billed
+ * (live bills of that month), how much of those bills is paid/still due
+ * (FIFO), and the dining-charge money actually received in that month.
+ */
+export async function monthlySummary(req: Request) {
+  const scope = await scopeMatch(req);
+  const months = Math.min(24, Math.max(1, Number(req.query.months) || 12));
+  const keys = monthKeysEnding(currentPeriod(), months);
+  const [bills, payments] = await Promise.all([
+    MessBill.aggregate<{ _id: string; bills: number; charges: number; paid: number; due: number; advanceAdjusted: number }>([
+      { $match: { ...scope, period: { $in: keys }, status: { $ne: "cancelled" } } },
+      { $group: { _id: "$period", bills: { $sum: 1 }, charges: { $sum: "$currentCharges" }, paid: { $sum: "$paidAmount" }, due: { $sum: "$dueAmount" }, advanceAdjusted: { $sum: { $ifNull: ["$advanceAdjusted", 0] } } } },
+    ]),
+    MessPayment.aggregate<{ _id: string; rent: number; deposit: number; count: number }>([
+      { $match: { ...scope, status: "active", date: { $gte: `${keys[0]}-01`, $lte: `${keys[keys.length - 1]}-31` } } },
+      { $group: { _id: { $substrBytes: ["$date", 0, 7] }, rent: { $sum: PAYMENT_RENT_PART }, deposit: { $sum: PAYMENT_DEPOSIT_PART }, count: { $sum: 1 } } },
     ]),
   ]);
-  return { byDate, byMethod, byMess };
+  return keys
+    .map((k) => {
+      const b = bills.find((x) => x._id === k);
+      const p = payments.find((x) => x._id === k);
+      return {
+        period: k,
+        bills: b?.bills ?? 0,
+        billed: money(b?.charges ?? 0),
+        billPaid: money(b?.paid ?? 0),
+        billDue: money(b?.due ?? 0),
+        advanceAdjusted: money(b?.advanceAdjusted ?? 0),
+        diningCollected: money(p?.rent ?? 0),
+        depositCollected: money(p?.deposit ?? 0),
+        receipts: p?.count ?? 0,
+      };
+    })
+    .reverse();
+}
+
+/** Members carrying due from earlier months (previous due), oldest unpaid month first — with this month's due alongside. */
+export async function previousDue(req: Request) {
+  const { page, limit, skip } = parsePagination(req);
+  const scope = await scopeMatch(req);
+  const period = currentPeriod();
+  const match: Record<string, unknown> = { ...scope, status: { $in: ["unpaid", "partial"] }, period: { $lt: period } };
+  const studentIds = await resolveStudentFilter(req);
+  if (studentIds) match.studentId = { $in: studentIds };
+  const grouped = [
+    { $match: match },
+    { $group: { _id: "$membershipId", previousDue: { $sum: "$dueAmount" }, oldestPeriod: { $min: "$period" }, months: { $sum: 1 } } },
+  ];
+  const [rows, countRows, sumRows] = await Promise.all([
+    MessBill.aggregate<{ _id: Types.ObjectId; previousDue: number; oldestPeriod: string; months: number }>([...grouped, { $sort: { oldestPeriod: 1, previousDue: -1 } }, { $skip: skip }, { $limit: limit }]),
+    MessBill.aggregate<{ n: number }>([...grouped, { $count: "n" }]),
+    MessBill.aggregate<{ _id: null; total: number }>([{ $match: match }, { $group: { _id: null, total: { $sum: "$dueAmount" } } }]),
+  ]);
+  const ids = rows.map((r) => r._id);
+  const [members, current] = await Promise.all([
+    MessMembership.find({ _id: { $in: ids } })
+      .select("membershipNo studentId messId roomId seatId status monthlyRent balance")
+      .populate("studentId", "name registrationId currentRollNumber phone")
+      .populate("messId", "name")
+      .populate("roomId", "name")
+      .populate("seatId", "seatNumber")
+      .lean(),
+    MessBill.aggregate<{ _id: Types.ObjectId; due: number }>([{ $match: { membershipId: { $in: ids }, period, status: { $in: ["unpaid", "partial"] } } }, { $group: { _id: "$membershipId", due: { $sum: "$dueAmount" } } }]),
+  ]);
+  const items = rows.map((r) => ({
+    membership: members.find((m) => String(m._id) === String(r._id)) ?? null,
+    previousDue: money(r.previousDue),
+    oldestPeriod: r.oldestPeriod,
+    months: r.months,
+    currentMonthDue: money(current.find((c) => String(c._id) === String(r._id))?.due ?? 0),
+  }));
+  return { items, meta: { ...buildMeta(page, limit, countRows[0]?.n ?? 0), sum: money(sumRows[0]?.total ?? 0), period } };
 }
 
 /** Dues / advances / security deposits per member, from the cached ledger balance (recomputed on every financial change). */
@@ -218,9 +341,10 @@ export async function incomeExpense(req: Request) {
   const ids = messes.map((m) => m._id);
   const byMess = (rows: { _id: Types.ObjectId; total: number }[], id: Types.ObjectId) => money(rows.find((x) => String(x._id) === String(id))?.total ?? 0);
   const group = { $group: { _id: "$messId", total: { $sum: "$amount" } } };
+  const paidMatch = { messId: { $in: ids }, status: "active", ...rangeMatch("date", r) };
   const [rent, depositIn, deducted, refunded, advanceRefund, expenses, balances] = await Promise.all([
-    MessPayment.aggregate([{ $match: { messId: { $in: ids }, status: "active", purpose: "rent", ...rangeMatch("date", r) } }, group]),
-    MessPayment.aggregate([{ $match: { messId: { $in: ids }, status: "active", purpose: "deposit", ...rangeMatch("date", r) } }, group]),
+    MessPayment.aggregate([{ $match: paidMatch }, { $group: { _id: "$messId", total: { $sum: PAYMENT_RENT_PART } } }]),
+    MessPayment.aggregate([{ $match: paidMatch }, { $group: { _id: "$messId", total: { $sum: PAYMENT_DEPOSIT_PART } } }]),
     MessDepositTransaction.aggregate([{ $match: { messId: { $in: ids }, type: "deduct", status: { $in: ["approved", "completed"] }, ...rangeMatch("date", r) } }, group]),
     MessDepositTransaction.aggregate([{ $match: { messId: { $in: ids }, type: "refund", status: "completed", ...rangeMatch("date", r) } }, group]),
     MessSettlement.aggregate([{ $match: { messId: { $in: ids }, status: "completed", ...rangeMatch("refundDate", r) } }, { $group: { _id: "$messId", total: { $sum: "$advanceRefund" } } }]),

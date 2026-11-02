@@ -107,6 +107,14 @@ export interface SmsLogDoc extends Document {
   /** "yyyy-mm-dd" — only set for eventType "birthday", used to prevent a duplicate send to the same student on the same calendar day (§8). */
   sentForDate?: string;
   sentAt?: Date;
+  /** Optional source reference (Mess SMS): which Mess, which record it was about, and a key that stops the same notice going out twice. */
+  messId?: Types.ObjectId;
+  refType?: string;
+  refId?: string;
+  dedupeKey?: string;
+  /** Last delivery-report lookup (Alpha only) — "sent" above is provider acceptance, this is the handset delivery state when known. */
+  deliveryStatus?: string;
+  deliveryCheckedAt?: Date;
   createdAt: Date;
 }
 
@@ -124,11 +132,19 @@ const smsLogSchema = new Schema<SmsLogDoc>(
     errorMessage: { type: String, trim: true },
     sentForDate: { type: String },
     sentAt: { type: Date },
+    messId: { type: Schema.Types.ObjectId, ref: "Mess" },
+    refType: { type: String, trim: true },
+    refId: { type: String, trim: true },
+    dedupeKey: { type: String },
+    deliveryStatus: { type: String, trim: true },
+    deliveryCheckedAt: { type: Date },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
 smsLogSchema.index({ createdAt: -1 });
 smsLogSchema.index({ studentId: 1, eventType: 1, sentForDate: 1 });
+smsLogSchema.index({ dedupeKey: 1 }, { partialFilterExpression: { dedupeKey: { $exists: true } } });
+smsLogSchema.index({ messId: 1, createdAt: -1 }, { partialFilterExpression: { messId: { $exists: true } } });
 
 export const SmsLog = model<SmsLogDoc>("SmsLog", smsLogSchema);

@@ -12,6 +12,9 @@ import * as ops from "./services/messOps.service";
 import * as reports from "./services/messReport.service";
 import * as portal from "./services/messPortal.service";
 import * as settings from "./services/messSettings.service";
+import * as sms from "./services/messSms.service";
+import { runMonthlyBillingSweep } from "./services/messBilling.scheduler";
+import { env } from "../../config/env";
 
 /** Thin HTTP layer — every rule (scope, money, state transitions) lives in the services. */
 const ok = (fn: (req: Request) => Promise<unknown>, status = 200) =>
@@ -141,3 +144,25 @@ export const portalMe = ok((req) => portal.getMyMess(req));
 export const portalOptions = ok(() => portal.portalOptions());
 export const portalCreateComplaint = ok((req) => portal.createMyComplaint(req, req.body), 201);
 export const portalMarkNoticeRead = ok((req) => portal.markNoticeRead(req, req.params.id));
+
+// Scheduler (Vercel Cron) — authenticated by CRON_SECRET, not a user token.
+export const cronMonthlyBilling = asyncHandler(async (req: Request, res: Response) => {
+  const provided = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  if (!env.CRON_SECRET || provided !== env.CRON_SECRET) throw ApiError.forbidden("Not authorized");
+  sendSuccess(res, await runMonthlyBillingSweep("cron"));
+});
+
+// Admission / joining date
+export const applyInitialCharges = ok((req) => members.applyInitialChargesForMember(req, req.params.id, req.body), 201);
+export const joiningDatePreview = ok((req) => members.previewJoiningDateChange(req, req.params.id, String(req.query.joiningDate)));
+export const changeJoiningDate = ok((req) => members.changeJoiningDate(req, req.params.id, req.body));
+
+// Mess SMS
+export const testSms = ok((req) => sms.sendTestMessSms(req, req.body));
+export const sendDueReminders = ok((req) => sms.sendDueRemindersManual(req, req.body));
+export const listSmsLogs = paged((req) => sms.listMessSmsLogs(req));
+export const checkSmsDelivery = ok((req) => sms.checkMessSmsDelivery(req, req.params.id));
+
+// Extra reports
+export const reportMonthlySummary = ok((req) => reports.monthlySummary(req));
+export const reportPreviousDue = paged((req) => reports.previousDue(req));

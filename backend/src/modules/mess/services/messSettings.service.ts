@@ -4,13 +4,26 @@ import { recordAudit } from "../../../audit/auditLog.service";
 import { ApiError } from "../../../common/utils/ApiError";
 import { MessSettings, MessSettingsDoc } from "../models/messSettings.model";
 import { Mess } from "../models/mess.model";
+import { MessSmsEvent } from "../mess.constants";
 
 export async function getMessSettings(): Promise<MessSettingsDoc> {
   return getOrCreateSingleton(MessSettings, {} as MessSettingsDoc);
 }
 
-export async function updateMessSettings(req: Request, patch: Partial<MessSettingsDoc>): Promise<MessSettingsDoc> {
+type SettingsPatch = Omit<Partial<MessSettingsDoc>, "smsTemplates"> & { smsTemplates?: Partial<Record<MessSmsEvent, string>> };
+
+/** Settings changes apply to FUTURE admissions, bills and SMS only — nothing already issued is recalculated. */
+export async function updateMessSettings(req: Request, input: SettingsPatch): Promise<MessSettingsDoc> {
   const settings = await getMessSettings();
+  const { smsTemplates, ...patch } = input;
+  if (smsTemplates) {
+    const { invalidPlaceholders } = await import("./messSms.service");
+    for (const [event, template] of Object.entries(smsTemplates)) {
+      if (template === undefined) continue;
+      const unknown = await invalidPlaceholders(template);
+      if (unknown.length) throw ApiError.badRequest(`টেমপ্লেটে অজানা placeholder: ${unknown.map((k) => `{{${k}}}`).join(", ")} (${event})`);
+    }
+  }
   if (patch.defaultMessId && !(await Mess.exists({ _id: patch.defaultMessId }))) {
     throw ApiError.badRequest("Default Mess not found");
   }
@@ -22,6 +35,13 @@ export async function updateMessSettings(req: Request, patch: Partial<MessSettin
   }
   const before = settings.toObject();
   Object.assign(settings, patch);
+  if (patch.prorationMode) settings.prorationEnabled = patch.prorationMode === "prorate";
+  else if (patch.prorationEnabled !== undefined) settings.prorationMode = patch.prorationEnabled ? "prorate" : "full";
+  if (smsTemplates) {
+    for (const [event, template] of Object.entries(smsTemplates)) {
+      if (template !== undefined) settings.set(`smsTemplates.${event}`, template);
+    }
+  }
   await settings.save();
   await recordAudit({
     req,

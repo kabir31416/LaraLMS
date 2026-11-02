@@ -123,16 +123,22 @@ function MessesTab({ canManage }: { canManage: boolean }) {
 }
 
 function MessFormDialog({ open, onOpenChange, editing, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; editing: Mess | null; onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ name: "", address: "", contactNumber: "", openingDate: "", notes: "" });
+  const { settings } = useMessScope();
+  const blank = { name: "", address: "", contactNumber: "", openingDate: "", notes: "", defaultDiningCharge: "", defaultDeposit: "", billingDay: "", dueDay: "" };
+  const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const str = (n?: number) => (n == null ? "" : String(n));
   useEffect(() => {
-    if (open) setForm({ name: editing?.name ?? "", address: editing?.address ?? "", contactNumber: editing?.contactNumber ?? "", openingDate: editing?.openingDate ?? "", notes: editing?.notes ?? "" });
+    if (open) setForm({ name: editing?.name ?? "", address: editing?.address ?? "", contactNumber: editing?.contactNumber ?? "", openingDate: editing?.openingDate ?? "", notes: editing?.notes ?? "", defaultDiningCharge: str(editing?.defaultDiningCharge), defaultDeposit: str(editing?.defaultDeposit), billingDay: str(editing?.billingDay), dueDay: str(editing?.dueDay) });
   }, [open, editing]);
+  // Blank = use the global Mess Settings value (sent as null so an existing override is cleared).
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
   const save = async () => {
     if (!form.name.trim()) { toast.error("মেসের নাম দিন"); return; }
     setBusy(true);
     try {
-      const body = { ...form, openingDate: form.openingDate || undefined };
+      const day = (v: string) => { const n = num(v); return n == null ? null : Math.min(28, Math.max(1, Math.round(n))); };
+      const body = { ...form, openingDate: form.openingDate || undefined, defaultDiningCharge: num(form.defaultDiningCharge), defaultDeposit: num(form.defaultDeposit), billingDay: day(form.billingDay), dueDay: day(form.dueDay) };
       if (editing) await api.patch(`/mess/messes/${editing._id}`, body);
       else await api.post("/mess/messes", body);
       toast.success(editing ? "মেস আপডেট হয়েছে" : "মেস তৈরি হয়েছে");
@@ -154,6 +160,12 @@ function MessFormDialog({ open, onOpenChange, editing, onSaved }: { open: boolea
           <div className="space-y-1.5"><Label>যোগাযোগ নম্বর</Label><Input value={form.contactNumber} onChange={(e) => setForm({ ...form, contactNumber: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>চালুর তারিখ</Label><Input type="date" value={form.openingDate} onChange={(e) => setForm({ ...form, openingDate: e.target.value })} /></div>
           <div className="sm:col-span-2 space-y-1.5"><Label>নোট</Label><Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+          <p className="sm:col-span-2 text-sm font-semibold pt-1">এই মেসের বিলিং ডিফল্ট <span className="font-normal text-xs text-muted-foreground">(ফাঁকা = মেস সেটিংসের মান)</span></p>
+          <div className="space-y-1.5"><Label>ডিফল্ট মাসিক ডাইনিং চার্জ (৳)</Label><Input type="number" min={0} value={form.defaultDiningCharge} placeholder={String(settings?.defaultRent ?? "")} onChange={(e) => setForm({ ...form, defaultDiningCharge: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>ডিফল্ট এক মাসের অগ্রিম / জামানত (৳)</Label><Input type="number" min={0} value={form.defaultDeposit} placeholder={String(settings?.defaultDeposit ?? "")} onChange={(e) => setForm({ ...form, defaultDeposit: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>বিল তৈরির দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={form.billingDay} placeholder={String(settings?.billingDay ?? 1)} onChange={(e) => setForm({ ...form, billingDay: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>পরিশোধের শেষ দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={form.dueDay} placeholder={String(settings?.dueDay ?? 10)} onChange={(e) => setForm({ ...form, dueDay: e.target.value })} /></div>
+          <p className="sm:col-span-2 text-xs text-muted-foreground">পরিবর্তন শুধু ভবিষ্যতের ভর্তি ও বিলে প্রযোজ্য। সিটের নিজস্ব চার্জ থাকলে সেটিই আগে ব্যবহৃত হয়।</p>
           {!editing && <p className="sm:col-span-2 text-xs text-muted-foreground">মেস কোড স্বয়ংক্রিয়ভাবে তৈরি হবে।</p>}
         </div>
         <DialogFooter>
@@ -332,7 +344,7 @@ function RoomsTab({ canManage }: { canManage: boolean }) {
         <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>রুম</TableHead><TableHead>সিট</TableHead><TableHead>ধরন</TableHead><TableHead>মাসিক ভাড়া</TableHead>
+              <TableHead>রুম</TableHead><TableHead>সিট</TableHead><TableHead>ধরন</TableHead><TableHead>মাসিক ডাইনিং চার্জ</TableHead>
               <TableHead>বর্তমান সদস্য</TableHead><TableHead>খালি হবে</TableHead><TableHead>অবস্থা</TableHead><TableHead className="text-right">কাজ</TableHead>
             </TableRow></TableHeader>
             <TableBody>
@@ -492,7 +504,7 @@ function SeatFormDialog({ open, editing, rooms, seatTypes, defaultRent, onOpenCh
               <SelectContent><SelectItem value="__none">—</SelectItem>{seatTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5"><Label>মাসিক ভাড়া (৳) *</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>মাসিক ডাইনিং চার্জ (৳) *</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>খালি হবে (তারিখ)</Label><Input type="date" value={form.availableFrom} onChange={(e) => setForm({ ...form, availableFrom: e.target.value })} /></div>
           {editing && (
             <div className="space-y-1.5"><Label>অবস্থা</Label>
@@ -531,7 +543,7 @@ function SeatHistoryDialog({ seat, onOpenChange }: { seat: Seat | null; onOpenCh
         <DialogHeader><DialogTitle>সিটের ইতিহাস — রুম {refName(seat?.roomId)}, সিট {seat?.seatNumber}</DialogTitle></DialogHeader>
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>সদস্য</TableHead><TableHead>সদস্যপদ</TableHead><TableHead>থেকে</TableHead><TableHead>পর্যন্ত</TableHead><TableHead>ভাড়া</TableHead><TableHead>অবস্থা</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>সদস্য</TableHead><TableHead>সদস্যপদ</TableHead><TableHead>থেকে</TableHead><TableHead>পর্যন্ত</TableHead><TableHead>মাসিক চার্জ</TableHead><TableHead>অবস্থা</TableHead></TableRow></TableHeader>
             <TableBody>
               <TableState colSpan={6} loading={loading} error={error} empty={rows.length === 0} emptyText="এই সিটে এখনো কেউ থাকেননি" />
               {!loading && rows.map((h, i) => (

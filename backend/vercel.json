@@ -16,6 +16,10 @@
     {
       "path": "/api/v1/sms/cron/birthday",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/v1/mess/cron/monthly-billing",
+      "schedule": "5 18 * * *"
     }
   ]
 }

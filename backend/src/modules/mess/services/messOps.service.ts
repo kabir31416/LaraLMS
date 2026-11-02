@@ -155,6 +155,7 @@ export async function listComplaints(req: Request, studentOnly?: Types.ObjectId)
       .limit(limit)
       .populate("messId", "name")
       .populate("roomId", "name")
+      .populate("seatId", "seatNumber")
       .populate("studentId", "name registrationId currentRollNumber")
       .populate("assignedStaffId", "name phone")
       .lean(),
@@ -173,7 +174,7 @@ async function getComplaintOrThrow(req: Request, id: string): Promise<MessCompla
 export async function getComplaint(req: Request, id: string) {
   const c = await getComplaintOrThrow(req, id);
   const [complaint, expenses] = await Promise.all([
-    MessComplaint.findById(c._id).populate("messId", "name").populate("roomId", "name").populate("studentId", "name registrationId").populate("assignedStaffId", "name phone").lean(),
+    MessComplaint.findById(c._id).populate("messId", "name").populate("roomId", "name").populate("seatId", "seatNumber").populate("studentId", "name registrationId").populate("assignedStaffId", "name phone").lean(),
     MessExpense.find({ complaintId: c._id, status: { $ne: "cancelled" } }).select("expenseNo date amount status category").lean(),
   ]);
   return { complaint, expenses };
@@ -187,13 +188,20 @@ async function assertComplaintCategory(kind: "complaint" | "maintenance", catego
 
 export async function createComplaint(
   req: Request,
-  input: { kind: "complaint" | "maintenance"; messId: string; roomId?: string; category: string; title: string; description?: string; priority?: MessComplaintDoc["priority"]; attachment?: MessComplaintDoc["attachment"]; assignedStaffId?: string; studentId?: string },
+  input: { kind: "complaint" | "maintenance"; messId: string; roomId?: string; seatId?: string; cost?: number; category: string; title: string; description?: string; priority?: MessComplaintDoc["priority"]; attachment?: MessComplaintDoc["attachment"]; assignedStaffId?: string; studentId?: string },
 ): Promise<MessComplaintDoc> {
   await assertMessAccess(req, input.messId);
   await assertComplaintCategory(input.kind, input.category);
   if (input.roomId) {
     const room = await MessRoom.findById(input.roomId).select("messId");
     if (!room || String(room.messId) !== input.messId) throw ApiError.badRequest("রুমটি এই মেসের নয়");
+  }
+  if (input.seatId) {
+    const { MessSeat } = await import("../models/messSeat.model");
+    const seat = await MessSeat.findById(input.seatId).select("messId roomId");
+    if (!seat || String(seat.messId) !== input.messId) throw ApiError.badRequest("সিটটি এই মেসের নয়");
+    if (input.roomId && String(seat.roomId) !== input.roomId) throw ApiError.badRequest("সিটটি নির্বাচিত রুমের নয়");
+    if (!input.roomId) input = { ...input, roomId: String(seat.roomId) };
   }
   return insertComplaint(req, { ...input, date: todayISO() });
 }
@@ -214,11 +222,17 @@ async function insertComplaint(req: Request, data: Record<string, unknown>): Pro
 export async function updateComplaint(
   req: Request,
   id: string,
-  patch: { status?: MessComplaintDoc["status"]; priority?: MessComplaintDoc["priority"]; assignedStaffId?: string | null; note?: string },
+  patch: { status?: MessComplaintDoc["status"]; priority?: MessComplaintDoc["priority"]; assignedStaffId?: string | null; note?: string; resolutionNote?: string; cost?: number | null },
 ): Promise<MessComplaintDoc> {
   const c = await getComplaintOrThrow(req, id);
   const set: Record<string, unknown> = {};
   const unset: Record<string, ""> = {};
+  if (patch.resolutionNote !== undefined) set.resolutionNote = patch.resolutionNote;
+  if (patch.cost === null) unset.cost = "";
+  else if (patch.cost !== undefined) set.cost = patch.cost;
+  if ((patch.status === "resolved" || patch.status === "closed") && !patch.resolutionNote?.trim() && !c.resolutionNote) {
+    throw ApiError.badRequest("সমাধানের বিবরণ (Resolution note) লিখুন");
+  }
   if (patch.status) {
     set.status = patch.status;
     if (patch.status === "resolved" || patch.status === "closed") set.resolvedAt = new Date();
@@ -238,7 +252,7 @@ export async function updateComplaint(
     },
     { new: true },
   );
-  await recordAudit({ req, action: "mess.complaint.update", module: "mess", targetCollection: "messcomplaints", targetId: id, before: { status: c.status, priority: c.priority, assignedStaffId: c.assignedStaffId }, after: { ...set, note: patch.note } });
+  await recordAudit({ req, action: "mess.complaint.update", module: "mess", targetCollection: "messcomplaints", targetId: id, before: { status: c.status, priority: c.priority, assignedStaffId: c.assignedStaffId, resolutionNote: c.resolutionNote, cost: c.cost }, after: { ...set, note: patch.note } });
   return updated!;
 }
 

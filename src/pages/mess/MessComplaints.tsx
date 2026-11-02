@@ -14,7 +14,7 @@ import { AttachmentInput, MethodSelect, Pager, SearchInput, StatusBadge, TableSt
 import { api } from "@/lib/apiClient";
 import {
   COMPLAINT_KIND_LABELS, COMPLAINT_PRIORITY_LABELS, COMPLAINT_STATUS_LABELS, errMsg, EXPENSE_STATUS_LABELS, qs, refName, tk, todayISO,
-  useApiData, usePagedList, type Complaint, type Expense, type Mess, type Room,
+  useApiData, usePagedList, type Complaint, type Expense, type Mess, type Room, type Seat,
 } from "@/lib/mess";
 import { MESS_COMPLAINTS_MANAGE, MESS_EXPENSES_MANAGE } from "@/lib/permissions";
 
@@ -57,7 +57,7 @@ export default function MessComplaints() {
                   <TableCell><p className="font-mono text-xs">{c.ticketNo}</p><p className="text-xs">{c.date}</p></TableCell>
                   <TableCell className="text-sm">{COMPLAINT_KIND_LABELS[c.kind]}<p className="text-xs text-muted-foreground">{c.category}</p></TableCell>
                   <TableCell className="text-sm font-medium max-w-[220px] truncate">{c.title}</TableCell>
-                  <TableCell className="text-sm">{refName(c.messId)}<p className="text-xs text-muted-foreground">{c.roomId ? `রুম ${refName(c.roomId)}` : ""}</p></TableCell>
+                  <TableCell className="text-sm">{refName(c.messId)}<p className="text-xs text-muted-foreground">{c.roomId ? `রুম ${refName(c.roomId)}` : ""}{c.seatId ? ` • সিট ${refName(c.seatId, "seatNumber")}` : ""}</p></TableCell>
                   <TableCell className="text-sm">{c.studentId ? c.studentId.name : "স্টাফ"}</TableCell>
                   <TableCell><StatusBadge status={c.priority === "urgent" ? "urgent" : c.priority === "high" ? "pending" : "neutral"} label={COMPLAINT_PRIORITY_LABELS[c.priority]} /></TableCell>
                   <TableCell className="text-sm">{c.assignedStaffId?.name ?? "—"}</TableCell>
@@ -78,17 +78,18 @@ export default function MessComplaints() {
 
 function CreateTicketDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; onSaved: () => Promise<void> }) {
   const { messId: scopeMess, settings } = useMessScope();
-  const [f, setF] = useState({ kind: "maintenance" as Complaint["kind"], messId: "", roomId: "", category: "", title: "", description: "", priority: "normal" as Complaint["priority"] });
+  const [f, setF] = useState({ kind: "maintenance" as Complaint["kind"], messId: "", roomId: "", seatId: "", category: "", title: "", description: "", priority: "normal" as Complaint["priority"], cost: "" });
   const [attachment, setAttachment] = useState<{ url: string; publicId?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const { data: rooms } = useApiData<Room[]>(f.messId ? `/mess/rooms${qs({ messId: f.messId })}` : null);
-  useEffect(() => { if (open) { setF({ kind: "maintenance", messId: scopeMess !== "all" ? scopeMess : "", roomId: "", category: "", title: "", description: "", priority: "normal" }); setAttachment(null); } }, [open, scopeMess]);
+  const seats = usePagedList<Seat>(f.roomId ? `/mess/seats${qs({ roomId: f.roomId, limit: 100 })}` : null);
+  useEffect(() => { if (open) { setF({ kind: "maintenance", messId: scopeMess !== "all" ? scopeMess : "", roomId: "", seatId: "", category: "", title: "", description: "", priority: "normal", cost: "" }); setAttachment(null); } }, [open, scopeMess]);
   const categories = f.kind === "maintenance" ? settings?.maintenanceCategories ?? [] : settings?.complaintCategories ?? [];
   const save = async () => {
     if (!f.messId || !f.category || !f.title.trim()) { toast.error("মেস, ক্যাটাগরি ও শিরোনাম দিন"); return; }
     setBusy(true);
     try {
-      await api.post("/mess/complaints", { ...f, roomId: f.roomId || undefined, description: f.description || undefined, attachment: attachment ?? undefined });
+      await api.post("/mess/complaints", { ...f, roomId: f.roomId || undefined, seatId: f.seatId || undefined, cost: f.cost !== "" ? Number(f.cost) : undefined, description: f.description || undefined, attachment: attachment ?? undefined });
       toast.success("টিকিট তৈরি হয়েছে");
       onOpenChange(false);
       await onSaved();
@@ -101,8 +102,10 @@ function CreateTicketDialog({ open, onOpenChange, onSaved }: { open: boolean; on
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5"><Label>ধরন</Label><Select value={f.kind} onValueChange={(v) => setF({ ...f, kind: v as Complaint["kind"], category: "" })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(COMPLAINT_KIND_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-1.5"><Label>ক্যাটাগরি *</Label><Select value={f.category} onValueChange={(v) => setF({ ...f, category: v })}><SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger><SelectContent>{categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-1.5"><Label>মেস *</Label><MessSelect value={f.messId} onChange={(v) => setF({ ...f, messId: v, roomId: "" })} /></div>
-          <div className="space-y-1.5"><Label>রুম</Label><Select value={f.roomId || "__none"} onValueChange={(v) => setF({ ...f, roomId: v === "__none" ? "" : v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none">—</SelectItem>{(rooms ?? []).map((r) => <SelectItem key={r._id} value={r._id}>রুম {r.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1.5"><Label>মেস *</Label><MessSelect value={f.messId} onChange={(v) => setF({ ...f, messId: v, roomId: "", seatId: "" })} /></div>
+          <div className="space-y-1.5"><Label>রুম</Label><Select value={f.roomId || "__none"} onValueChange={(v) => setF({ ...f, roomId: v === "__none" ? "" : v, seatId: "" })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none">—</SelectItem>{(rooms ?? []).map((r) => <SelectItem key={r._id} value={r._id}>রুম {r.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1.5"><Label>সিট</Label><Select value={f.seatId || "__none"} onValueChange={(v) => setF({ ...f, seatId: v === "__none" ? "" : v })} disabled={!f.roomId}><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger><SelectContent><SelectItem value="__none">— (পুরো রুম)</SelectItem>{seats.items.map((x) => <SelectItem key={x._id} value={x._id}>সিট {x.seatNumber}</SelectItem>)}</SelectContent></Select></div>
+          {f.kind === "maintenance" && <div className="space-y-1.5"><Label>আনুমানিক খরচ (৳)</Label><Input type="number" min={0} value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} /></div>}
           <div className="sm:col-span-2 space-y-1.5"><Label>শিরোনাম *</Label><Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></div>
           <div className="sm:col-span-2 space-y-1.5"><Label>বিবরণ</Label><Textarea rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>অগ্রাধিকার</Label><Select value={f.priority} onValueChange={(v) => setF({ ...f, priority: v as Complaint["priority"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(COMPLAINT_PRIORITY_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select></div>
@@ -124,6 +127,8 @@ function TicketDialog({ complaint, onOpenChange, onChanged }: { complaint: Compl
   const [status, setStatus] = useState<Complaint["status"]>("open");
   const [assigned, setAssigned] = useState("__none");
   const [note, setNote] = useState("");
+  const [resolution, setResolution] = useState("");
+  const [cost, setCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [exp, setExp] = useState({ category: "", amount: "", method: "", date: todayISO(), description: "" });
   useEffect(() => {
@@ -131,6 +136,8 @@ function TicketDialog({ complaint, onOpenChange, onChanged }: { complaint: Compl
       setStatus(data.complaint.status);
       setAssigned(data.complaint.assignedStaffId?._id ?? "__none");
       setNote("");
+      setResolution(data.complaint.resolutionNote ?? "");
+      setCost(data.complaint.cost != null ? String(data.complaint.cost) : "");
     }
   }, [data]);
   const c = data?.complaint ?? complaint;
@@ -138,7 +145,14 @@ function TicketDialog({ complaint, onOpenChange, onChanged }: { complaint: Compl
     if (!c) return;
     setBusy(true);
     try {
-      await api.patch(`/mess/complaints/${c._id}`, { status, assignedStaffId: assigned === "__none" ? null : assigned, note: note || undefined });
+      if ((status === "resolved" || status === "closed") && !resolution.trim()) { toast.error("সমাধানের বিবরণ লিখুন"); return; }
+      await api.patch(`/mess/complaints/${c._id}`, {
+        status,
+        assignedStaffId: assigned === "__none" ? null : assigned,
+        note: note || undefined,
+        resolutionNote: resolution.trim() || undefined,
+        ...(c.kind === "maintenance" ? { cost: cost !== "" ? Number(cost) : null } : {}),
+      });
       toast.success("টিকিট আপডেট হয়েছে");
       await Promise.all([reload(), onChanged()]);
       setNote("");
@@ -161,7 +175,7 @@ function TicketDialog({ complaint, onOpenChange, onChanged }: { complaint: Compl
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{c.ticketNo} — {c.title}</DialogTitle>
-          <DialogDescription>{COMPLAINT_KIND_LABELS[c.kind]} • {c.category} • {refName(c.messId)}{c.roomId ? ` • রুম ${refName(c.roomId)}` : ""} • {c.studentId ? `শিক্ষার্থী: ${c.studentId.name}` : "স্টাফ কর্তৃক"}</DialogDescription>
+          <DialogDescription>{COMPLAINT_KIND_LABELS[c.kind]} • {c.category} • {refName(c.messId)}{c.roomId ? ` • রুম ${refName(c.roomId)}` : ""}{c.seatId ? ` • সিট ${refName(c.seatId, "seatNumber")}` : ""} • {c.studentId ? `শিক্ষার্থী: ${c.studentId.name}` : "স্টাফ কর্তৃক"}</DialogDescription>
         </DialogHeader>
         {c.description && <p className="text-sm whitespace-pre-wrap border rounded-md p-3">{c.description}</p>}
         {c.attachment?.url && <a href={c.attachment.url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">সংযুক্তি দেখুন</a>}
@@ -178,6 +192,8 @@ function TicketDialog({ complaint, onOpenChange, onChanged }: { complaint: Compl
               </Select>
             </div>
             <div className="sm:col-span-2"><Textarea rows={2} placeholder="নোট / আপডেট" value={note} onChange={(e) => setNote(e.target.value)} /></div>
+            <div className={c.kind === "maintenance" ? "space-y-1.5" : "sm:col-span-2 space-y-1.5"}><Label>সমাধানের বিবরণ {(status === "resolved" || status === "closed") && "*"}</Label><Textarea rows={2} value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="কী করা হয়েছে" /></div>
+            {c.kind === "maintenance" && <div className="space-y-1.5"><Label>খরচ (৳)</Label><Input type="number" min={0} value={cost} onChange={(e) => setCost(e.target.value)} /><p className="text-[11px] text-muted-foreground">তথ্যের জন্য — প্রকৃত খরচ নিচে "খরচ যুক্ত করুন" দিয়ে হিসাবে তুলুন।</p></div>}
             <div className="sm:col-span-2 flex justify-end"><Button disabled={busy} onClick={save}>আপডেট সংরক্ষণ</Button></div>
           </div>
         )}

@@ -3,6 +3,7 @@ import { connectDB, disconnectDB } from "./config/db";
 import { env } from "./config/env";
 import { logger } from "./logger/logger";
 import { startBirthdayScheduler } from "./modules/sms/birthday.scheduler";
+import { startMessBillingScheduler } from "./modules/mess/services/messBilling.scheduler";
 
 async function main() {
   await connectDB();
@@ -17,6 +18,10 @@ async function main() {
   // this interval alive between invocations — it's covered instead by a
   // Vercel Cron Job hitting POST /sms/cron/birthday (see vercel.json).
   startBirthdayScheduler();
+  // Mess monthly bills on the billing day (default the 1st, APP_TIMEZONE) +
+  // due-reminder SMS — same long-lived-process / Vercel Cron split as above
+  // (GET /mess/cron/monthly-billing).
+  startMessBillingScheduler();
 
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);

@@ -19,6 +19,17 @@ export interface StatusHistoryEntry {
   note?: string;
 }
 
+/** Joining-date (and other date) corrections — the adjustment record behind every edit, alongside the AuditLog entry. */
+export interface DateChangeEntry {
+  field: "joiningDate";
+  from: string;
+  to: string;
+  reason: string;
+  at: Date;
+  by?: Types.ObjectId;
+  bills: { period: string; billNo?: string; oldAmount: number; newAmount: number; action: "cancelled" | "regenerated" | "created" | "unchanged" | "kept" }[];
+}
+
 export interface MembershipBalance {
   totalBilled: number;
   totalPaid: number;
@@ -61,6 +72,10 @@ export interface MessMembershipDoc extends Document {
   cancelReason?: string;
   seatHistory: SeatHistoryEntry[];
   statusHistory: StatusHistoryEntry[];
+  /** Admission: dining charge billed for the joining month (the first bill), and the receipt that paid for it. */
+  initialDiningCharge?: number;
+  initialPaymentId?: Types.ObjectId;
+  dateHistory: DateChangeEntry[];
   settlementId?: Types.ObjectId;
   /** Cached ledger figures, recomputed from bills/payments/deposit transactions by messLedger.service.ts after every financial change. */
   balance: MembershipBalance;
@@ -141,6 +156,23 @@ const messMembershipSchema = new Schema<MessMembershipDoc>(
     cancelReason: { type: String, trim: true },
     seatHistory: { type: [seatHistorySchema], default: [] },
     statusHistory: { type: [statusHistorySchema], default: [] },
+    initialDiningCharge: { type: Number, min: 0 },
+    initialPaymentId: { type: Schema.Types.ObjectId, ref: "MessPayment" },
+    dateHistory: {
+      type: [
+        {
+          _id: false,
+          field: { type: String, enum: ["joiningDate"], required: true },
+          from: String,
+          to: String,
+          reason: String,
+          at: Date,
+          by: { type: Schema.Types.ObjectId, ref: "User" },
+          bills: [{ _id: false, period: String, billNo: String, oldAmount: Number, newAmount: Number, action: String }],
+        },
+      ],
+      default: [],
+    },
     settlementId: { type: Schema.Types.ObjectId, ref: "MessSettlement" },
     balance: { type: balanceSchema, default: () => ({}) },
     ledgerSeq: { type: Number, default: 0 },

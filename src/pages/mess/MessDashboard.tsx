@@ -1,5 +1,11 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BedDouble, Building2, ClipboardList, Coins, HandCoins, Receipt, ShieldCheck, Users, Wallet, Wrench, AlertCircle, CalendarClock } from "lucide-react";
+import {
+  BedDouble, Building2, ClipboardList, Coins, HandCoins, Receipt, ShieldCheck, Users, Wallet, Wrench, AlertCircle, CalendarClock,
+  UserPlus, FileBarChart, Settings2, CalendarCog, LogOut, ListChecks, Zap, History, PiggyBank,
+} from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SearchInput } from "@/components/mess/MessCommon";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -8,10 +14,13 @@ import { MessPage, useMessScope } from "@/components/mess/MessShell";
 import { EmptyState, ErrorState, ListSkeleton, Panel, PanelLink, SectionHeader } from "@/components/dashboard/DashboardKit";
 import { cn } from "@/lib/utils";
 import {
-  COMPLAINT_STATUS_LABELS, PURPOSE_LABELS, qs, refName, SEAT_STATUS_LABELS, tk, useApiData, usePagedList,
+  COMPLAINT_STATUS_LABELS, MEMBERSHIP_STATUS_LABELS, periodName, PURPOSE_LABELS, qs, refName, SEAT_STATUS_LABELS, tk, useApiData, usePagedList,
   type Complaint, type Membership, type MessPayment, type SeatStatus,
 } from "@/lib/mess";
-import { MESS_COMPLAINTS_MANAGE, MESS_MANAGE, MESS_REPORTS_READ } from "@/lib/permissions";
+import {
+  MESS_BILLING_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_MANAGE, MESS_MEMBERS_EDIT_DATES, MESS_MEMBERS_MANAGE, MESS_PAYMENTS_COLLECT, MESS_REPORTS_READ,
+  MESS_SETTINGS_MANAGE, MESS_VIEW,
+} from "@/lib/permissions";
 
 interface DashboardData {
   period: string;
@@ -37,7 +46,18 @@ interface DashboardData {
   pendingExpenses: number;
   pendingDepositRequests: number;
   pendingSettlements: number;
+  monthCollected?: number | null;
+  monthPaymentCount?: number;
+  previousDue?: number | null;
+  previousDueMembers?: number;
+  recentAdmissions?: { _id: string; membershipNo: string; studentId?: { name: string; registrationId?: string }; messId?: { name: string }; seatId?: { seatNumber: string }; joiningDate: string; status: Membership["status"] }[];
+  recentCheckouts?: { _id: string; membershipNo: string; studentId?: { name: string; registrationId?: string }; messId?: { name: string }; leftDate: string }[];
+  sms?: { failed: number; pending: number };
+  autoBilling?: { enabled: boolean; period: string; billingDay: number; messes: number; billedThisMonth: number; created: number; failed: number; errors: number; lastRunAt: string | null };
 }
+
+type PickAction = "pay" | "joining" | "checkout";
+const PICK_TITLES: Record<PickAction, string> = { pay: "পেমেন্ট নিন — সদস্য নির্বাচন", joining: "যোগদানের তারিখ সংশোধন — সদস্য নির্বাচন", checkout: "চেক-আউট — সদস্য নির্বাচন" };
 
 const SEAT_ORDER: { key: SeatStatus; className: string }[] = [
   { key: "occupied", className: "bg-primary" },
@@ -62,6 +82,22 @@ export default function MessDashboard() {
   const complaints = usePagedList<Complaint>(can(MESS_COMPLAINTS_MANAGE) ? `/mess/complaints${qs({ messId, status: "open", limit: 5 })}` : null);
   const payments = usePagedList<MessPayment>(fin ? `/mess/payments${qs({ messId, limit: 6 })}` : null);
   const selectedMess = messId !== "all" ? messes.find((m) => m._id === messId) : null;
+  const [pick, setPick] = useState<PickAction | null>(null);
+  const quick = [
+    { label: "নতুন ভর্তি", icon: UserPlus, perm: MESS_MEMBERS_MANAGE, go: () => navigate("/mess/members?new=1") },
+    { label: "শিক্ষার্থী তালিকা", icon: Users, perm: MESS_VIEW, go: () => navigate("/mess/members") },
+    { label: "রুম / সিট", icon: BedDouble, perm: MESS_VIEW, go: () => navigate("/mess/setup") },
+    { label: "পেমেন্ট নিন", icon: Coins, perm: MESS_PAYMENTS_COLLECT, go: () => setPick("pay") },
+    { label: "মাসিক বিল", icon: Receipt, perm: MESS_BILLING_MANAGE, go: () => navigate("/mess/billing") },
+    { label: "বকেয়া শিক্ষার্থী", icon: AlertCircle, perm: MESS_REPORTS_READ, go: () => navigate("/mess/reports?tab=dues") },
+    { label: "যোগদানের তারিখ", icon: CalendarCog, perm: MESS_MEMBERS_EDIT_DATES, go: () => setPick("joining") },
+    { label: "চেক-আউট", icon: LogOut, perm: MESS_MEMBERS_MANAGE, go: () => setPick("checkout") },
+    { label: "রিপোর্ট", icon: FileBarChart, perm: MESS_REPORTS_READ, go: () => navigate("/mess/reports") },
+    { label: "সেটিংস", icon: Settings2, perm: MESS_SETTINGS_MANAGE, go: () => navigate("/mess/settings") },
+  ].filter((q) => can(q.perm));
+  const ab = data?.autoBilling;
+  const today = new Date().getDate();
+  const autoPending = !!ab && ab.enabled && ab.messes > ab.billedThisMonth && today >= ab.billingDay;
 
   return (
     <MessPage title={selectedMess ? `${selectedMess.name} — ড্যাশবোর্ড` : "মেস / হোস্টেল ড্যাশবোর্ড"} subtitle={data ? `চলতি মাস ${data.period} • ${data.messCount}টি মেস • ${data.roomCount}টি রুম` : "সিট, সদস্য, বিল ও খরচের সারসংক্ষেপ"}>
@@ -78,6 +114,33 @@ export default function MessDashboard() {
         <Card><CardContent><ErrorState message={error} onRetry={reload} /></CardContent></Card>
       ) : (
         <div className="space-y-8">
+          {quick.length > 0 && (
+            <section aria-label="দ্রুত কাজ">
+              <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-5 gap-2">
+                {quick.map((q) => (
+                  <button key={q.label} type="button" onClick={q.go} className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2.5 text-left text-sm font-medium transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <q.icon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                    <span className="truncate">{q.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {ab && (fin || can(MESS_BILLING_MANAGE)) && (
+            <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-4 py-2.5 text-sm", autoPending || ab.failed > 0 || ab.errors > 0 ? "border-warning/40 bg-warning/5" : "bg-card")}>
+              <span className="flex items-center gap-2 font-medium"><Zap className="h-4 w-4 text-primary" aria-hidden />স্বয়ংক্রিয় মাসিক বিল — {periodName(ab.period)}</span>
+              {!ab.enabled ? <span className="text-warning">বন্ধ আছে (মেস সেটিংস)</span> : (
+                <>
+                  <span className="text-muted-foreground">{ab.billedThisMonth}/{ab.messes} মেস সম্পন্ন • {ab.created}টি বিল তৈরি{ab.failed ? ` • ${ab.failed}টি ব্যর্থ` : ""}{ab.errors ? ` • ${ab.errors}টি মেসে ত্রুটি` : ""}</span>
+                  {autoPending && <span className="text-warning">এ মাসের স্বয়ংক্রিয় বিল এখনো সম্পন্ন হয়নি — সার্ভার শিডিউলার চালু আছে কি না দেখুন বা বিলিং পেজ থেকে তৈরি করুন</span>}
+                  {ab.lastRunAt && <span className="text-xs text-muted-foreground">শেষ রান {new Date(ab.lastRunAt).toLocaleString("bn-BD")}</span>}
+                </>
+              )}
+              {can(MESS_BILLING_MANAGE) && <PanelLink to="/mess/billing">বিলিং</PanelLink>}
+            </div>
+          )}
+
           <section>
             <SectionHeader title="অকুপেন্সি ও সদস্য" icon={BedDouble} action={<PanelLink to="/mess/setup">রুম ও সিট</PanelLink>} />
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-4">
@@ -118,11 +181,13 @@ export default function MessDashboard() {
           {fin && data && (
             <section>
               <SectionHeader title={`আর্থিক — ${data.period}`} icon={Wallet} description="মেসের হিসাব — কোর্স ফি থেকে সম্পূর্ণ আলাদা" action={<PanelLink to="/mess/reports?tab=income">আয় বনাম খরচ</PanelLink>} />
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                <StatCard title="এ মাসের বিল" value={tk(data.monthBilled)} icon={Receipt} variant="primary" description={`${data.monthBillCount}টি বিল • বাকি ${tk(data.monthBillDue)}`} onClick={() => navigate("/mess/billing")} />
-                <StatCard title="এ মাসের ভাড়া আদায়" value={tk(data.monthRentCollected)} icon={Coins} variant="success" description={`জামানত সংগ্রহ ${tk(data.monthDepositCollected)}`} onClick={() => navigate("/mess/payments")} />
-                <StatCard title="মোট মেস বকেয়া" value={tk(data.totalDue)} icon={AlertCircle} variant={(data.totalDue ?? 0) > 0 ? "danger" : "success"} description={`অগ্রিম জমা ${tk(data.totalAdvance)}`} onClick={() => navigate("/mess/reports?tab=dues")} />
-                <StatCard title="এ মাসের খরচ" value={tk(data.monthExpenses)} icon={HandCoins} variant="warning" description={`জমা জামানত ${tk(data.depositsHeld)}`} onClick={() => navigate("/mess/expenses")} />
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                <StatCard title="এ মাসের বিল" value={tk(data.monthBilled)} icon={Receipt} variant="primary" description={`${data.monthBillCount}টি বিল • এ মাসের বকেয়া ${tk(data.monthBillDue)}`} onClick={() => navigate("/mess/billing")} />
+                <StatCard title="এ মাসের আদায়" value={tk(data.monthCollected ?? data.monthRentCollected)} icon={Coins} variant="success" description={`ডাইনিং ${tk(data.monthRentCollected)} • অগ্রিম/জামানত ${tk(data.monthDepositCollected)}`} onClick={() => navigate("/mess/payments")} />
+                <StatCard title="পূর্বের বকেয়া" value={tk(data.previousDue)} icon={History} variant={(data.previousDue ?? 0) > 0 ? "danger" : "success"} description={`${data.previousDueMembers ?? 0} জন — আগের মাসগুলোর`} onClick={() => navigate("/mess/reports?tab=previous-due")} />
+                <StatCard title="মোট মেস বকেয়া" value={tk(data.totalDue)} icon={AlertCircle} variant={(data.totalDue ?? 0) > 0 ? "danger" : "success"} description={`অতিরিক্ত পরিশোধ জমা ${tk(data.totalAdvance)}`} onClick={() => navigate("/mess/reports?tab=dues")} />
+                <StatCard title="জমা অগ্রিম / জামানত" value={tk(data.depositsHeld)} icon={PiggyBank} variant="info" description="শিক্ষার্থীর পক্ষে জমা — আয় নয়" onClick={() => navigate("/mess/deposits")} />
+                <StatCard title="এ মাসের খরচ" value={tk(data.monthExpenses)} icon={HandCoins} variant="warning" onClick={() => navigate("/mess/expenses")} />
               </div>
             </section>
           )}
@@ -138,6 +203,8 @@ export default function MessDashboard() {
                     {fin && <TaskRow label="জামানত কর্তন/ফেরত অনুরোধ" value={data.pendingDepositRequests} onClick={() => navigate("/mess/deposits")} />}
                     {fin && <TaskRow label="চূড়ান্ত নিষ্পত্তি" value={data.pendingSettlements} onClick={() => navigate("/mess/deposits?tab=settlements")} />}
                     <TaskRow label="খোলা অভিযোগ" value={data.openComplaints} onClick={can(MESS_COMPLAINTS_MANAGE) ? () => navigate("/mess/complaints") : undefined} />
+                    {data.sms && (can(MESS_REPORTS_READ) || can(MESS_SETTINGS_MANAGE)) && <TaskRow label="ব্যর্থ SMS (৩০ দিন)" value={data.sms.failed} onClick={() => navigate("/mess/reports?tab=sms")} />}
+                    {data.sms && (can(MESS_REPORTS_READ) || can(MESS_SETTINGS_MANAGE)) && <TaskRow label="সাড়া পাওয়া যায়নি এমন SMS" value={data.sms.pending} onClick={() => navigate("/mess/reports?tab=sms")} />}
                   </ul>
                 )}
               </Panel>
@@ -188,8 +255,45 @@ export default function MessDashboard() {
               )}
             </div>
           </section>
+
+          {data && (
+            <section>
+              <SectionHeader title="সাম্প্রতিক ভর্তি ও চেক-আউট" icon={ListChecks} action={can(MESS_REPORTS_READ) ? <PanelLink to="/mess/reports?tab=joining">রিপোর্ট</PanelLink> : undefined} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Panel title="সাম্প্রতিক ভর্তি" bodyClassName="px-0 sm:px-0">
+                  {(data.recentAdmissions ?? []).length === 0 ? <EmptyState compact icon={UserPlus} title="কোনো ভর্তি নেই" /> : (
+                    <ul className="divide-y">
+                      {data.recentAdmissions!.map((m) => (
+                        <li key={m._id}>
+                          <button type="button" onClick={() => navigate(`/mess/members/${m._id}`)} className="flex w-full items-center gap-3 px-4 sm:px-5 py-2.5 text-left hover:bg-muted/40">
+                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{m.studentId?.name ?? "—"}</span><span className="block truncate text-xs text-muted-foreground">{m.messId?.name} • সিট {m.seatId?.seatNumber ?? "—"} • {MEMBERSHIP_STATUS_LABELS[m.status]}</span></span>
+                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{m.joiningDate}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+                <Panel title="সাম্প্রতিক চেক-আউট" bodyClassName="px-0 sm:px-0">
+                  {(data.recentCheckouts ?? []).length === 0 ? <EmptyState compact icon={LogOut} title="কোনো চেক-আউট নেই" /> : (
+                    <ul className="divide-y">
+                      {data.recentCheckouts!.map((m) => (
+                        <li key={m._id}>
+                          <button type="button" onClick={() => navigate(`/mess/members/${m._id}`)} className="flex w-full items-center gap-3 px-4 sm:px-5 py-2.5 text-left hover:bg-muted/40">
+                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{m.studentId?.name ?? "—"}</span><span className="block truncate text-xs text-muted-foreground">{m.messId?.name} • {m.membershipNo}</span></span>
+                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{m.leftDate}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Panel>
+              </div>
+            </section>
+          )}
         </div>
       )}
+      <MemberPickDialog action={pick} messId={messId} onClose={() => setPick(null)} onPick={(id) => { const a = pick; setPick(null); navigate(`/mess/members/${id}?action=${a}`); }} />
     </MessPage>
   );
 }
@@ -205,5 +309,34 @@ function TaskRow({ label, value, onClick }: { label: string; value: number; onCl
     <li>
       {onClick ? <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 sm:px-5 py-2.5 text-left hover:bg-muted/40">{inner}</button> : <div className="flex items-center gap-3 px-4 sm:px-5 py-2.5">{inner}</div>}
     </li>
+  );
+}
+
+/** Find a current member, then open their profile with the chosen action (payment / joining-date edit / check-out). */
+function MemberPickDialog({ action, messId, onClose, onPick }: { action: PickAction | null; messId: string; onClose: () => void; onPick: (membershipId: string) => void }) {
+  const [search, setSearch] = useState("");
+  const status = action === "pay" ? "active,on_leave,notice_given,left" : "active,on_leave,notice_given,approved";
+  const list = usePagedList<Membership>(action ? `/mess/memberships${qs({ messId, status, search, limit: 8 })}` : null);
+  return (
+    <Dialog open={!!action} onOpenChange={(v) => { if (!v) { setSearch(""); onClose(); } }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{action ? PICK_TITLES[action] : ""}</DialogTitle><DialogDescription>নাম, রেজি. নং বা মোবাইল দিয়ে খুঁজুন</DialogDescription></DialogHeader>
+        <SearchInput value={search} onChange={setSearch} placeholder="নাম, রেজি. নং, মোবাইল" />
+        <div className="max-h-80 overflow-y-auto rounded-md border">
+          {list.loading ? <div className="p-3"><ListSkeleton rows={3} /></div> : list.items.length === 0 ? <p className="p-4 text-sm text-muted-foreground text-center">কেউ পাওয়া যায়নি</p> : (
+            <ul className="divide-y">
+              {list.items.map((m) => (
+                <li key={m._id}>
+                  <button type="button" onClick={() => onPick(m._id)} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/40">
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{m.studentId?.name}</span><span className="block truncate text-xs text-muted-foreground">{m.studentId?.registrationId} • {refName(m.messId)} • সিট {refName(m.seatId, "seatNumber")}</span></span>
+                    <span className="shrink-0 text-xs tabular-nums">{m.balance?.due > 0 ? <span className="text-destructive">বকেয়া {tk(m.balance.due)}</span> : MEMBERSHIP_STATUS_LABELS[m.status]}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,8 @@
 import { z } from "zod";
 import {
+  ADVANCE_ADJUSTMENT_RULES,
+  MESS_SMS_EVENTS,
+  PRORATION_MODES,
   COMPLAINT_KINDS,
   COMPLAINT_PRIORITY,
   COMPLAINT_STATUS,
@@ -48,6 +51,11 @@ const messBody = z.object({
   openingDate: isoDate.optional().or(z.literal("")),
   notes: text(1000).optional(),
   status: z.enum(MESS_STATUS).optional(),
+  // Per-Mess defaults (null = use Mess Settings).
+  defaultDiningCharge: money.nullable().optional(),
+  defaultDeposit: money.nullable().optional(),
+  billingDay: z.number().int().min(1).max(28).nullable().optional(),
+  dueDay: z.number().int().min(1).max(28).nullable().optional(),
 });
 export const createMessSchema = z.object({ body: messBody });
 export const updateMessSchema = z.object({ params: idParam, body: messBody.partial() });
@@ -98,6 +106,15 @@ export const updateSeatSchema = z.object({
 
 // -------------------- Members --------------------
 
+const initialPayment = z.object({
+  amount: positiveMoney,
+  method: reqText(60),
+  date: isoDate.optional(),
+  reference: text(100).optional(),
+  note: text(500).optional(),
+  idempotencyKey: z.string().min(8).max(100).optional(),
+});
+
 const emergencyContact = z.object({ name: text(100).optional(), phone: text(30).optional(), relation: text(50).optional() });
 const documents = z.array(z.object({ label: reqText(100), url: z.string().url().max(1000), publicId: z.string().max(300).optional() })).max(10);
 
@@ -118,6 +135,8 @@ export const createMembershipSchema = z.object({
     documents: documents.optional(),
     initialStatus: z.enum(["pending", "approved", "active"]).optional(),
     reservationId: objectId.optional(),
+    initialDiningCharge: money.optional(),
+    initialPayment: initialPayment.optional(),
   }),
 });
 export const updateMembershipSchema = z.object({
@@ -137,7 +156,20 @@ export const updateMembershipSchema = z.object({
 export const approveMembershipSchema = z.object({ params: idParam, body: z.object({ seatId: objectId.optional(), note: text(500).optional() }) });
 export const activateMembershipSchema = z.object({
   params: idParam,
-  body: z.object({ joiningDate: isoDate.optional(), billingStartDate: isoDate.optional(), note: text(500).optional() }),
+  body: z.object({
+    joiningDate: isoDate.optional(),
+    billingStartDate: isoDate.optional(),
+    note: text(500).optional(),
+    applyInitialCharges: z.boolean().optional(),
+    initialDiningCharge: money.optional(),
+    initialPayment: initialPayment.optional(),
+  }),
+});
+export const initialChargesSchema = z.object({ params: idParam, body: z.object({ initialDiningCharge: money.optional(), initialPayment: initialPayment.optional() }) });
+export const joiningDatePreviewSchema = z.object({ params: idParam, query: z.object({ joiningDate: isoDate }) });
+export const joiningDateChangeSchema = z.object({
+  params: idParam,
+  body: z.object({ joiningDate: isoDate, reason: reqText(500), applyBillChanges: z.boolean().optional() }),
 });
 export const changeStatusSchema = z.object({
   params: idParam,
@@ -181,10 +213,12 @@ export const receivePaymentSchema = z.object({
     .object({
       membershipId: objectId.optional(),
       reservationId: objectId.optional(),
-      purpose: z.enum(MESS_PAYMENT_PURPOSE),
+      // "initial" receipts are only created by the admission flow.
+      purpose: z.enum(MESS_PAYMENT_PURPOSE).exclude(["initial"]),
       amount: positiveMoney,
       method: reqText(60),
       date: isoDate.optional(),
+      billingMonth: period.optional(),
       reference: text(100).optional(),
       note: text(500).optional(),
       idempotencyKey: z.string().min(8).max(100).optional(),
@@ -201,6 +235,7 @@ export const createDepositTxSchema = z.object({
     method: text(60).optional(),
     reference: text(100).optional(),
     date: isoDate.optional(),
+    period: period.optional(),
   }),
 });
 export const completeRefundSchema = z.object({ params: idParam, body: z.object({ method: reqText(60), date: isoDate.optional(), reference: text(100).optional() }) });
@@ -239,6 +274,8 @@ export const createComplaintSchema = z.object({
     kind: z.enum(COMPLAINT_KINDS),
     messId: objectId,
     roomId: objectId.optional(),
+    seatId: objectId.optional(),
+    cost: money.optional(),
     category: reqText(100),
     title: reqText(200),
     description: text(2000).optional(),
@@ -254,6 +291,8 @@ export const updateComplaintSchema = z.object({
     priority: z.enum(COMPLAINT_PRIORITY).optional(),
     assignedStaffId: objectId.nullable().optional(),
     note: text(1000).optional(),
+    resolutionNote: text(2000).optional(),
+    cost: money.nullable().optional(),
   }),
 });
 export const portalComplaintSchema = z.object({
@@ -311,6 +350,14 @@ export const updateMessSettingsSchema = z.object({
     expenseApprovalRequired: z.boolean().optional(),
     paymentMethods: z.array(reqText(60)).max(30).optional(),
     paymentSmsEnabled: z.boolean().optional(),
+    prorationMode: z.enum(PRORATION_MODES).optional(),
+    advanceAdjustmentRule: z.enum(ADVANCE_ADJUSTMENT_RULES).optional(),
+    autoBillingEnabled: z.boolean().optional(),
+    billSmsEnabled: z.boolean().optional(),
+    dueReminderSmsEnabled: z.boolean().optional(),
+    admissionSmsEnabled: z.boolean().optional(),
+    checkoutSmsEnabled: z.boolean().optional(),
+    smsTemplates: z.object(Object.fromEntries(MESS_SMS_EVENTS.map((e) => [e, z.string().trim().min(1).max(640).optional()])) as Record<(typeof MESS_SMS_EVENTS)[number], z.ZodOptional<z.ZodString>>).optional(),
     roomTypes: list.optional(),
     seatTypes: list.optional(),
     complaintCategories: list.min(1).optional(),
@@ -318,3 +365,12 @@ export const updateMessSettingsSchema = z.object({
     expenseCategories: list.min(1).optional(),
   }),
 });
+
+export const testMessSmsSchema = z.object({
+  body: z.object({
+    phone: z.string().trim().min(6, "সঠিক মোবাইল নম্বর দিন").max(20),
+    event: z.enum(MESS_SMS_EVENTS),
+    template: z.string().trim().max(640).optional(),
+  }),
+});
+export const dueReminderSchema = z.object({ body: z.object({ messId: objectId.optional(), membershipIds: z.array(objectId).max(1000).optional() }) });

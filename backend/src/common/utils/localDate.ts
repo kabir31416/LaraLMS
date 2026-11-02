@@ -7,11 +7,11 @@ import { env } from "../../config/env";
  * that same timezone — `new Date().toISOString()` is UTC and is a day behind
  * Bangladesh between 00:00 and 06:00.
  */
-export function localToday(timeZone = env.APP_TIMEZONE): string {
+export function localToday(timeZone = env.APP_TIMEZONE, now: Date = new Date()): string {
   try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    return now.toISOString().slice(0, 10);
   }
 }
 
@@ -40,4 +40,23 @@ export function monthKeysEnding(endMonth: string, count: number): string[] {
 
 export function isIsoDate(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/**
+ * The UTC instant at which local calendar day `date` starts (or ends, with
+ * `endOfDay`) in `timeZone` — for filtering Date-typed fields (createdAt) by a
+ * local "yyyy-mm-dd" range. Uses the zone's offset on that date (no DST in
+ * Asia/Dhaka, but correct for any IANA zone at the day boundary).
+ */
+export function localDayBoundary(date: string, endOfDay = false, timeZone = env.APP_TIMEZONE): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const guess = Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(guess));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    const asLocal = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"), endOfDay ? 999 : 0);
+    return new Date(guess - (asLocal - guess));
+  } catch {
+    return new Date(guess);
+  }
 }

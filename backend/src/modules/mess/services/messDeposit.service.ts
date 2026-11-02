@@ -69,7 +69,7 @@ export async function listDepositTransactions(req: Request) {
 export async function createDepositTransaction(
   req: Request,
   membershipId: string,
-  body: { type: DepositTxType; amount: number; reason?: string; method?: string; reference?: string; date?: string },
+  body: { type: DepositTxType; amount: number; reason?: string; method?: string; reference?: string; date?: string; period?: string },
 ): Promise<MessDepositTransactionDoc> {
   const m = await getMembershipOrThrow(req, membershipId);
   if (m.status === "cancelled") throw ApiError.badRequest("বাতিল সদস্যপদে জামানত লেনদেন করা যাবে না");
@@ -100,6 +100,9 @@ export async function createDepositTransaction(
     status: needsApproval ? "pending" : "approved",
     method: body.method,
     reference: body.reference,
+    // "Which month was the advance used for" — recorded for a manual apply_to_due (advance rule "manual").
+    period: body.type === "apply_to_due" ? body.period || todayISO().slice(0, 7) : undefined,
+    source: "manual",
     requestedBy: actorId(req),
     ...(needsApproval ? {} : { approvedBy: actorId(req), approvedAt: new Date() }),
   });
@@ -364,6 +367,23 @@ export async function completeSettlement(
   await releaseSeat(m.seatId, { membershipId: m._id as Types.ObjectId });
   await recomputeLedger(s.membershipId);
   await recordAudit({ req, action: "mess.settlement.complete", module: "mess", targetCollection: "messsettlements", targetId: id, before: s.toObject(), after: updated.toObject() });
+  // Check-out SMS (if enabled) — after everything is recorded; can never affect the settlement.
+  const { fmtTaka, queueMessEventSms } = await import("./messSms.service");
+  const final = figures.refundableAmount;
+  queueMessEventSms({
+    event: "checkout",
+    studentId: s.studentId,
+    messId: s.messId,
+    vars: {
+      amount: `${fmtTaka(Math.abs(final))} ${final >= 0 ? "(ফেরতযোগ্য)" : "(বকেয়া)"}`,
+      remainingDue: fmtTaka(figures.remainingDue),
+      paymentDate: date,
+      paymentMethod: body.refundMethod ?? "",
+    },
+    refType: "settlement",
+    refId: String(s._id),
+    dedupeKey: `checkout:${String(s._id)}`,
+  });
   return updated;
 }
 

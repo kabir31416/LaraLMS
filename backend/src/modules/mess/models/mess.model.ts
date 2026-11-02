@@ -16,6 +16,16 @@ export interface MessDoc extends Document {
   openingDate?: string; // yyyy-mm-dd
   notes?: string;
   status: MessStatus;
+  /** Per-Mess defaults — when unset, Mess Settings' global values apply. Changing them affects future admissions/bills only. */
+  defaultDiningCharge?: number;
+  defaultDeposit?: number;
+  billingDay?: number;
+  dueDay?: number;
+  /** "yyyy-mm" the backend scheduler last generated this Mess's monthly bills for — claimed atomically so two runners never double-run a month. */
+  autoBilledPeriod?: string;
+  autoBillingLastRun?: { period: string; at: Date; trigger: string; eligible: number; created: number; skippedExisting: number; failed: number; error?: string };
+  /** "yyyy-mm" the due-reminder SMS last went out for. */
+  dueReminderPeriod?: string;
   /** Which existing Staff members work at this Mess — also the Mess-level access list for mess staff logins (mess.scope.ts). */
   staff: MessStaffAssignment[];
   createdBy?: Types.ObjectId;
@@ -41,6 +51,22 @@ const messSchema = new Schema<MessDoc>(
     openingDate: { type: String },
     notes: { type: String, trim: true },
     status: { type: String, enum: MESS_STATUS, default: "active" },
+    defaultDiningCharge: { type: Number, min: 0 },
+    defaultDeposit: { type: Number, min: 0 },
+    billingDay: { type: Number, min: 1, max: 28 },
+    dueDay: { type: Number, min: 1, max: 28 },
+    autoBilledPeriod: { type: String },
+    autoBillingLastRun: {
+      period: String,
+      at: Date,
+      trigger: String,
+      eligible: Number,
+      created: Number,
+      skippedExisting: Number,
+      failed: Number,
+      error: String,
+    },
+    dueReminderPeriod: { type: String },
     staff: { type: [staffAssignmentSchema], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
   },

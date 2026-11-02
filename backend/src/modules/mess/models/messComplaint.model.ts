@@ -23,6 +23,9 @@ export interface MessComplaintDoc extends Document {
   status: (typeof COMPLAINT_STATUS)[number];
   history: { status: string; note?: string; at: Date; by?: Types.ObjectId; byRole?: string }[];
   resolvedAt?: Date;
+  resolutionNote?: string;
+  /** Maintenance cost (informational; spending itself is recorded as a Mess expense). */
+  cost?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +54,8 @@ const messComplaintSchema = new Schema<MessComplaintDoc>(
       default: [],
     },
     resolvedAt: { type: Date },
+    resolutionNote: { type: String, trim: true },
+    cost: { type: Number, min: 0 },
   },
   { timestamps: true },
 );

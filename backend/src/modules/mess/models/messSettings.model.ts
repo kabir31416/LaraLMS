@@ -1,5 +1,11 @@
 import { Schema, model, Document, Types } from "mongoose";
 import {
+  ADVANCE_ADJUSTMENT_RULES,
+  AdvanceAdjustmentRule,
+  DEFAULT_MESS_SMS_TEMPLATES,
+  MessSmsEvent,
+  PRORATION_MODES,
+  ProrationMode,
   DEFAULT_COMPLAINT_CATEGORIES,
   DEFAULT_EXPENSE_CATEGORIES,
   DEFAULT_MAINTENANCE_CATEGORIES,
@@ -27,6 +33,17 @@ export interface MessSettingsDoc extends Document {
   lateFeeEnabled: boolean;
   lateFeeAmount: number;
   prorationEnabled: boolean;
+  /** Supersedes prorationEnabled when set (prorationEnabled=true ⇔ "prorate"). */
+  prorationMode?: ProrationMode;
+  advanceAdjustmentRule: AdvanceAdjustmentRule;
+  /** Backend scheduler generates every active member's monthly bill on the billing day (Asia/Dhaka). On by default — monthly bills are mandatory. */
+  autoBillingEnabled: boolean;
+  /** Per-event Mess SMS toggles (payment SMS keeps its original paymentSmsEnabled flag). */
+  billSmsEnabled: boolean;
+  dueReminderSmsEnabled: boolean;
+  admissionSmsEnabled: boolean;
+  checkoutSmsEnabled: boolean;
+  smsTemplates: Record<MessSmsEvent, string>;
   discountApprovalRequired: boolean;
   refundApprovalRequired: boolean;
   expenseApprovalRequired: boolean;
@@ -55,6 +72,20 @@ const messSettingsSchema = new Schema<MessSettingsDoc>(
     lateFeeEnabled: { type: Boolean, default: false },
     lateFeeAmount: { type: Number, default: 0, min: 0 },
     prorationEnabled: { type: Boolean, default: false },
+    prorationMode: { type: String, enum: PRORATION_MODES },
+    advanceAdjustmentRule: { type: String, enum: ADVANCE_ADJUSTMENT_RULES, default: "on_checkout" },
+    autoBillingEnabled: { type: Boolean, default: true },
+    billSmsEnabled: { type: Boolean, default: false },
+    dueReminderSmsEnabled: { type: Boolean, default: false },
+    admissionSmsEnabled: { type: Boolean, default: false },
+    checkoutSmsEnabled: { type: Boolean, default: false },
+    smsTemplates: {
+      payment: { type: String, default: DEFAULT_MESS_SMS_TEMPLATES.payment },
+      bill: { type: String, default: DEFAULT_MESS_SMS_TEMPLATES.bill },
+      dueReminder: { type: String, default: DEFAULT_MESS_SMS_TEMPLATES.dueReminder },
+      admission: { type: String, default: DEFAULT_MESS_SMS_TEMPLATES.admission },
+      checkout: { type: String, default: DEFAULT_MESS_SMS_TEMPLATES.checkout },
+    },
     discountApprovalRequired: { type: Boolean, default: false },
     refundApprovalRequired: { type: Boolean, default: true },
     expenseApprovalRequired: { type: Boolean, default: true },
