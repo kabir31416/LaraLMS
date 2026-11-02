@@ -115,7 +115,7 @@ export function downloadIndividualMarksheetPdf(view: IndividualResultView, insti
     head: [["Subject", "Full Marks", "Obtained", "Percentage", "Grade"]],
     body: subjects.map((s) => [s.subject, String(s.fullMarks), String(s.obtained), `${s.percentage}%`, s.grade]),
     styles: { fontSize: 9 },
-    headStyles: { fillColor: [37, 99, 235] },
+    headStyles: { fillColor: [41, 37, 36] },
   });
 
   const afterSubjects = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
@@ -131,7 +131,7 @@ export function downloadIndividualMarksheetPdf(view: IndividualResultView, insti
     head: [["Date", "Subject", "Exam", "Full Marks", "Obtained", "Percentage", "Status"]],
     body: details.map((d) => [d.date, d.subject, d.examTitle, String(d.fullMarks), d.obtained != null ? String(d.obtained) : "-", d.percentage != null ? `${d.percentage}%` : "-", d.status]),
     styles: { fontSize: 8.5 },
-    headStyles: { fillColor: [37, 99, 235] },
+    headStyles: { fillColor: [41, 37, 36] },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 6) {
         const [r, g, b] = statusColor(String(data.cell.raw));
@@ -252,7 +252,7 @@ export function downloadBatchMasterSheetPdf(view: BatchMasterSheetView, institut
     head,
     body,
     styles: { fontSize: 7, halign: "center" },
-    headStyles: { fillColor: [37, 99, 235], fontSize: 7 },
+    headStyles: { fillColor: [41, 37, 36], fontSize: 7 },
     columnStyles: { 1: { halign: "left" } },
     showHead: "everyPage",
     didParseCell: (data) => {

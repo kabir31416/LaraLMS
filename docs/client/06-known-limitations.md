@@ -18,8 +18,8 @@ Everything partial, not included, or needing live verification, gathered in one 
 
 ## Cosmetic-only items (not fixed — out of scope for a production-blocker audit)
 
-- The search box in the Topbar (top of every Admin/Director page) is a visual placeholder — it accepts typing but does not currently filter or search anything.
-- The notification bell icon in the Topbar is decorative — it shows a static indicator dot but is not backed by a real notification system.
+- ~~Topbar search placeholder~~ — **resolved in v1.3**: the header now has a working Ctrl/⌘+K global search (pages + students). See Document 11.
+- ~~Decorative notification dot~~ — **resolved in v1.3**: the fake unread dot was removed; the bell now opens the notices page. A real per-user unread notification system is still not implemented.
 
 ## Sandbox / audit-process disclosure
 

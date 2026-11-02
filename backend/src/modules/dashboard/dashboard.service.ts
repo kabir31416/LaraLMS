@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { addDays, localToday } from "../../common/utils/localDate";
 import { Student } from "../students/student.model";
 import { Batch } from "../batches/batch.model";
 import { Payment } from "../payments/payment.model";
@@ -60,7 +61,7 @@ interface ByDateFacetRow {
  * under-count these totals once a coaching center passes 100 records.
  */
 export async function getAdminSummary() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const monthKeys = last6MonthKeys();
 
   const [studentFacet] = await Student.aggregate<{
@@ -204,7 +205,7 @@ export async function getAdminSummary() {
  * silently under-count once a coaching centre passes 100 students.
  */
 export async function getAdmissionSummary() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const monthKeys = last6MonthKeys();
   const weekAgo = (() => {
     const d = new Date();
@@ -283,7 +284,7 @@ export async function getAdmissionSummary() {
 
 /** Director summary — scoped to the batches this Staff record directs. */
 export async function getDirectorSummary(staffId: string) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const batches = await Batch.find({ directorIds: staffId })
     .populate<{ courseId: { _id: Types.ObjectId; name: string } | null }>("courseId", "name")
     .sort({ name: 1 });
@@ -300,6 +301,7 @@ export async function getDirectorSummary(staffId: string) {
       today: StatusFacetRow[];
       overall: StatusFacetRow[];
       byStudent: ByStudentFacetRow[];
+      byBatch: ByStudentFacetRow[];
     }>([
       { $match: { batchId: { $in: batchIds } } },
       {
@@ -307,11 +309,17 @@ export async function getDirectorSummary(staffId: string) {
           today: [{ $match: { date: today } }, { $group: { _id: "$status", count: { $sum: 1 } } }],
           overall: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
           byStudent: [{ $group: { _id: "$studentId", total: { $sum: 1 }, present: { $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] } } } }],
+          // Last 30 days per batch — "which of my batches needs attention".
+          byBatch: [
+            { $match: { date: { $gte: addDays(today, -29) } } },
+            { $group: { _id: "$batchId", total: { $sum: 1 }, present: { $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] } } } },
+          ],
         },
       },
     ]),
     OfflineExam.find({ batchId: { $in: batchIds } }).sort({ createdAt: -1 }).limit(5),
   ]);
+  const upcomingExamDocs = await OfflineExam.find({ batchId: { $in: batchIds }, date: { $gte: today } }).sort({ date: 1 }).limit(5);
   const [facet] = attendanceFacet;
 
   const pctOf = (rows: StatusFacetRow[]) => {
@@ -333,6 +341,8 @@ export async function getDirectorSummary(staffId: string) {
     todayAttendancePct: pctOf(facet.today),
     overallAttendancePct: pctOf(facet.overall),
     lowAttendance: lowAttendance.map((r) => ({ ...r, ...lowAttendanceNameById.get(r.studentId) })),
+    upcomingExams: upcomingExamDocs.map((e) => ({ id: String(e._id), batchId: String(e.batchId), title: e.title, fullMarks: e.fullMarks, date: e.date })),
+    batchAttendance30d: facet.byBatch.map((b) => ({ batchId: String(b._id), pct: b.total ? Math.round((b.present / b.total) * 100) : 0, entries: b.total })),
     myExams: myExamDocs.map((e) => ({
       id: String(e._id),
       batchId: String(e.batchId),

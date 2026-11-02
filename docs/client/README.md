@@ -24,8 +24,11 @@ Every feature described in these documents was verified directly in the LaraLMS 
 8. [Client Handover Checklist](08-client-handover-checklist.md) — the concrete steps to complete before go-live.
 9. [Subject / Course Architecture](09-subject-course-architecture.md).
 10. [Mess / Hostel Management](10-mess-management.md) — Mess setup, rooms/seats, student membership, billing, payments, deposit & settlement, expenses, complaints, notices, Student Portal, reports, settings, roles, limitations and verification status.
+11. [UI/UX & Dashboards](11-ui-and-dashboards.md) — design system, navigation, the Main Dashboard command center, the Mess shortcut, role dashboards and how each figure is sourced.
 
 ## Changelog
+
+- **v1.3** — UI/UX modernization (Document 11): new design system (neutral + deep-orange palette, refined tables/forms/dialogs/tabs), grouped role-aware sidebar, header breadcrumb, working Ctrl+K global search, a permission-aware Main Dashboard "command center" backed by a new `/dashboard/overview` aggregation (date-range/course/batch filters, financial/student/attendance/academic analytics, real audit-log activity feed, quick actions) with a Mess Management overview and shortcut; refreshed Batch Director, Student and Mess dashboards; dashboard dates now use the institution timezone.
 
 - **v1.2** — Added **Mess / Hostel Management** (Document 10): multi-Mess setup, rooms and seats, membership lifecycle for existing students, reservations, idempotent monthly billing, Mess payments kept separate from Course Fee collections, security deposit and final settlement, Mess expenses, complaints/maintenance, Mess notices, a Student Portal Mess page, Mess reports and Mess Settings. New Mess staff types (Mess Manager / Accountant / Caretaker) log in through the existing Staff Portal and see only their assigned Mess. Meal Management is **not** included. 🔵 Database-backed flows still require live verification on a test database (Document 10 §10.13).
 

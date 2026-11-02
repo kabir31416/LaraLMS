@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { useMemo } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { bn } from "date-fns/locale";
+import { Users, Layers, ClipboardCheck, AlertTriangle, CalendarClock, ClipboardList, FileSpreadsheet, ListChecks, CalendarDays, Clock, MapPin, RefreshCw } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, Layers, ClipboardCheck, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBatches } from "@/contexts/BatchContext";
-import { useAcademic } from "@/contexts/AcademicContext";
-import { useStudents } from "@/contexts/StudentContext";
 import { api } from "@/lib/apiClient";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
+import { EmptyState, ErrorState, ListSkeleton, Panel, PanelLink, RankedBars, SectionHeader } from "@/components/dashboard/DashboardKit";
 
 interface DirectorDashboardSummary {
   totalBatches: number;
@@ -19,174 +21,123 @@ interface DirectorDashboardSummary {
   overallAttendancePct: number;
   lowAttendance: { studentId: string; pct: number; name?: string; registrationId?: string }[];
   myExams: { id: string; batchId: string; title: string; fullMarks: number; date: string }[];
-  batches: {
-    id: string;
-    name: string;
-    courseId?: string;
-    courseName?: string;
-    batchTime: string;
-    days: string[];
-    roomNumber?: string;
-    studentCount: number;
-  }[];
+  upcomingExams?: { id: string; batchId: string; title: string; fullMarks: number; date: string }[];
+  batchAttendance30d?: { batchId: string; pct: number; entries: number }[];
+  batches: { id: string; name: string; courseId?: string; courseName?: string; batchTime: string; days: string[]; roomNumber?: string; studentCount: number }[];
 }
 
+/**
+ * Batch Director home — everything is scoped server-side to the batches this
+ * director is assigned to (/dashboard/director); nothing institution-wide
+ * or financial is shown here.
+ */
 const DirectorDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { batches } = useBatches();
-  const { students } = useStudents();
-  const { getCourse } = useAcademic();
+  const isDirector = user?.role === "Batch Director";
+  const q = useQuery({
+    queryKey: ["dashboard", "director", user?.staffId],
+    queryFn: () => api.get<DirectorDashboardSummary>("/dashboard/director"),
+    enabled: isDirector,
+    staleTime: 30_000, refetchOnMount: "always",
+  });
+  const batchName = useMemo(() => new Map((q.data?.batches ?? []).map((b) => [b.id, b.name])), [q.data]);
+  const fallbackName = (id: string) => batchName.get(id) ?? batches.find((b) => b.id === id)?.name ?? "—";
 
-  // Module 4, extended in Modules 18-20: server-side aggregation, scoped to
-  // this director's own batches — accurate roster/attendance beyond
-  // BatchContext/StudentContext's 100-row list cap, and AttendanceContext no
-  // longer caches a global array at all (see its own comment).
-  const [summary, setSummary] = useState<DirectorDashboardSummary | null>(null);
-  useEffect(() => {
-    if (!user || user.role !== "Batch Director") return;
-    let cancelled = false;
-    api
-      .get<DirectorDashboardSummary>("/dashboard/director")
-      .then((data) => { if (!cancelled) setSummary(data); })
-      .catch((err) => {
-        if (!(err instanceof ApiClientError)) console.error(err);
-      });
-    return () => { cancelled = true; };
-  }, [user]);
-
-  const myBatches = useMemo(
-    () => (user ? batches.filter((b) => b.directorIds?.includes(user.staffId)) : []),
-    [batches, user],
-  );
-  const myBatchIds = new Set(myBatches.map((b) => b.id));
-  const myStudents = students.filter((s) => s.batchId && myBatchIds.has(s.batchId));
-  const totalBatches = summary?.totalBatches ?? myBatches.length;
-  const totalStudents = summary?.totalStudents ?? myStudents.length;
-  const rosterBatches = summary?.batches ?? myBatches.map((b) => ({
-    id: b.id,
-    name: b.name,
-    courseName: getCourse(b.courseId)?.name,
-    batchTime: b.batchTime,
-    days: b.days,
-    roomNumber: b.roomNumber,
-    studentCount: students.filter((s) => s.batchId === b.id).length,
-  }));
-
-  const todayPct = summary?.todayAttendancePct ?? 0;
-  const overallPct = summary?.overallAttendancePct ?? 0;
-  const myExams = summary?.myExams ?? [];
-  const lowAttendance = summary?.lowAttendance ?? [];
-
-  if (!user || user.role !== "Batch Director") {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user || !isDirector) return <Navigate to="/login" replace />;
+  const d = q.data;
+  const loading = q.isLoading;
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">স্বাগতম, {user.name}</h1>
-          <p className="text-sm text-muted-foreground">আপনার নিয়োগকৃত ব্যাচ এবং শিক্ষার্থীদের সারসংক্ষেপ</p>
+      <div className="space-y-8">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground flex items-center gap-2"><CalendarDays className="h-4 w-4" aria-hidden />{format(new Date(), "EEEE, d MMMM yyyy", { locale: bn })}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold mt-1">স্বাগতম, {user.name}</h1>
+            <p className="text-sm text-muted-foreground">আপনার নিয়োগকৃত ব্যাচ ও শিক্ষার্থীদের সারসংক্ষেপ</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => navigate("/director/results")}><ClipboardList />রেজাল্ট ও উপস্থিতি এন্ট্রি</Button>
+            <Button variant="outline" onClick={() => navigate("/director/result-management")}><FileSpreadsheet />ফলাফল ব্যবস্থাপনা</Button>
+            <Button variant="outline" size="icon" onClick={() => void q.refetch()} aria-label="রিফ্রেশ"><RefreshCw className={cn(q.isFetching && "animate-spin")} /></Button>
+          </div>
+        </header>
+
+        {q.isError && <ErrorState message="ড্যাশবোর্ড লোড করা যায়নি" onRetry={() => void q.refetch()} />}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <StatCard title="আজকের উপস্থিতি" value={`${d?.todayAttendancePct ?? 0}%`} icon={ClipboardCheck} variant="success" loading={loading} description="আমার সব ব্যাচ মিলিয়ে" />
+          <StatCard title="সামগ্রিক উপস্থিতি" value={`${d?.overallAttendancePct ?? 0}%`} icon={ClipboardCheck} variant="primary" loading={loading} />
+          <StatCard title="মোট শিক্ষার্থী" value={String(d?.totalStudents ?? 0)} icon={Users} variant="info" loading={loading} onClick={() => navigate("/director/students")} />
+          <StatCard title="কম উপস্থিতি (<৬০%)" value={String(d?.lowAttendance.length ?? 0)} icon={AlertTriangle} variant="warning" loading={loading} description={`${d?.totalBatches ?? 0}টি ব্যাচ`} />
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<ClipboardCheck className="h-5 w-5" />} label="আজকের উপস্থিতি" value={`${todayPct}%`} />
-          <StatCard icon={<ClipboardCheck className="h-5 w-5" />} label="ব্যাচ উপস্থিতি %" value={`${overallPct}%`} />
-          <StatCard icon={<Users className="h-5 w-5" />} label="মোট শিক্ষার্থী" value={String(totalStudents)} />
-          <StatCard icon={<Layers className="h-5 w-5" />} label="মোট ব্যাচ" value={String(totalBatches)} />
-        </div>
-
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">আমার ব্যাচসমূহ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ব্যাচ</TableHead>
-                  <TableHead>কোর্স</TableHead>
-                  <TableHead>সময়</TableHead>
-                  <TableHead>দিন</TableHead>
-                  <TableHead>রুম</TableHead>
-                  <TableHead className="text-center">শিক্ষার্থী</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rosterBatches.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-10">কোনো ব্যাচ নিয়োগ করা হয়নি</TableCell></TableRow>
-                ) : (
-                  rosterBatches.map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-medium">{b.name}</TableCell>
-                      <TableCell>{b.courseName || "—"}</TableCell>
-                      <TableCell className="text-sm">{b.batchTime}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{b.days.join(", ") || "—"}</TableCell>
-                      <TableCell>{b.roomNumber || "—"}</TableCell>
-                      <TableCell className="text-center"><Badge variant="outline">{b.studentCount}</Badge></TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="border-none shadow-sm">
-            <CardHeader><CardTitle className="text-base">সাম্প্রতিক এক্সাম</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {myExams.length === 0 ? (
-                  <p className="px-5 py-6 text-sm text-muted-foreground text-center">কোনো এক্সাম নেই</p>
-                ) : myExams.map((e) => (
-                  <div key={e.id} className="flex items-center justify-between px-5 py-3">
-                    <div>
-                      <p className="text-sm font-medium">{e.title}</p>
-                      <p className="text-xs text-muted-foreground">পূর্ণ মান {e.fullMarks} • {e.date}</p>
+        <section>
+          <SectionHeader title="আমার ব্যাচসমূহ" icon={Layers} action={<PanelLink to="/director/students">শিক্ষার্থী তালিকা</PanelLink>} />
+          {loading ? <ListSkeleton rows={3} /> : (d?.batches ?? []).length === 0 ? (
+            <div className="rounded-lg border bg-card"><EmptyState icon={Layers} title="কোনো ব্যাচ নিয়োগ করা হয়নি" description="অ্যাডমিন ব্যাচে আপনাকে ডিরেক্টর হিসেবে যুক্ত করলে এখানে দেখা যাবে।" /></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+              {d!.batches.map((b) => {
+                const att = d!.batchAttendance30d?.find((x) => x.batchId === b.id);
+                return (
+                  <div key={b.id} className="rounded-lg border bg-card p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{b.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{b.courseName || "—"}</p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0"><Users className="h-3 w-3" />{b.studentCount}</Badge>
                     </div>
-                    <Badge variant="outline">{batches.find((b) => b.id === e.batchId)?.name}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-none shadow-sm">
-            <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-destructive" /> কম উপস্থিতি (৬০% এর নিচে)</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {lowAttendance.length === 0 ? (
-                  <p className="px-5 py-6 text-sm text-muted-foreground text-center">কেউ নেই</p>
-                ) : lowAttendance.map((x) => (
-                  <div key={x.studentId} className="flex items-center justify-between px-5 py-2.5">
-                    <div>
-                      <p className="text-sm font-medium">{x.name || "—"}</p>
-                      <p className="text-xs text-muted-foreground">{x.registrationId}</p>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden />{b.batchTime || "—"}</span>
+                      {b.roomNumber && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" aria-hidden />রুম {b.roomNumber}</span>}
+                      <span>{b.days.join(", ") || "—"}</span>
                     </div>
-                    <Badge className="bg-destructive/10 text-destructive border-destructive/20">{x.pct}%</Badge>
+                    <div className="mt-3">
+                      <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">উপস্থিতি (৩০ দিন)</span><b className={cn("tabular-nums", att && att.pct < 60 && "text-destructive")}>{att ? `${att.pct}%` : "—"}</b></div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className={cn("h-full rounded-full", att && att.pct < 60 ? "bg-destructive" : "bg-primary")} style={{ width: `${att?.pct ?? 0}%` }} /></div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <Panel title="আসন্ন এক্সাম" bodyClassName="px-0 sm:px-0">
+            {loading ? <div className="px-5"><ListSkeleton rows={3} /></div> : (d?.upcomingExams ?? []).length === 0 ? <EmptyState compact icon={CalendarClock} title="কোনো আসন্ন এক্সাম নেই" /> : (
+              <ul className="divide-y">{d!.upcomingExams!.map((e) => <ExamRow key={e.id} title={e.title} date={e.date} sub={`${fallbackName(e.batchId)} • পূর্ণমান ${e.fullMarks}`} />)}</ul>
+            )}
+          </Panel>
+          <Panel title="সাম্প্রতিক এক্সাম" action={<PanelLink to="/director/results">ফলাফল এন্ট্রি</PanelLink>} bodyClassName="px-0 sm:px-0">
+            {loading ? <div className="px-5"><ListSkeleton rows={3} /></div> : (d?.myExams ?? []).length === 0 ? <EmptyState compact icon={ListChecks} title="কোনো এক্সাম নেই" /> : (
+              <ul className="divide-y">{d!.myExams.map((e) => <ExamRow key={e.id} title={e.title} date={e.date} sub={`${fallbackName(e.batchId)} • পূর্ণমান ${e.fullMarks}`} />)}</ul>
+            )}
+          </Panel>
+          <Panel title="কম উপস্থিতি" description="৬০% এর নিচে — সবচেয়ে কম আগে">
+            {loading ? <ListSkeleton rows={4} /> : (
+              <RankedBars rows={(d?.lowAttendance ?? []).slice(0, 8).map((x) => ({ key: x.studentId, label: x.name || "—", sub: x.registrationId, value: x.pct }))} max={100} format={(v) => `${v}%`} tone="destructive" emptyText="কেউ নেই — দারুণ!" />
+            )}
+          </Panel>
         </div>
       </div>
     </DashboardLayout>
   );
 };
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function ExamRow({ title, date, sub }: { title: string; date: string; sub: string }) {
   return (
-    <Card className="border-none shadow-sm">
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">{icon}</div>
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-xl font-bold">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
+    <li className="flex items-center gap-3 px-4 sm:px-5 py-2.5">
+      <span className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-md border bg-muted/40 leading-none">
+        <span className="text-sm font-bold tabular-nums">{date.slice(8, 10)}</span>
+        <span className="text-[10px] text-muted-foreground mt-0.5">{date.slice(5, 7)}/{date.slice(2, 4)}</span>
+      </span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{sub}</span></span>
+    </li>
   );
 }
 

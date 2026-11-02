@@ -1,32 +1,4 @@
-import {
-  LayoutDashboard,
-  Users,
-  UserPlus,
-  DollarSign,
-  ClipboardCheck,
-  FileText,
-  Award,
-  GraduationCap,
-  BookOpen,
-  Calculator,
-  Settings,
-  UserCog,
-  Layers,
-  Video,
-  ClipboardList,
-  Bell,
-  BarChart3 as ReportIcon,
-  User,
-  ListChecks,
-  FileSpreadsheet,
-  BedDouble,
-  Building2,
-  Receipt,
-  Coins,
-  ShieldCheck,
-  HandCoins,
-  Wrench,
-} from "lucide-react";
+import { GraduationCap } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -34,146 +6,94 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import {
-  MESS_BILLING_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_EXPENSES_MANAGE, MESS_MEMBERS_MANAGE, MESS_NOTICES_MANAGE,
-  MESS_PAYMENTS_COLLECT, MESS_REPORTS_READ, MESS_VIEW, SIDEBAR_MODULES,
-} from "@/lib/permissions";
+import { useAuth } from "@/contexts/AuthContext";
+import { EXACT_ROOTS, navGroupsFor, type NavItem } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 
-const adminMenu = [
-  { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
-  { title: "শিক্ষার্থী", url: "/students", icon: Users },
-  { title: "ভর্তি", url: "/admission", icon: UserPlus },
-  { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks },
-  { title: "ফি ম্যানেজমেন্ট", url: "/fees", icon: DollarSign },
-  { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck },
-  { title: "এক্সাম", url: "/exams", icon: FileText },
-  // Admin can enter results for any batch here (backend already allowed it — this page was simply never reachable for Admin before).
-  { title: "রেজাল্ট এন্ট্রি", url: "/result-entry", icon: ClipboardList },
-  { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet },
-  { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
-  { title: "নোটিশ", url: "/notices", icon: Bell },
-  { title: "রিপোর্ট", url: "/reports", icon: ReportIcon },
-  { title: "স্টাফ", url: "/staff", icon: UserCog },
-  { title: "ব্যাচ", url: "/batches", icon: Layers },
-  { title: "ম্যাটেরিয়াল", url: "/books", icon: BookOpen },
-  { title: "হিসাব", url: "/accounts", icon: Calculator },
-  // One entry for the whole Mess module — its pages have their own section tabs (MessShell.tsx).
-  { title: "মেস / হোস্টেল", url: "/mess", icon: BedDouble },
-  { title: "সেটিংস", url: "/settings", icon: Settings },
-];
-
-/** url -> permission keys, built once from the shared SIDEBAR_MODULES catalog (src/lib/permissions.ts) — every adminMenu item not in this map (e.g. Dashboard) always shows. */
-const PERMISSIONS_BY_URL = new Map<string, string[]>(
-  SIDEBAR_MODULES.flatMap((m) => m.urls.map((url) => [url, m.permissions] as const)),
-);
-
-const directorMenu = [
-  { title: "ডিরেক্টর ড্যাশবোর্ড", url: "/director", icon: LayoutDashboard },
-  { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users },
-  // Marks and attendance are both entered together here now — there's no separate attendance page for directors anymore.
-  { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList },
-  { title: "ফলাফল ব্যবস্থাপনা", url: "/director/result-management", icon: FileSpreadsheet },
-  { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks },
-  { title: "এক্সাম", url: "/exams", icon: FileText },
-  { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
-];
-
-/** Mess staff portal (Mess Manager / Accountant / Caretaker) — each item still filtered by the login's own permissions below. */
-const messStaffMenu = [
-  { title: "মেস ড্যাশবোর্ড", url: "/mess", icon: LayoutDashboard, permission: MESS_VIEW },
-  { title: "রুম ও সিট", url: "/mess/setup", icon: Building2, permission: MESS_VIEW },
-  { title: "সদস্য ও ভর্তি", url: "/mess/members", icon: Users, permission: MESS_MEMBERS_MANAGE },
-  { title: "বিলিং", url: "/mess/billing", icon: Receipt, permission: MESS_BILLING_MANAGE },
-  { title: "পেমেন্ট", url: "/mess/payments", icon: Coins, permission: MESS_PAYMENTS_COLLECT },
-  { title: "জামানত ও নিষ্পত্তি", url: "/mess/deposits", icon: ShieldCheck, permission: MESS_PAYMENTS_COLLECT },
-  { title: "খরচ", url: "/mess/expenses", icon: HandCoins, permission: MESS_EXPENSES_MANAGE },
-  { title: "অভিযোগ ও রক্ষণাবেক্ষণ", url: "/mess/complaints", icon: Wrench, permission: MESS_COMPLAINTS_MANAGE },
-  { title: "নোটিশ", url: "/mess/notices", icon: Bell, permission: MESS_NOTICES_MANAGE },
-  { title: "রিপোর্ট", url: "/mess/reports", icon: ReportIcon, permission: MESS_REPORTS_READ },
-];
-
-const studentMenu = [
-  { title: "ড্যাশবোর্ড", url: "/student", icon: LayoutDashboard },
-  { title: "প্রোফাইল", url: "/student/profile", icon: User },
-  { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck },
-  { title: "ফলাফল", url: "/student/results", icon: Award },
-  { title: "পেমেন্ট", url: "/student/payments", icon: DollarSign },
-  { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen },
-  { title: "নোটিশ", url: "/student/notices", icon: Bell },
-  { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video },
-  { title: "মেস / হোস্টেল", url: "/student/mess", icon: BedDouble },
-];
-
+/**
+ * Role-aware, grouped navigation (catalog + visibility rules live in
+ * lib/navigation.ts). Light surface, charcoal text, a thin orange bar on the
+ * active item. Collapses to icons on desktop (with tooltips) and becomes an
+ * off-canvas drawer on mobile that closes itself after navigation.
+ */
 export function AppSidebar() {
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, isMobile, setOpenMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
   const location = useLocation();
   const { user } = useAuth();
+  const groups = navGroupsFor(user);
 
-  const rawMenuItems = user?.role === "Batch Director" ? directorMenu
-    : user?.role === "Student" ? studentMenu
-    : user?.role === "Mess Staff" ? messStaffMenu.filter((item) => hasPermission(user, item.permission))
-    : adminMenu;
-  // Batch Director/Student menus never appear in PERMISSIONS_BY_URL (it's
-  // built only from admin sidebar modules), so this only ever filters
-  // adminMenu — every other role's items always show, same as before.
-  const menuItems = rawMenuItems.filter((item) => {
-    const permissions = PERMISSIONS_BY_URL.get(item.url);
-    return !permissions || permissions.every((p) => hasPermission(user, p));
-  });
+  const isActive = (item: NavItem) => {
+    // Admin's single "মেস / হোস্টেল" entry stays highlighted on every Mess sub-page.
+    const exact = EXACT_ROOTS.has(item.url) && !(item.url === "/mess" && user?.role !== "Mess Staff");
+    return exact ? location.pathname === item.url : location.pathname === item.url || location.pathname.startsWith(`${item.url}/`);
+  };
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <GraduationCap className="w-5 h-5 text-sidebar-primary-foreground" />
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-3">
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div className="w-8 h-8 shrink-0 rounded-md bg-sidebar-primary flex items-center justify-center">
+            <GraduationCap className="w-[18px] h-[18px] text-sidebar-primary-foreground" aria-hidden />
           </div>
           {!collapsed && (
-            <div>
-              <h1 className="text-base font-bold text-sidebar-primary-foreground leading-tight">
-                নিউরন এলএমএস
-              </h1>
-              <p className="text-xs text-sidebar-foreground/60">কোচিং ম্যানেজমেন্ট সিস্টেম</p>
+            <div className="min-w-0">
+              <p className="text-[15px] font-bold leading-tight text-foreground truncate">নিউরন এলএমএস</p>
+              <p className="text-[11px] text-muted-foreground leading-tight truncate">কোচিং ম্যানেজমেন্ট সিস্টেম</p>
             </div>
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="py-2">
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === item.url || (item.url === "/mess" && user?.role !== "Mess Staff" && location.pathname.startsWith("/mess/"))}
-                    tooltip={item.title}
-                  >
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/" || item.url === "/director" || item.url === "/student" || (user?.role === "Mess Staff" && item.url === "/mess")}
-                      className="hover:bg-sidebar-accent/50 transition-colors"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarContent className="py-2 gap-0">
+        {groups.map((group, gi) => (
+          <SidebarGroup key={group.label} className={cn("py-1", gi > 0 && "pt-2")}>
+            {group.items.length > 1 || groups.length > 1 ? (
+              <SidebarGroupLabel className="h-6 px-2 text-[11px] font-semibold uppercase tracking-wide text-sidebar-muted">{group.label}</SidebarGroupLabel>
+            ) : null}
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-0.5">
+                {group.items.map((item) => {
+                  const active = isActive(item);
+                  return (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={item.title}
+                        className={cn(
+                          "relative h-9 text-[13.5px] text-sidebar-foreground hover:bg-muted hover:text-foreground",
+                          "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-semibold",
+                          "before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-primary before:opacity-0 data-[active=true]:before:opacity-100",
+                        )}
+                      >
+                        <NavLink
+                          to={item.url}
+                          end={EXACT_ROOTS.has(item.url)}
+                          aria-current={active ? "page" : undefined}
+                          onClick={() => { if (isMobile) setOpenMobile(false); }}
+                        >
+                          <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} aria-hidden />
+                          <span>{item.title}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
+      <SidebarRail />
     </Sidebar>
   );
 }

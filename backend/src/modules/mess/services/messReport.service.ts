@@ -12,7 +12,8 @@ import { MessDepositTransaction } from "../models/messDepositTransaction.model";
 import { MessSettlement } from "../models/messSettlement.model";
 import { MessExpense } from "../models/messExpense.model";
 import { MessComplaint } from "../models/messComplaint.model";
-import { messScopeFilter } from "../mess.scope";
+import { hasPerm, messScopeFilter } from "../mess.scope";
+import { PERMISSIONS } from "../../rbac/permissions";
 import { currentPeriod, money, toObjectId } from "../mess.utils";
 import { expireOverdueReservations, resolveStudentFilter } from "./messMembership.service";
 
@@ -78,8 +79,12 @@ export async function dashboard(req: Request) {
   for (const m of members) memberCounts[m._id] = m.count;
   const totalSeats = Object.values(seatCounts).reduce((a, b) => a + b, 0);
   const usableSeats = totalSeats - seatCounts.inactive;
+  // Money is only shown to roles that work with Mess money (a Caretaker sees occupancy and complaints, not finances).
+  const canSeeFinance = [PERMISSIONS.MESS_PAYMENTS_COLLECT, PERMISSIONS.MESS_BILLING_MANAGE, PERMISSIONS.MESS_REPORTS_READ, PERMISSIONS.MESS_FINANCE_APPROVE].some((p) => hasPerm(req, p));
+  const fin = (n: number) => (canSeeFinance ? n : null);
   return {
     period,
+    canSeeFinance,
     messCount,
     roomCount,
     seatCounts,
@@ -89,15 +94,15 @@ export async function dashboard(req: Request) {
     activeMembers: memberCounts.active + memberCounts.on_leave + memberCounts.notice_given,
     pendingApplications: pendingApps,
     activeReservations: reservations,
-    monthBilled: money(billed[0]?.total ?? 0),
-    monthBillDue: money(billed[0]?.due ?? 0),
+    monthBilled: fin(money(billed[0]?.total ?? 0)),
+    monthBillDue: fin(money(billed[0]?.due ?? 0)),
     monthBillCount: billed[0]?.count ?? 0,
-    monthRentCollected: money(collected.find((c) => c._id === "rent")?.total ?? 0),
-    monthDepositCollected: money(collected.find((c) => c._id === "deposit")?.total ?? 0),
-    totalDue: money(balances[0]?.due ?? 0),
-    totalAdvance: money(balances[0]?.advance ?? 0),
-    depositsHeld: money(balances[0]?.deposit ?? 0),
-    monthExpenses: money(expenses[0]?.total ?? 0),
+    monthRentCollected: fin(money(collected.find((c) => c._id === "rent")?.total ?? 0)),
+    monthDepositCollected: fin(money(collected.find((c) => c._id === "deposit")?.total ?? 0)),
+    totalDue: fin(money(balances[0]?.due ?? 0)),
+    totalAdvance: fin(money(balances[0]?.advance ?? 0)),
+    depositsHeld: fin(money(balances[0]?.deposit ?? 0)),
+    monthExpenses: fin(money(expenses[0]?.total ?? 0)),
     openComplaints,
     pendingExpenses,
     pendingDepositRequests: pendingDeposits,

@@ -58,6 +58,14 @@ export default {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
         },
+        chart: {
+          1: "hsl(var(--chart-1))",
+          2: "hsl(var(--chart-2))",
+          3: "hsl(var(--chart-3))",
+          4: "hsl(var(--chart-4))",
+          5: "hsl(var(--chart-5))",
+          6: "hsl(var(--chart-6))",
+        },
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
@@ -72,6 +80,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+      },
+      // Restrained elevation — cards rely on a hairline border first, shadow second.
+      boxShadow: {
+        sm: "0 1px 2px 0 rgb(28 25 23 / 0.04)",
+        DEFAULT: "0 1px 3px 0 rgb(28 25 23 / 0.06), 0 1px 2px -1px rgb(28 25 23 / 0.04)",
+        md: "0 4px 14px -4px rgb(28 25 23 / 0.10)",
+        lg: "0 14px 36px -10px rgb(28 25 23 / 0.18)",
       },
       borderRadius: {
         lg: "var(--radius)",

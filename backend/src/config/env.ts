@@ -35,6 +35,8 @@ const envSchema = z.object({
   STUDENT_ENTRY_TOKEN_EXPIRES_IN: z.string().default("15m"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  /** The institution's calendar timezone — dashboard "today"/"this month" boundaries are computed in it, so a serverless host running in UTC still rolls the day over at local midnight. */
+  APP_TIMEZONE: z.string().optional().default("Asia/Dhaka"),
 
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(""),
   CLOUDINARY_API_KEY: z.string().optional().default(""),
