@@ -13,7 +13,7 @@ export default function StudentVideos() {
   const { videos, subjects, lectures, courses, getSubjectsByCourse, getCourseSubjectsForCourse, getCourseSubject } = useAcademic();
   const [subject, setSubject] = useState("all");
 
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
   const myCourse = courses.find((c) => c.name === student.course);

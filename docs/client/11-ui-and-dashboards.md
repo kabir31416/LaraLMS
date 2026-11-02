@@ -6,7 +6,7 @@ What changed in the interface, and where every dashboard number comes from.
 
 | Element | Rule |
 |---|---|
-| Palette | White surfaces, soft warm-neutral gray background, charcoal text, silver hairlines, **deep orange** (`--primary`) as the only accent. |
+| Palette | (v1.5) White cards on a light blue-gray background, dark navy text, gray-blue borders, **royal blue** (`--primary`) as the main accent, soft blue secondary. See Document 12 §12.2. |
 | Meaningful colour | Orange = primary action/highlight · Green = success/paid · Red = due/error/critical · Amber = warning/pending · Gray = secondary info. The old cyan "info" colour is now a neutral charcoal-gray. |
 | Shape & depth | Radius 0.5rem (was 0.75rem). Shadows reduced to a hairline elevation; cards rely on a border first. |
 | Typography | Hind Siliguri everywhere (unchanged), tighter heading tracking, tabular numbers in tables and figures. |
@@ -14,7 +14,7 @@ What changed in the interface, and where every dashboard number comes from.
 | Forms | Softer focus ring on inputs/selects/textareas, hover border, consistent keyboard focus outline app-wide. |
 | Dialogs | Lighter overlay with a faint blur; existing viewport-fit/scroll behaviour kept. |
 | Tabs | Tab bars scroll horizontally on phones instead of overflowing the page. |
-| Charts | Single orange series, no dual axes, ranked single-hue bars instead of pies, two-part meters with direct labels, hover tooltips on every chart. |
+| Charts | Single blue series, no dual axes, ranked single-hue bars instead of pies, two-part meters with direct labels, hover tooltips on every chart. |
 | Accessibility | Visible focus states, `prefers-reduced-motion` respected, status shown with text/icons as well as colour, labelled controls. |
 | PDF exports | Table header colour changed from blue to charcoal. |
 
@@ -23,7 +23,7 @@ Tokens live in `src/index.css`; elevation and chart colours in `tailwind.config.
 ## 11.2 Global layout
 
 - **Sidebar.** Navigation is grouped into sections: Main, Students, Academic, Finance, Mess, Administration.
-  - The active page is marked by an orange bar and tint.
+  - The active page is marked by a blue bar and tint.
   - The sidebar collapses to icons with tooltips. On phones it is a drawer that closes after you navigate.
   - Items are filtered exactly as before: by role, plus each Admin's own per-module permissions.
   - The catalog lives in `src/lib/navigation.ts` and is shared by the sidebar, the search and the breadcrumb.

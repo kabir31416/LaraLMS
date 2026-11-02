@@ -15,15 +15,20 @@ import { toast } from "sonner";
  * Receipt/PDF/Marksheet/Reports and the public /info + /marksheet pages via
  * GET /public/institution, instead of hard-coding a name/logo per module.
  */
+import { useUnsavedChanges } from "./unsavedChanges";
+
 export function InstitutionTab() {
   const [settings, setSettings] = useState<InstitutionSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [original, setOriginal] = useState("");
+  const dirty = !!settings && JSON.stringify(settings) !== original;
+  useUnsavedChanges("institution", dirty);
 
   useEffect(() => {
     api
       .get<InstitutionSettings>("/settings/institution")
-      .then(setSettings)
+      .then((s) => { setSettings(s); setOriginal(JSON.stringify(s)); })
       .catch((err) => toast.error(err instanceof ApiClientError ? err.message : "লোড করা যায়নি"))
       .finally(() => setLoading(false));
   }, []);
@@ -55,6 +60,7 @@ export function InstitutionTab() {
       };
       const updated = await api.patch<InstitutionSettings>("/settings/institution", payload);
       setSettings(updated);
+      setOriginal(JSON.stringify(updated));
       toast.success("সংরক্ষিত হয়েছে");
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : "সংরক্ষণ ব্যর্থ হয়েছে");
@@ -132,8 +138,10 @@ export function InstitutionTab() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={save} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+      <div className="sticky bottom-0 z-10 -mx-1 flex items-center justify-end gap-2 border-t bg-background/95 px-1 py-3 backdrop-blur">
+        {dirty && <span className="mr-auto text-sm text-warning">অসংরক্ষিত পরিবর্তন আছে</span>}
+        <Button variant="outline" disabled={!dirty || saving} onClick={() => setSettings(JSON.parse(original))}>বাতিল</Button>
+        <Button onClick={save} disabled={saving || !dirty}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
       </div>
     </div>
   );

@@ -26,6 +26,8 @@ const RULE_LABELS: Record<DuplicateDistributionRule, string> = {
  * data (mirrors FinanceTab's Payment Method CRUD exactly) plus the
  * Duplicate Distribution rule and default Minimum Stock suggestion.
  */
+import { useUnsavedChanges } from "./unsavedChanges";
+
 export function MaterialsTab() {
   const {
     materialTypes, addMaterialType, updateMaterialType, deleteMaterialType,
@@ -35,6 +37,8 @@ export function MaterialsTab() {
   const [savingRule, setSavingRule] = useState(false);
   const [defaultMinStock, setDefaultMinStock] = useState(materialSettings.defaultMinimumStock);
   const [savingMinStock, setSavingMinStock] = useState(false);
+  const minStockDirty = defaultMinStock !== materialSettings.defaultMinimumStock;
+  useUnsavedChanges("material-min-stock", minStockDirty);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<MaterialType | null>(null);
@@ -53,6 +57,7 @@ export function MaterialsTab() {
   };
 
   const saveMinStock = async () => {
+    if (defaultMinStock < 0) { toast.error("মিনিমাম স্টক ঋণাত্মক হতে পারবে না"); return; }
     setSavingMinStock(true);
     try {
       await updateMaterialSettings({ defaultMinimumStock: Number(defaultMinStock) || 0 });
@@ -150,9 +155,10 @@ export function MaterialsTab() {
           <div className="flex items-end gap-3">
             <div className="flex-1 max-w-[200px]">
               <Label>ডিফল্ট মিনিমাম স্টক অ্যালার্ট</Label>
-              <Input type="number" value={defaultMinStock} onChange={(e) => setDefaultMinStock(Number(e.target.value) || 0)} />
+              <Input type="number" min={0} value={defaultMinStock} onChange={(e) => setDefaultMinStock(Number(e.target.value) || 0)} />
             </div>
-            <Button onClick={saveMinStock} disabled={savingMinStock}>{savingMinStock ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+            <Button onClick={saveMinStock} disabled={savingMinStock || !minStockDirty}>{savingMinStock ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+            {minStockDirty && <Button variant="outline" disabled={savingMinStock} onClick={() => setDefaultMinStock(materialSettings.defaultMinimumStock)}>বাতিল</Button>}
           </div>
           <p className="text-xs text-muted-foreground">নতুন ম্যাটেরিয়াল যোগ করার ফর্মে ডিফল্ট মান হিসেবে দেখাবে — বিদ্যমান ম্যাটেরিয়ালে প্রযোজ্য হবে না।</p>
         </CardContent>

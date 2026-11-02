@@ -83,10 +83,10 @@ export default {
       },
       // Restrained elevation — cards rely on a hairline border first, shadow second.
       boxShadow: {
-        sm: "0 1px 2px 0 rgb(28 25 23 / 0.04)",
-        DEFAULT: "0 1px 3px 0 rgb(28 25 23 / 0.06), 0 1px 2px -1px rgb(28 25 23 / 0.04)",
-        md: "0 4px 14px -4px rgb(28 25 23 / 0.10)",
-        lg: "0 14px 36px -10px rgb(28 25 23 / 0.18)",
+        sm: "0 1px 2px 0 rgb(15 23 42 / 0.04)",
+        DEFAULT: "0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04)",
+        md: "0 4px 14px -4px rgb(15 23 42 / 0.10)",
+        lg: "0 14px 36px -10px rgb(15 23 42 / 0.18)",
       },
       borderRadius: {
         lg: "var(--radius)",

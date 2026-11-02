@@ -90,7 +90,10 @@ async function issueTokens(req: Request, user: UserDoc) {
   };
 }
 
-export async function login(req: Request, identifier: string, password: string) {
+/** Backend role names that belong to another login portal — never an Admin-portal account. */
+const NON_ADMIN_PORTAL_ROLES = (name: string) => name === "student" || name === "batch_director" || name.startsWith("mess_");
+
+export async function login(req: Request, identifier: string, password: string, portal?: "admin") {
   // normalizeIdentifier() is the SAME function createUser()/resetCredentials()
   // use before saving (common/utils/password.ts) — one shared rule so a
   // lookup here can never silently diverge from how the value was stored
@@ -110,6 +113,17 @@ export async function login(req: Request, identifier: string, password: string) 
     await user.save();
     await recordAudit({ req, action: "auth.login-failed", module: "auth", targetCollection: "users", targetId: String(user._id) });
     throw genericError();
+  }
+
+  // The Admin portal only signs in Admin accounts. Checked after the
+  // password (so it reveals nothing to someone without the password) and
+  // before any token is issued.
+  if (portal === "admin") {
+    const role = await Role.findById(user.roleId).select("name").lean();
+    if (role && NON_ADMIN_PORTAL_ROLES(role.name)) {
+      await recordAudit({ req, action: "auth.login-wrong-portal", module: "auth", targetCollection: "users", targetId: String(user._id), after: { portal, role: role.name } });
+      throw ApiError.forbidden("এটি এডমিন অ্যাকাউন্ট নয় — নিজের পোর্টাল (স্টাফ বা শিক্ষার্থী লগইন) ব্যবহার করুন");
+    }
   }
 
   user.failedLoginCount = 0;

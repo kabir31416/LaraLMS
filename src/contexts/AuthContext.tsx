@@ -75,9 +75,10 @@ interface AuthContextType {
   user: AuthUser | null;
   /** True while the app is trying to restore a session from the refresh cookie (or, for a student/staff, localStorage) on first load. */
   initializing: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
-  studentLogin: (phone: string, rollNumber: string) => Promise<void>;
-  staffLogin: (phone: string, staffId: string) => Promise<void>;
+  /** `portal: "admin"` (the /adminLogin page) makes the server refuse non-Admin accounts. Resolves to the signed-in user. */
+  login: (identifier: string, password: string, portal?: "admin") => Promise<AuthUser>;
+  studentLogin: (phone: string, rollNumber: string) => Promise<AuthUser>;
+  staffLogin: (phone: string, staffId: string) => Promise<AuthUser>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
@@ -211,11 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (identifier: string, password: string) => {
-    const res = await api.post<LoginResponse>("/auth/login", { identifier, password });
+  const login = useCallback(async (identifier: string, password: string, portal?: "admin") => {
+    const res = await api.post<LoginResponse>("/auth/login", { identifier, password, ...(portal ? { portal } : {}) });
     setHasRefreshCapability(true);
     setAccessToken(res.accessToken);
-    setUser(toAuthUser(res.user));
+    const authUser = toAuthUser(res.user);
+    setUser(authUser);
+    return authUser;
   }, []);
 
   /**
@@ -230,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const authUser = studentToAuthUser(res.student);
     setUser(authUser);
     localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify({ accessToken: res.accessToken, user: authUser }));
+    return authUser;
   }, []);
 
   /**
@@ -245,6 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const authUser = staffToAuthUser(res.staff);
     setUser(authUser);
     localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify({ accessToken: res.accessToken, user: authUser }));
+    return authUser;
   }, []);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {

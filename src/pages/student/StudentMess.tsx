@@ -42,7 +42,7 @@ export default function StudentMess() {
   const navigate = useNavigate();
   const { data, loading, error, reload, setData } = useApiData<MyMess>(user?.role === "Student" ? "/mess/portal/me" : null);
   const [complaintOpen, setComplaintOpen] = useState(false);
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
 
   const markRead = async (n: MessNotice) => {
     if (n.isRead || !data) return;

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAcademic } from "@/contexts/AcademicContext";
 import { toast } from "sonner";
 import { ApiClientError } from "@/contexts/AuthContext";
+import { useUnsavedChanges } from "./unsavedChanges";
 
 /**
  * Student Configuration (Settings §7). Roll uniqueness scope is the one
@@ -20,6 +21,8 @@ export function StudentSettingsTab() {
   const { settings, updateSettings } = useAcademic();
   const [prefixInput, setPrefixInput] = useState(settings.studentIdPrefix);
   const [savingPrefix, setSavingPrefix] = useState(false);
+  const prefixDirty = prefixInput.trim() !== settings.studentIdPrefix;
+  useUnsavedChanges("student-prefix", prefixDirty);
 
   const save = async (rollNumberScope: "batch" | "course" | "global") => {
     try {
@@ -55,6 +58,7 @@ export function StudentSettingsTab() {
             <Button onClick={savePrefix} disabled={savingPrefix || prefixInput.trim() === settings.studentIdPrefix}>
               {savingPrefix ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ"}
             </Button>
+            {prefixDirty && <Button variant="outline" disabled={savingPrefix} onClick={() => setPrefixInput(settings.studentIdPrefix)}>বাতিল</Button>}
           </div>
           <p className="text-xs text-muted-foreground pt-1">
             নতুন তৈরি হওয়া শিক্ষার্থীর সিস্টেম আইডি এই প্রিফিক্স দিয়ে শুরু হবে (যেমন: {prefixInput.trim() || "LMS"}-00001)। এই প্রিফিক্স শুধুমাত্র নতুন সিস্টেম আইডির জন্য ব্যবহৃত হয় — বিদ্যমান শিক্ষার্থীদের সিস্টেম আইডি পরিবর্তন হবে না।

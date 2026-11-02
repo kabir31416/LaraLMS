@@ -25,7 +25,7 @@ export function exportPDF({ filename, title, headers, rows }: ExportData) {
     head: [headers],
     body: rows.map((r) => r.map((c) => String(c))),
     styles: { fontSize: 9 },
-    headStyles: { fillColor: [41, 37, 36] },
+    headStyles: { fillColor: [23, 37, 84] },
   });
   doc.save(`${filename}.pdf`);
 }

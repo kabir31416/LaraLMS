@@ -4,6 +4,8 @@ export const loginSchema = z.object({
   body: z.object({
     identifier: z.string().trim().min(3),
     password: z.string().min(1),
+    /** Which login screen the request came from. "admin" (the /adminLogin page) refuses non-Admin accounts. Omitted = previous behaviour. */
+    portal: z.enum(["admin"]).optional(),
   }),
 });
 

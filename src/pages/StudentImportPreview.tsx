@@ -126,7 +126,7 @@ export default function StudentImportPreview() {
   useEffect(() => { loadRows(); }, [loadRows]);
 
   if (!user || user.role !== "Admin") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/adminLogin" replace />;
   }
   if (!sessionId) {
     return <Navigate to="/admission/import" replace />;

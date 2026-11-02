@@ -124,7 +124,7 @@ export default function AdmissionResult() {
   useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   if (!user || (user.role !== "Admin" && user.role !== "Batch Director")) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const openEditor = (s: AdmissionResultStudent) => {

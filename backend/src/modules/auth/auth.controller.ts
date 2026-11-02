@@ -28,8 +28,8 @@ function setRefreshCookie(res: Response, token: string) {
 }
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { identifier, password } = req.body;
-  const { accessToken, refreshToken, user } = await authService.login(req, identifier, password);
+  const { identifier, password, portal } = req.body;
+  const { accessToken, refreshToken, user } = await authService.login(req, identifier, password, portal);
   setRefreshCookie(res, refreshToken);
   sendSuccess(res, { accessToken, user });
 });
