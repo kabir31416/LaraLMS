@@ -18,7 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/apiClient";
 import {
   BILL_STATUS_LABELS, COMPLAINT_PRIORITY_LABELS, COMPLAINT_STATUS_LABELS, DEPOSIT_TX_LABELS, DEPOSIT_TX_STATUS_LABELS, errMsg, MEMBERSHIP_STATUS_LABELS,
-  NOTICE_TYPE_LABELS, PURPOSE_LABELS, refName, statusTone, tk, useApiData, type Balance, type Bill, type Complaint, type DepositTx, type Membership,
+  NOTICE_TYPE_LABELS, periodName, PURPOSE_LABELS, refName, statusTone, tk, useApiData, type Balance, type Bill, type Complaint, type DepositTx, type Membership,
   type MessNotice, type MessPayment, type Reservation, type Settlement,
 } from "@/lib/mess";
 
@@ -74,8 +74,8 @@ export default function StudentMess() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Fig label="বর্তমান বকেয়া" value={tk(data.balances?.due)} tone={data.balances && data.balances.due > 0 ? "text-destructive" : "text-success"} />
               <Fig label="মোট পরিশোধ" value={tk(data.balances?.totalPaid)} />
-              <Fig label="অগ্রিম জমা" value={tk(data.balances?.advance)} tone="text-success" />
-              <Fig label="জামানত (জমা / নির্ধারিত)" value={`${tk(data.balances?.depositBalance)} / ${tk(data.balances?.depositRequired)}`} />
+              <Fig label="অতিরিক্ত পরিশোধ জমা" value={tk(data.balances?.advance)} tone="text-success" />
+              <Fig label="অগ্রিম / জামানত (জমা / নির্ধারিত)" value={`${tk(data.balances?.depositBalance)} / ${tk(data.balances?.depositRequired)}`} />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card>
@@ -85,9 +85,9 @@ export default function StudentMess() {
                   <Row label="সদস্যপদ নং">{data.current.membershipNo}</Row>
                   <Row label="মেস">{refName(data.current.messId)}</Row>
                   <Row label="রুম / সিট">{refName(data.current.roomId)} / {refName(data.current.seatId, "seatNumber")}</Row>
-                  <Row label="মাসিক ভাড়া">{tk(data.current.monthlyRent)}{data.current.discount > 0 ? ` (ছাড় ${tk(data.current.discount)})` : ""}</Row>
+                  <Row label="মাসিক ডাইনিং চার্জ">{tk(data.current.monthlyRent)}{data.current.discount > 0 ? ` (ছাড় ${tk(data.current.discount)})` : ""}</Row>
                   <Row label="যোগদান">{data.current.joiningDate}</Row>
-                  {data.current.leftDate && <Row label="ছেড়েছেন">{data.current.leftDate}</Row>}
+                  {data.current.leftDate && <Row label="চেক-আউট">{data.current.leftDate}</Row>}
                 </CardContent>
               </Card>
               <Card>
@@ -95,10 +95,13 @@ export default function StudentMess() {
                 <CardContent className="space-y-1.5 text-sm">
                   {!data.currentBill ? <p className="text-muted-foreground">কোনো বিল নেই</p> : (
                     <>
-                      <Row label="মাস">{data.currentBill.period}</Row>
+                      <Row label="মাস">{periodName(data.currentBill.period)}</Row>
                       <Row label="এই মাসের চার্জ">{tk(data.currentBill.currentCharges)}</Row>
-                      <Row label="পূর্বের বকেয়া">{tk(data.currentBill.previousDue)}</Row>
-                      <Row label="মোট পরিশোধযোগ্য">{tk(data.currentBill.totalPayable)}</Row>
+                      <Row label="পূর্বের বকেয়া">{tk(Math.max(0, data.currentBill.previousDue))}</Row>
+                      {(data.currentBill.advanceAdjusted ?? 0) > 0 && <Row label="অগ্রিম সমন্বয়">− {tk(data.currentBill.advanceAdjusted)}</Row>}
+                      <Row label="মোট প্রদেয় (বিল তৈরির সময়)">{tk(data.currentBill.totalPayable)}</Row>
+                      <Row label="এই বিলের বাকি">{tk(data.currentBill.dueAmount)}</Row>
+                      <Row label="মোট অবশিষ্ট বকেয়া (আজ)"><b className={data.balances && data.balances.due > 0 ? "text-destructive" : "text-success"}>{tk(data.balances?.due)}</b></Row>
                       <Row label="শেষ তারিখ">{data.currentBill.dueDate}</Row>
                       <Row label="অবস্থা"><Badge variant="outline" className={statusTone(data.currentBill.status)}>{BILL_STATUS_LABELS[data.currentBill.status]}</Badge></Row>
                       <Button size="sm" variant="outline" onClick={() => navigate(`/mess/bills/${data.currentBill!._id}/invoice`)}><Printer className="h-3.5 w-3.5 mr-1" />ইনভয়েস</Button>
@@ -134,7 +137,7 @@ export default function StudentMess() {
                     <TableHeader><TableRow><TableHead>রসিদ</TableHead><TableHead>তারিখ</TableHead><TableHead>ধরন</TableHead><TableHead>পদ্ধতি</TableHead><TableHead className="text-right">পরিমাণ</TableHead><TableHead /></TableRow></TableHeader>
                     <TableBody>
                       {data.payments.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">কোনো পেমেন্ট নেই</TableCell></TableRow> : data.payments.map((p) => (
-                        <TableRow key={p._id}><TableCell className="font-mono text-xs">{p.receiptNo}</TableCell><TableCell>{p.date}</TableCell><TableCell>{PURPOSE_LABELS[p.purpose]}</TableCell><TableCell>{p.method}</TableCell><TableCell className="text-right">{tk(p.amount)}</TableCell>
+                        <TableRow key={p._id}><TableCell className="font-mono text-xs">{p.receiptNo}</TableCell><TableCell>{p.date}</TableCell><TableCell>{PURPOSE_LABELS[p.purpose]}{p.billingMonth && <p className="text-[11px] text-muted-foreground">{periodName(p.billingMonth)}</p>}</TableCell><TableCell>{p.method}</TableCell><TableCell className="text-right">{tk(p.amount)}</TableCell>
                           <TableCell><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/payments/${p._id}/receipt`)}><Receipt className="h-3.5 w-3.5" /></Button></TableCell></TableRow>
                       ))}
                     </TableBody>

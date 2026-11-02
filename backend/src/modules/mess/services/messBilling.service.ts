@@ -10,7 +10,9 @@ import { MessMembership, MessMembershipDoc } from "../models/messMembership.mode
 import { MessBill, MessBillDoc, MessBillItem } from "../models/messBill.model";
 import { MessSettlement } from "../models/messSettlement.model";
 import { assertMessAccess, hasPerm, messScopeFilter } from "../mess.scope";
-import { BILLABLE_STATUS } from "../mess.constants";
+import { BILLABLE_STATUS, ProrationMode } from "../mess.constants";
+import { Mess } from "../models/mess.model";
+import { MessDepositTransaction } from "../models/messDepositTransaction.model";
 import { actorId, addDaysISO, daysInPeriod, isDuplicateKeyError, money, periodDate, todayISO, toObjectId } from "../mess.utils";
 import { getMessSettings } from "./messSettings.service";
 import { computeBalances, recomputeLedger } from "./messLedger.service";
@@ -31,68 +33,140 @@ export interface GenerateBillsResult {
   eligible: number;
   created: number;
   skippedExisting: number;
+  /** Not billed by rule (approved leaving settlement, "start next month" proration) — not an error. */
+  skipped: { membershipId: string; membershipNo?: string; reason: string }[];
   failed: { membershipId: string; membershipNo?: string; reason: string }[];
   billIds: string[];
 }
 
-async function assertApprovalForCredit(req: Request, amount: number | undefined) {
-  if (!amount || amount <= 0) return;
+/**
+ * Who is generating: an operator request (scope + audit actor from `req`),
+ * or the backend scheduler (no request — every active Mess, audited as the
+ * system). Both run exactly the same code below.
+ */
+export interface BillingCtx {
+  req?: Request;
+  source: "manual" | "auto" | "admission" | "regenerate";
+}
+
+type Settings = Awaited<ReturnType<typeof getMessSettings>>;
+type MessBillingCfg = { billingDay: number; dueDay: number };
+
+/** The configured joining-month rule (prorationMode supersedes the older prorationEnabled flag). */
+export function effectiveProrationMode(settings: Pick<Settings, "prorationMode" | "prorationEnabled">): ProrationMode {
+  return settings.prorationMode ?? (settings.prorationEnabled ? "prorate" : "full");
+}
+
+/**
+ * Pure: the dining charge for `period` for a member whose billing starts on
+ * `startDate`. Returns null when the rule says the month is not billed.
+ */
+export function diningChargeForPeriod(
+  monthlyRent: number,
+  startDate: string,
+  period: string,
+  mode: ProrationMode,
+): { amount: number; label: string } | null {
+  const days = daysInPeriod(period);
+  const startsThisPeriod = startDate.slice(0, 7) === period;
+  const startDay = Number(startDate.slice(8, 10));
+  if (!startsThisPeriod || startDay <= 1) return { amount: money(monthlyRent), label: "মাসিক ডাইনিং চার্জ" };
+  if (mode === "next_month") return null;
+  if (mode === "prorate") {
+    const chargedDays = days - startDay + 1;
+    return { amount: money((monthlyRent * chargedDays) / days), label: `মাসিক ডাইনিং চার্জ (আংশিক: ${chargedDays}/${days} দিন)` };
+  }
+  return { amount: money(monthlyRent), label: "মাসিক ডাইনিং চার্জ" };
+}
+
+/** Pure: Total Payable = Current Charge (incl. other charges/fine, less discount) + Previous Due − Advance Adjustment. */
+export function billTotalPayable(currentCharges: number, previousDue: number, advanceAdjusted: number): number {
+  return money(currentCharges + previousDue - advanceAdjusted);
+}
+
+async function assertApprovalForCredit(req: Request | undefined, amount: number | undefined) {
+  if (!amount || amount <= 0 || !req) return;
   const settings = await getMessSettings();
   if (settings.discountApprovalRequired && !hasPerm(req, PERMISSIONS.MESS_FINANCE_APPROVE)) {
     throw ApiError.forbidden("মেস সেটিংস অনুযায়ী ডিসকাউন্ট/সমন্বয় দিতে আর্থিক অনুমোদনের অনুমতি প্রয়োজন");
   }
 }
 
-async function eligibleMemberships(req: Request, input: Pick<GenerateBillsInput, "period" | "messId" | "membershipIds">): Promise<MessMembershipDoc[]> {
+async function eligibleMemberships(ctx: BillingCtx, input: Pick<GenerateBillsInput, "period" | "messId" | "membershipIds">): Promise<MessMembershipDoc[]> {
   const periodEnd = periodDate(input.period, 31);
   const filter: Record<string, unknown> = {
     status: { $in: BILLABLE_STATUS },
     billingStartDate: { $lte: periodEnd },
     joiningDate: { $lte: periodEnd },
   };
-  const scope = await messScopeFilter(req, input.messId);
-  if (scope) filter.messId = scope;
+  if (ctx.req) {
+    const scope = await messScopeFilter(ctx.req, input.messId);
+    if (scope) filter.messId = scope;
+  } else if (input.messId) {
+    filter.messId = toObjectId(input.messId, "messId");
+  }
   if (input.membershipIds?.length) filter._id = { $in: input.membershipIds.map((id) => toObjectId(id, "membershipId")) };
   return MessMembership.find(filter).sort({ membershipNo: 1 }).limit(5000);
 }
 
-/** How many members would get a bill for this period, and how many already have one — shown before the operator confirms bulk generation. */
-export async function previewGeneration(req: Request, period: string, messId?: string) {
-  const members = await eligibleMemberships(req, { period, messId });
-  const existing = await MessBill.countDocuments({ membershipId: { $in: members.map((m) => m._id) }, periodKey: period });
-  return { period, eligible: members.length, alreadyBilled: existing, toCreate: Math.max(0, members.length - existing) };
+async function messConfigs(messIds: Types.ObjectId[], settings: Settings): Promise<Map<string, MessBillingCfg>> {
+  const rows = await Mess.find({ _id: { $in: messIds } }).select("billingDay dueDay").lean();
+  const map = new Map<string, MessBillingCfg>();
+  for (const r of rows) map.set(String(r._id), { billingDay: r.billingDay ?? settings.billingDay, dueDay: r.dueDay ?? settings.dueDay });
+  return map;
 }
 
-async function buildBillForMember(
-  req: Request,
+/** How many members would get a bill for this period, and how many already have one — shown before the operator confirms bulk generation. */
+export async function previewGeneration(req: Request, period: string, messId?: string) {
+  const members = await eligibleMemberships({ req, source: "manual" }, { period, messId });
+  const existing = await MessBill.countDocuments({ membershipId: { $in: members.map((m) => m._id) }, periodKey: period });
+  const settings = await getMessSettings();
+  const mode = effectiveProrationMode(settings);
+  const notBilledByRule = mode === "next_month" ? members.filter((m) => !diningChargeForPeriod(m.monthlyRent, m.billingStartDate, period, mode)).length : 0;
+  return {
+    period,
+    eligible: members.length,
+    alreadyBilled: existing,
+    notBilledByRule,
+    toCreate: Math.max(0, members.length - existing - notBilledByRule),
+    prorationMode: mode,
+    advanceAdjustmentRule: settings.advanceAdjustmentRule,
+    autoBillingEnabled: settings.autoBillingEnabled,
+  };
+}
+
+export type BuildOutcome = { kind: "created"; billId: Types.ObjectId } | { kind: "exists" } | { kind: "skipped"; reason: string } | { kind: "failed"; reason: string };
+
+/**
+ * Creates one member's bill for one month. `diningOverride` replaces the
+ * rule-based dining charge — used for the admission's Initial Dining Charge.
+ */
+export async function buildBillForMember(
+  ctx: BillingCtx,
   m: MessMembershipDoc,
   input: GenerateBillsInput,
-  settings: Awaited<ReturnType<typeof getMessSettings>>,
-): Promise<"created" | "exists" | string> {
-  if (await MessBill.exists({ membershipId: m._id, periodKey: input.period })) return "exists";
+  settings: Settings,
+  cfg: MessBillingCfg,
+  diningOverride?: { amount: number; label: string },
+): Promise<BuildOutcome> {
+  if (await MessBill.exists({ membershipId: m._id, periodKey: input.period })) return { kind: "exists" };
   // A member whose leaving settlement is already approved is settled on the
   // figures at approval — billing them again would silently change those.
   if (await MessSettlement.exists({ membershipId: m._id, status: "approved" })) {
-    return "চূড়ান্ত নিষ্পত্তি অনুমোদিত — নতুন বিল তৈরি হয়নি";
+    return { kind: "skipped", reason: "চূড়ান্ত নিষ্পত্তি অনুমোদিত — নতুন বিল তৈরি হয়নি" };
   }
 
   const items: MessBillItem[] = [];
-  const days = daysInPeriod(input.period);
-  const startsThisPeriod = m.billingStartDate.slice(0, 7) === input.period;
-  const startDay = Number(m.billingStartDate.slice(8, 10));
-  if (settings.prorationEnabled && startsThisPeriod && startDay > 1) {
-    const chargedDays = days - startDay + 1;
-    items.push({ kind: "rent", label: `মাসিক ভাড়া (আংশিক: ${chargedDays}/${days} দিন)`, amount: money((m.monthlyRent * chargedDays) / days) });
-  } else {
-    items.push({ kind: "rent", label: "মাসিক ভাড়া", amount: money(m.monthlyRent) });
-  }
+  const dining = diningOverride ?? diningChargeForPeriod(m.monthlyRent, m.billingStartDate, input.period, effectiveProrationMode(settings));
+  if (!dining) return { kind: "skipped", reason: "যোগদানের মাস — নিয়ম অনুযায়ী বিলিং পরের মাস থেকে" };
+  if (dining.amount > 0) items.push({ kind: "rent", label: dining.label, amount: money(dining.amount) });
   const includesSetup = m.setupCharge > 0 && !m.setupChargeBilled;
   if (includesSetup) items.push({ kind: "setup", label: "ভর্তি / সেটআপ চার্জ", amount: money(m.setupCharge) });
   for (const c of input.additionalCharges ?? []) {
     if (c.amount > 0) items.push({ kind: "additional", label: c.label, amount: money(c.amount) });
   }
 
-  const issueDate = periodDate(input.period, settings.billingDay);
+  const issueDate = periodDate(input.period, cfg.billingDay);
   const before = await computeBalances(m._id as Types.ObjectId);
   if (settings.lateFeeEnabled && settings.lateFeeAmount > 0 && before.due > 0) {
     const graceCutoff = addDaysISO(issueDate, -settings.gracePeriodDays);
@@ -104,7 +178,9 @@ async function buildBillForMember(
   const discount = money(Math.min(gross, m.discount + (input.extraDiscount ?? 0)));
   const currentCharges = money(gross - discount);
   const previousDue = money(before.due - before.advance);
+  const billId = new Types.ObjectId();
   const bill = {
+    _id: billId,
     billNo: await generateSequenceCode("mess_bill", settings.billPrefix || "MB", 5, true),
     membershipId: m._id,
     studentId: m.studentId,
@@ -114,71 +190,178 @@ async function buildBillForMember(
     period: input.period,
     periodKey: input.period,
     issueDate,
-    dueDate: input.dueDate || periodDate(input.period, settings.dueDay),
+    dueDate: input.dueDate || periodDate(input.period, cfg.dueDay),
     items,
     discount,
     adjustment: 0,
     previousDue,
+    advanceAdjusted: 0,
     currentCharges,
-    totalPayable: money(currentCharges + previousDue),
+    totalPayable: billTotalPayable(currentCharges, previousDue, 0),
     paidAmount: 0,
     dueAmount: currentCharges,
     status: currentCharges > 0 ? "unpaid" : "paid",
+    source: ctx.source,
     notes: input.notes,
-    generatedBy: actorId(req),
+    generatedBy: ctx.req ? actorId(ctx.req) : undefined,
   };
   try {
     await MessBill.create(bill);
   } catch (err) {
     // The unique {membershipId, periodKey} index — a concurrent/duplicate
     // generation run for the same month lands here, never as a second bill.
-    if (isDuplicateKeyError(err)) return "exists";
+    if (isDuplicateKeyError(err)) return { kind: "exists" };
     throw err;
   }
   if (includesSetup) await MessMembership.updateOne({ _id: m._id, setupChargeBilled: false }, { $set: { setupChargeBilled: true } });
   await recomputeLedger(m._id as Types.ObjectId);
-  return "created";
+  if (settings.advanceAdjustmentRule === "next_bill" && ctx.source !== "admission" && input.period > m.joiningDate.slice(0, 7)) {
+    await applyAdvanceToBill(ctx, m, billId, input.period, currentCharges, previousDue);
+  }
+  return { kind: "created", billId };
 }
 
 /**
- * Monthly / bulk / per-Mess / individual bill generation — one code path.
- * Idempotent: re-running for the same period skips members who already have
- * a live bill (enforced by the unique index, not just the pre-check).
+ * Advance-adjustment rule "next_bill": the One-Month Advance / Security
+ * Deposit is used ONCE, against the first monthly bill after the joining
+ * month. Posted as an apply_to_due deposit transaction that records the
+ * month (period) and bill — the unique advanceKey makes a retry or a second
+ * concurrent bill unable to use the advance twice.
  */
-export async function generateBills(req: Request, input: GenerateBillsInput): Promise<GenerateBillsResult> {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.period)) throw ApiError.badRequest("Invalid billing period");
-  await assertApprovalForCredit(req, input.extraDiscount);
-  if (input.messId) await assertMessAccess(req, input.messId);
+async function applyAdvanceToBill(ctx: BillingCtx, m: MessMembershipDoc, billId: Types.ObjectId, period: string, currentCharges: number, previousDue: number): Promise<number> {
+  const mid = m._id as Types.ObjectId;
+  if (await MessDepositTransaction.exists({ advanceKey: String(mid) })) return 0;
+  const balances = await computeBalances(mid);
+  const earmarked = await MessDepositTransaction.aggregate<{ _id: null; total: number }>([
+    { $match: { membershipId: mid, $or: [{ status: "pending" }, { type: "refund", status: "approved" }] } },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+  const available = money(balances.depositBalance - (earmarked[0]?.total ?? 0));
+  const amount = money(Math.min(available, currentCharges, balances.due));
+  if (amount <= 0) return 0;
+  try {
+    await MessDepositTransaction.create({
+      txNo: await generateSequenceCode("mess_deposit_tx", "MDT", 5, true),
+      membershipId: mid,
+      studentId: m.studentId,
+      messId: m.messId,
+      type: "apply_to_due",
+      amount,
+      reason: `এক মাসের অগ্রিম সমন্বয় (নিয়ম অনুযায়ী) — ${period}`,
+      date: todayISO(),
+      status: "approved",
+      period,
+      billId,
+      source: "advance_rule",
+      advanceKey: String(mid),
+      requestedBy: ctx.req ? actorId(ctx.req) : undefined,
+      approvedBy: ctx.req ? actorId(ctx.req) : undefined,
+      approvedAt: new Date(),
+    });
+  } catch (err) {
+    if (isDuplicateKeyError(err)) return 0;
+    throw err;
+  }
+  await MessBill.updateOne({ _id: billId }, { $set: { advanceAdjusted: amount, totalPayable: billTotalPayable(currentCharges, previousDue, amount) } });
+  await recomputeLedger(mid);
+  await recordAudit({
+    req: ctx.req,
+    action: "mess.advance.adjust",
+    module: "mess",
+    targetCollection: "messdeposittransactions",
+    targetId: String(mid),
+    after: { membershipId: String(mid), billId: String(billId), period, amount, rule: "next_bill", by: ctx.req ? "user" : "system" },
+  });
+  return amount;
+}
+
+/** Bill-generated SMS for a batch of new bills, at the shared bulk concurrency — never one burst per member. */
+async function sendBillSmsBatch(billIds: Types.ObjectId[]): Promise<void> {
+  if (billIds.length === 0) return;
   const settings = await getMessSettings();
-  const members = await eligibleMemberships(req, input);
+  const { isMessSmsEnabled, sendMessEventSms, fmtTaka, periodLabel } = await import("./messSms.service");
+  if (!isMessSmsEnabled(settings, "bill")) return;
+  const bills = await MessBill.find({ _id: { $in: billIds } }).select("studentId messId period currentCharges previousDue totalPayable dueDate").lean();
+  const { env } = await import("../../../config/env");
+  await mapWithConcurrency(bills, env.SMS_BULK_CONCURRENCY, (b) =>
+    sendMessEventSms({
+      event: "bill",
+      studentId: b.studentId,
+      messId: b.messId,
+      vars: { amount: fmtTaka(b.currentCharges), billingMonth: periodLabel(b.period), previousDue: fmtTaka(Math.max(0, b.previousDue)), totalPayable: fmtTaka(Math.max(0, b.totalPayable)), remainingDue: fmtTaka(Math.max(0, b.totalPayable)), dueDate: b.dueDate },
+      refType: "bill",
+      refId: String(b._id),
+      dedupeKey: `bill:${String(b._id)}`,
+    }),
+  );
+}
+
+/**
+ * Monthly / bulk / per-Mess / individual / scheduled bill generation — ONE
+ * code path. Idempotent: re-running for the same period skips members who
+ * already have a live bill (enforced by the unique index, not just the
+ * pre-check), so a scheduler retry or a manual run after the automatic one
+ * can never create a duplicate.
+ */
+export async function runBillGeneration(ctx: BillingCtx, input: GenerateBillsInput): Promise<GenerateBillsResult> {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.period)) throw ApiError.badRequest("Invalid billing period");
+  await assertApprovalForCredit(ctx.req, input.extraDiscount);
+  if (input.messId && ctx.req) await assertMessAccess(ctx.req, input.messId);
+  const settings = await getMessSettings();
+  const members = await eligibleMemberships(ctx, input);
   if (input.membershipIds?.length && members.length === 0) {
     throw ApiError.badRequest("নির্বাচিত সদস্য এই মাসের বিলের জন্য যোগ্য নয় (সক্রিয় নয় বা বিলিং শুরুর তারিখ পরে)");
   }
-  const result: GenerateBillsResult = { period: input.period, eligible: members.length, created: 0, skippedExisting: 0, failed: [], billIds: [] };
+  const cfgs = await messConfigs([...new Set(members.map((m) => String(m.messId)))].map((id) => new Types.ObjectId(id)), settings);
+  const fallbackCfg = { billingDay: settings.billingDay, dueDay: settings.dueDay };
+  const result: GenerateBillsResult = { period: input.period, eligible: members.length, created: 0, skippedExisting: 0, skipped: [], failed: [], billIds: [] };
   const outcomes = await mapWithConcurrency(members, 4, async (m) => {
     try {
-      return { m, outcome: await buildBillForMember(req, m, input, settings) };
+      return { m, outcome: await buildBillForMember(ctx, m, input, settings, cfgs.get(String(m.messId)) ?? fallbackCfg) };
     } catch (err) {
-      return { m, outcome: err instanceof Error ? err.message : "Unknown error" };
+      return { m, outcome: { kind: "failed", reason: err instanceof Error ? err.message : "Unknown error" } as BuildOutcome };
     }
   });
+  const newBillIds: Types.ObjectId[] = [];
   for (const { m, outcome } of outcomes) {
-    if (outcome === "created") result.created++;
-    else if (outcome === "exists") result.skippedExisting++;
-    else result.failed.push({ membershipId: String(m._id), membershipNo: m.membershipNo, reason: outcome });
+    if (outcome.kind === "created") {
+      result.created++;
+      newBillIds.push(outcome.billId);
+    } else if (outcome.kind === "exists") result.skippedExisting++;
+    else if (outcome.kind === "skipped") result.skipped.push({ membershipId: String(m._id), membershipNo: m.membershipNo, reason: outcome.reason });
+    else result.failed.push({ membershipId: String(m._id), membershipNo: m.membershipNo, reason: outcome.reason });
   }
-  if (result.created > 0) {
-    const created = await MessBill.find({ membershipId: { $in: members.map((m) => m._id) }, periodKey: input.period }).select("_id").lean();
-    result.billIds = created.map((b) => String(b._id));
+  if (result.created > 0 || result.skippedExisting > 0) {
+    const live = await MessBill.find({ membershipId: { $in: members.map((m) => m._id) }, periodKey: input.period }).select("_id").lean();
+    result.billIds = live.map((b) => String(b._id));
   }
   await recordAudit({
-    req,
-    action: "mess.bill.generate",
+    req: ctx.req,
+    action: ctx.source === "auto" ? "mess.bill.auto-generate" : "mess.bill.generate",
     module: "mess",
     targetCollection: "messbills",
-    after: { period: input.period, messId: input.messId, membershipIds: input.membershipIds, additionalCharges: input.additionalCharges, extraDiscount: input.extraDiscount, created: result.created, skippedExisting: result.skippedExisting, failed: result.failed.length },
+    after: {
+      period: input.period,
+      messId: input.messId,
+      source: ctx.source,
+      membershipIds: input.membershipIds,
+      additionalCharges: input.additionalCharges,
+      extraDiscount: input.extraDiscount,
+      eligible: result.eligible,
+      created: result.created,
+      skippedExisting: result.skippedExisting,
+      skipped: result.skipped.length,
+      failed: result.failed.length,
+    },
   });
+  // The scheduler awaits the SMS batch (serverless may freeze afterwards); an operator's request does not wait on it.
+  if (ctx.source === "auto") await sendBillSmsBatch(newBillIds).catch(() => undefined);
+  else void sendBillSmsBatch(newBillIds).catch(() => undefined);
   return result;
+}
+
+export async function generateBills(req: Request, input: GenerateBillsInput): Promise<GenerateBillsResult> {
+  return runBillGeneration({ req, source: "manual" }, input);
 }
 
 export async function listBills(req: Request) {
@@ -242,10 +425,19 @@ export async function getInvoice(req: Request, id: string) {
 
 export async function cancelBill(req: Request, id: string, reason: string): Promise<MessBillDoc> {
   const bill = await getBillOrThrow(req, id);
+  return cancelBillDoc(req, bill, reason);
+}
+
+/** Shared by the cancel action and the joining-date correction. Payments are never touched — they stay on the ledger and FIFO re-allocates them. */
+export async function cancelBillDoc(req: Request, bill: MessBillDoc, reason: string): Promise<MessBillDoc> {
   if (bill.status === "cancelled") throw ApiError.conflict("বিলটি ইতিমধ্যে বাতিল");
+  if (await MessSettlement.exists({ membershipId: bill.membershipId, status: { $in: ["approved", "completed"] } })) {
+    throw ApiError.conflict("এই সদস্যের চূড়ান্ত নিষ্পত্তি অনুমোদিত/সম্পন্ন — বিল বাতিল করা যাবে না");
+  }
+  const id = String(bill._id);
   const updated = await MessBill.findOneAndUpdate(
     { _id: bill._id, status: { $ne: "cancelled" } },
-    { $set: { status: "cancelled", periodKey: `${bill.period}#cancelled#${String(bill._id)}`, cancelledAt: new Date(), cancelledBy: actorId(req), cancelReason: reason, paidAmount: 0, dueAmount: 0 } },
+    { $set: { status: "cancelled", periodKey: `${bill.period}#cancelled#${id}`, cancelledAt: new Date(), cancelledBy: actorId(req), cancelReason: reason, paidAmount: 0, dueAmount: 0 } },
     { new: true },
   );
   if (!updated) throw ApiError.conflict("বিলটি ইতিমধ্যে বাতিল");
@@ -253,8 +445,20 @@ export async function cancelBill(req: Request, id: string, reason: string): Prom
   if (bill.items.some((i) => i.kind === "setup")) {
     await MessMembership.updateOne({ _id: bill.membershipId }, { $set: { setupChargeBilled: false } });
   }
+  // The automatic advance adjustment made on this bill goes back into the deposit (and may be used again by the corrected bill).
+  let advanceReversed = 0;
+  if (bill.advanceAdjusted > 0) {
+    const tx = await MessDepositTransaction.findOne({ billId: bill._id, source: "advance_rule", status: { $in: ["approved", "completed"] } });
+    if (tx) {
+      await MessDepositTransaction.updateOne(
+        { _id: tx._id },
+        { $set: { status: "cancelled", rejectedReason: `বিল ${bill.billNo} বাতিল: ${reason}`, advanceKey: `${tx.advanceKey}#cancelled#${String(tx._id)}` } },
+      );
+      advanceReversed = tx.amount;
+    }
+  }
   await recomputeLedger(bill.membershipId);
-  await recordAudit({ req, action: "mess.bill.cancel", module: "mess", targetCollection: "messbills", targetId: id, before: bill.toObject(), after: { status: "cancelled", reason } });
+  await recordAudit({ req, action: "mess.bill.cancel", module: "mess", targetCollection: "messbills", targetId: id, before: bill.toObject(), after: { status: "cancelled", reason, advanceReversed } });
   return updated;
 }
 
@@ -271,7 +475,7 @@ export async function adjustBill(req: Request, id: string, body: { adjustment: n
   bill.adjustmentReason = body.reason;
   bill.adjustmentApprovedBy = actorId(req);
   bill.currentCharges = currentCharges;
-  bill.totalPayable = money(currentCharges + bill.previousDue);
+  bill.totalPayable = billTotalPayable(currentCharges, bill.previousDue, bill.advanceAdjusted ?? 0);
   await bill.save();
   await recomputeLedger(bill.membershipId);
   await recordAudit({ req, action: "mess.bill.adjust", module: "mess", targetCollection: "messbills", targetId: id, before, after: bill.toObject() });

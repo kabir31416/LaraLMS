@@ -15,7 +15,7 @@ import { MethodSelect, Pager, ReasonDialog, SearchInput, StatusBadge, TableState
 import { api } from "@/lib/apiClient";
 import {
   DEPOSIT_TX_LABELS, DEPOSIT_TX_STATUS_LABELS, errMsg, qs, refId, refName, SETTLEMENT_STATUS_LABELS, tk, todayISO, usePagedList,
-  type DepositTx, type Settlement,
+  type DepositTx, type Settlement, periodName,
 } from "@/lib/mess";
 import { MESS_FINANCE_APPROVE, MESS_MEMBERS_MANAGE, MESS_PAYMENTS_COLLECT } from "@/lib/permissions";
 
@@ -74,7 +74,7 @@ function TransactionsTab() {
                 <TableCell className="font-mono text-xs">{t.txNo}</TableCell>
                 <TableCell>{t.date}</TableCell>
                 <TableCell><button className="text-left hover:underline" onClick={() => navigate(`/mess/members/${refId(t.membershipId)}`)}><p className="font-medium">{t.studentId?.name}</p><p className="text-xs text-muted-foreground">{typeof t.membershipId === "object" ? t.membershipId.membershipNo : ""} • {refName(t.messId)}</p></button></TableCell>
-                <TableCell className="text-sm">{DEPOSIT_TX_LABELS[t.type]}{t.settlementId && <p className="text-xs text-muted-foreground">নিষ্পত্তি থেকে</p>}</TableCell>
+                <TableCell className="text-sm">{DEPOSIT_TX_LABELS[t.type]}{t.settlementId && <p className="text-xs text-muted-foreground">নিষ্পত্তি থেকে</p>}{t.period && <p className="text-xs text-muted-foreground">মাস: {periodName(t.period)}{t.source === "advance_rule" ? " • স্বয়ংক্রিয়" : ""}</p>}</TableCell>
                 <TableCell className="text-sm">{t.reason || "—"}{t.rejectedReason && <p className="text-xs text-destructive">{t.rejectedReason}</p>}{t.method && <p className="text-xs text-muted-foreground">{t.method}{t.reference ? ` • ${t.reference}` : ""}</p>}</TableCell>
                 <TableCell className="text-right font-medium">{tk(t.amount)}</TableCell>
                 <TableCell><StatusBadge status={t.status} label={DEPOSIT_TX_STATUS_LABELS[t.status]} /></TableCell>

@@ -109,6 +109,8 @@ export const PERMISSIONS = {
   MESS_ALL_ACCESS: "mess:all-access",
   MESS_MEMBERS_MANAGE: "mess:members:manage",
   MESS_MEMBERS_APPROVE: "mess:members:approve",
+  // Correcting a member's joining date can re-issue bills — kept separate from general member editing.
+  MESS_MEMBERS_EDIT_DATES: "mess:members:edit-dates",
   MESS_BILLING_MANAGE: "mess:billing:manage",
   MESS_PAYMENTS_COLLECT: "mess:payments:collect",
   MESS_PAYMENTS_CANCEL: "mess:payments:cancel",
@@ -167,6 +169,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<DefaultRoleName, string[]> = {
     PERMISSIONS.MESS_VIEW,
     PERMISSIONS.MESS_MEMBERS_MANAGE,
     PERMISSIONS.MESS_MEMBERS_APPROVE,
+    PERMISSIONS.MESS_MEMBERS_EDIT_DATES,
     PERMISSIONS.MESS_BILLING_MANAGE,
     PERMISSIONS.MESS_PAYMENTS_COLLECT,
     PERMISSIONS.MESS_EXPENSES_MANAGE,

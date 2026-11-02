@@ -49,6 +49,7 @@ export const MESS_MANAGE = "mess:manage";
 export const MESS_ALL_ACCESS = "mess:all-access";
 export const MESS_MEMBERS_MANAGE = "mess:members:manage";
 export const MESS_MEMBERS_APPROVE = "mess:members:approve";
+export const MESS_MEMBERS_EDIT_DATES = "mess:members:edit-dates";
 export const MESS_BILLING_MANAGE = "mess:billing:manage";
 export const MESS_PAYMENTS_COLLECT = "mess:payments:collect";
 export const MESS_PAYMENTS_CANCEL = "mess:payments:cancel";
@@ -126,7 +127,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
     key: "mess",
     label: "মেস / হোস্টেল",
     permissions: [
-      MESS_VIEW, MESS_MANAGE, MESS_ALL_ACCESS, MESS_MEMBERS_MANAGE, MESS_MEMBERS_APPROVE, MESS_BILLING_MANAGE,
+      MESS_VIEW, MESS_MANAGE, MESS_ALL_ACCESS, MESS_MEMBERS_MANAGE, MESS_MEMBERS_APPROVE, MESS_MEMBERS_EDIT_DATES, MESS_BILLING_MANAGE,
       MESS_PAYMENTS_COLLECT, MESS_PAYMENTS_CANCEL, MESS_FINANCE_APPROVE, MESS_EXPENSES_MANAGE, MESS_EXPENSES_APPROVE,
       MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE,
     ],

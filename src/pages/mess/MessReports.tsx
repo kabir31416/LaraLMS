@@ -7,12 +7,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ReportToolbar } from "@/components/reports/ReportToolbar";
 import { MessPage, useMessScope } from "@/components/mess/MessShell";
-import { Pager, SearchInput, TableState } from "@/components/mess/MessCommon";
+import { Pager, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import {
-  DEPOSIT_TX_STATUS_LABELS, MEMBERSHIP_STATUS_LABELS, qs, refName, SEAT_STATUS_LABELS, tk, useApiData, usePagedList,
-  type Membership, type Seat, type DepositTx, type SeatStatus, type MembershipStatus,
+  DEPOSIT_TX_STATUS_LABELS, errMsg, MEMBERSHIP_STATUS_LABELS, periodName, qs, refName, SEAT_STATUS_LABELS, SMS_STATUS_LABELS, tk, useApiData, usePagedList,
+  type Membership, type MessSmsLog, type Seat, type DepositTx, type SeatStatus, type MembershipStatus,
 } from "@/lib/mess";
 
 /**
@@ -24,14 +27,17 @@ const REPORTS = [
   { key: "occupancy", label: "অকুপেন্সি" },
   { key: "members", label: "সদস্য তালিকা" },
   { key: "available", label: "খালি সিট" },
-  { key: "joining", label: "যোগদান / ছাড়া" },
-  { key: "collection", label: "ভাড়া আদায়" },
+  { key: "joining", label: "ভর্তি / চেক-আউট" },
+  { key: "collection", label: "আদায়" },
+  { key: "monthly", label: "মাসভিত্তিক বিল ও আদায়" },
   { key: "dues", label: "বকেয়া" },
+  { key: "previous-due", label: "পূর্বের বকেয়া" },
   { key: "advances", label: "অগ্রিম" },
   { key: "deposits", label: "জামানত" },
   { key: "expenses", label: "খরচ" },
   { key: "income", label: "আয় বনাম খরচ" },
   { key: "refunds", label: "ফেরত" },
+  { key: "sms", label: "SMS ইতিহাস" },
 ] as const;
 type ReportKey = (typeof REPORTS)[number]["key"];
 
@@ -41,7 +47,7 @@ export default function MessReports() {
   const { messId } = useMessScope();
   const [dateFrom, setDateFrom] = useState(() => `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`);
   const [dateTo, setDateTo] = useState("");
-  const needsDates = ["joining", "collection", "expenses", "income", "refunds"].includes(tab);
+  const needsDates = ["joining", "collection", "expenses", "income", "refunds", "sms"].includes(tab);
   return (
     <MessPage title="মেস রিপোর্ট" subtitle="সার্ভার-সাইড হিসাব; ফিল্টার অনুযায়ী প্রিন্ট/এক্সপোর্ট">
       <div className="overflow-x-auto">
@@ -66,6 +72,9 @@ export default function MessReports() {
       {tab === "expenses" && <ExpenseReport messId={messId} dateFrom={dateFrom} dateTo={dateTo} />}
       {tab === "income" && <IncomeReport messId={messId} dateFrom={dateFrom} dateTo={dateTo} />}
       {tab === "refunds" && <RefundReport messId={messId} dateFrom={dateFrom} dateTo={dateTo} />}
+      {tab === "monthly" && <MonthlySummaryReport messId={messId} />}
+      {tab === "previous-due" && <PreviousDueReport messId={messId} />}
+      {tab === "sms" && <SmsHistoryReport messId={messId} dateFrom={dateFrom} dateTo={dateTo} />}
     </MessPage>
   );
 }
@@ -121,7 +130,7 @@ function MembersReport({ messId }: { messId: string }) {
         <Select value={courseId} onValueChange={(v) => { setCourseId(v); setBatchId("all"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব কোর্স</SelectItem>{courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
         <Select value={batchId} onValueChange={setBatchId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব ব্যাচ</SelectItem>{batches.filter((b) => courseId === "all" || b.courseId === courseId).map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>
       </div>
-      <SimpleTable title="মেস / রুমভিত্তিক সদস্য তালিকা" headers={["সদস্যপদ", "নাম", "সিস্টেম আইডি", "রেজি. নং", "কোর্স", "ব্যাচ", "মেস", "রুম", "সিট", "যোগদান", "অবস্থা", "ভাড়া", "বকেয়া"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />
+      <SimpleTable title="মেস / রুমভিত্তিক সদস্য তালিকা" headers={["সদস্যপদ", "নাম", "সিস্টেম আইডি", "রেজি. নং", "কোর্স", "ব্যাচ", "মেস", "রুম", "সিট", "যোগদান", "অবস্থা", "মাসিক চার্জ", "বকেয়া"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />
     </div>
   );
 }
@@ -131,7 +140,7 @@ function AvailableSeatsReport({ messId }: { messId: string }) {
   useEffect(() => setPage(1), [messId]);
   const list = usePagedList<Seat>(`/mess/seats${qs({ messId, availableOnly: true, page, limit: 100 })}`);
   const rows = list.items.map((s) => [refName(s.messId), refName(s.roomId), s.seatNumber, s.seatType || "—", s.monthlyRent, s.availableFrom || "এখনই", SEAT_STATUS_LABELS[s.status]]);
-  return <SimpleTable title="খালি সিটের রিপোর্ট" headers={["মেস", "রুম", "সিট", "ধরন", "ভাড়া", "খালি থেকে", "অবস্থা"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />;
+  return <SimpleTable title="খালি সিটের রিপোর্ট" headers={["মেস", "রুম", "সিট", "ধরন", "মাসিক চার্জ", "খালি থেকে", "অবস্থা"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />;
 }
 
 function JoiningReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: string; dateTo: string }) {
@@ -142,25 +151,125 @@ function JoiningReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom:
   const rows = list.items.map((m) => [m.membershipNo, m.studentId?.name ?? "", m.studentId?.registrationId ?? "", refName(m.messId), refName(m.roomId), refName(m.seatId, "seatNumber"), m.joiningDate, m.leftDate ?? "—", MEMBERSHIP_STATUS_LABELS[m.status]]);
   return (
     <div className="space-y-2">
-      <Select value={mode} onValueChange={(v) => setMode(v as "joining" | "leaving")}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="joining">যোগদান</SelectItem><SelectItem value="leaving">ছেড়ে যাওয়া</SelectItem></SelectContent></Select>
-      <SimpleTable title={mode === "joining" ? "যোগদান রিপোর্ট" : "ছেড়ে যাওয়ার রিপোর্ট"} headers={["সদস্যপদ", "নাম", "সিস্টেম আইডি", "মেস", "রুম", "সিট", "যোগদান", "ছেড়েছেন", "অবস্থা"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />
+      <Select value={mode} onValueChange={(v) => setMode(v as "joining" | "leaving")}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="joining">ভর্তি / যোগদান</SelectItem><SelectItem value="leaving">চেক-আউট</SelectItem></SelectContent></Select>
+      <SimpleTable title={mode === "joining" ? "ভর্তি / যোগদান রিপোর্ট" : "চেক-আউট রিপোর্ট"} headers={["সদস্যপদ", "নাম", "সিস্টেম আইডি", "মেস", "রুম", "সিট", "যোগদান", "চেক-আউট", "অবস্থা"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />
     </div>
   );
 }
 
 type Agg = { _id: Record<string, string> | string; total: number; count: number; messName?: string; purpose?: string };
+type CollAgg = { _id: string; rent: number; deposit: number; total: number; count: number; messName?: string };
 
 function CollectionReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: string; dateTo: string }) {
-  const { data, loading, error } = useApiData<{ byDate: Agg[]; byMethod: Agg[]; byMess: Agg[] }>(`/mess/reports/collection${qs({ messId, dateFrom, dateTo })}`);
-  const p = (a: Agg) => (typeof a._id === "object" ? a._id.purpose : a.purpose) === "deposit" ? "জামানত" : "ভাড়া/বকেয়া";
-  const total = (data?.byMethod ?? []).filter((a) => typeof a._id === "object" && a._id.purpose === "rent").reduce((s, a) => s + a.total, 0);
+  const { data, loading, error } = useApiData<{ byDate: CollAgg[]; byMethod: CollAgg[]; byMess: CollAgg[]; byMonth: CollAgg[] }>(`/mess/reports/collection${qs({ messId, dateFrom, dateTo })}`);
+  const sum = (k: "rent" | "deposit") => (data?.byMethod ?? []).reduce((s, a) => s + (a[k] ?? 0), 0);
+  const headers = ["লেনদেন", "ডাইনিং চার্জ", "অগ্রিম/জামানত", "মোট"];
+  const row = (label: string, a: CollAgg) => [label, a.count, a.rent, a.deposit, a.total];
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <SimpleTable title={`মাসিক ভাড়া আদায় — মোট ${tk(total)} (জামানত আলাদা)`} headers={["তারিখ", "ধরন", "লেনদেন", "পরিমাণ"]} rows={(data?.byDate ?? []).map((a) => [typeof a._id === "object" ? a._id.date : "", p(a), a.count, a.total])} loading={loading} error={error} />
-      <div className="space-y-4">
-        <SimpleTable title="পেমেন্ট পদ্ধতি অনুযায়ী" headers={["পদ্ধতি", "ধরন", "লেনদেন", "পরিমাণ"]} rows={(data?.byMethod ?? []).map((a) => [typeof a._id === "object" ? a._id.method : "", p(a), a.count, a.total])} loading={loading} error={error} />
-        <SimpleTable title="মেস অনুযায়ী" headers={["মেস", "ধরন", "লেনদেন", "পরিমাণ"]} rows={(data?.byMess ?? []).map((a) => [a.messName ?? "", p(a), a.count, a.total])} loading={loading} error={error} />
+    <div className="space-y-4">
+      <p className="text-sm">ডাইনিং চার্জ আদায় <b>{tk(sum("rent"))}</b> • অগ্রিম/জামানত সংগ্রহ <b>{tk(sum("deposit"))}</b> <span className="text-xs text-muted-foreground">(অগ্রিম/জামানত আয় নয় — শিক্ষার্থীর পক্ষে জমা। ভর্তির একটি রসিদের দুই অংশ আলাদা করে দেখানো হয়েছে।)</span></p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SimpleTable title="তারিখভিত্তিক আদায়" headers={["তারিখ", ...headers]} rows={(data?.byDate ?? []).map((a) => row(a._id, a))} loading={loading} error={error} />
+        <div className="space-y-4">
+          <SimpleTable title="মাসভিত্তিক আদায়" headers={["মাস", ...headers]} rows={(data?.byMonth ?? []).map((a) => row(periodName(a._id), a))} loading={loading} error={error} />
+          <SimpleTable title="পেমেন্ট পদ্ধতি অনুযায়ী" headers={["পদ্ধতি", ...headers]} rows={(data?.byMethod ?? []).map((a) => row(a._id, a))} loading={loading} error={error} />
+          <SimpleTable title="মেস অনুযায়ী" headers={["মেস", ...headers]} rows={(data?.byMess ?? []).map((a) => row(a.messName ?? "", a))} loading={loading} error={error} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+interface MonthlyRow { period: string; bills: number; billed: number; billPaid: number; billDue: number; advanceAdjusted: number; diningCollected: number; depositCollected: number; receipts: number }
+
+function MonthlySummaryReport({ messId }: { messId: string }) {
+  const [months, setMonths] = useState("12");
+  const { data, loading, error } = useApiData<MonthlyRow[]>(`/mess/reports/monthly-summary${qs({ messId, months })}`);
+  const rows = (data ?? []).map((r) => [periodName(r.period), r.bills, r.billed, r.advanceAdjusted, r.billPaid, r.billDue, r.diningCollected, r.depositCollected, r.receipts]);
+  return (
+    <div className="space-y-2">
+      <Select value={months} onValueChange={setMonths}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["6", "12", "24"].map((m) => <SelectItem key={m} value={m}>শেষ {m} মাস</SelectItem>)}</SelectContent></Select>
+      <SimpleTable title="মাসভিত্তিক বিল ও আদায়" headers={["মাস", "বিল", "বিলের চার্জ", "অগ্রিম সমন্বয়", "বিলের পরিশোধ", "বিলের বকেয়া", "ডাইনিং আদায় (ঐ মাসে)", "অগ্রিম/জামানত সংগ্রহ", "রসিদ"]} rows={rows} loading={loading} error={error} />
+      <p className="text-xs text-muted-foreground">"বিলের পরিশোধ/বকেয়া" — ঐ মাসের বিলের বর্তমান অবস্থা (পুরোনো বিল আগে পরিশোধ ধরা হয়)। "আদায়" — ঐ মাসে নেওয়া টাকা।</p>
+    </div>
+  );
+}
+
+interface PrevDueRow { membership: Membership | null; previousDue: number; oldestPeriod: string; months: number; currentMonthDue: number }
+
+function PreviousDueReport({ messId }: { messId: string }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [messId, search]);
+  const list = usePagedList<PrevDueRow>(`/mess/reports/previous-due${qs({ messId, search, page, limit: 100 })}`);
+  const rows = list.items.map((r) => [r.membership?.membershipNo ?? "", r.membership?.studentId?.name ?? "", r.membership?.studentId?.registrationId ?? "", r.membership?.studentId?.phone ?? "", refName(r.membership?.messId), `${refName(r.membership?.roomId)} / ${refName(r.membership?.seatId, "seatNumber")}`, periodName(r.oldestPeriod), r.months, r.previousDue, r.currentMonthDue, r.membership?.balance?.due ?? 0]);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={search} onChange={setSearch} className="w-72" />
+        <p className="text-sm">মোট পূর্বের বকেয়া: <b className="text-destructive">{tk(Number(list.meta?.sum ?? 0))}</b></p>
+      </div>
+      <SimpleTable title="পূর্বের বকেয়া (আগের মাসগুলোর)" headers={["সদস্যপদ", "নাম", "সিস্টেম আইডি", "মোবাইল", "মেস", "রুম/সিট", "সবচেয়ে পুরোনো মাস", "মাস সংখ্যা", "পূর্বের বকেয়া", "এ মাসের বকেয়া", "মোট বকেয়া"]} rows={rows} loading={list.loading} error={list.error} footer={<Pager meta={list.meta} page={page} onPage={setPage} />} />
+    </div>
+  );
+}
+
+const SMS_REF_LABELS: Record<string, string> = { payment: "পেমেন্ট", bill: "মাসিক বিল", membership: "ভর্তি / বকেয়া রিমাইন্ডার", settlement: "চেক-আউট" };
+
+function SmsHistoryReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: string; dateTo: string }) {
+  const [status, setStatus] = useState("all");
+  const [refType, setRefType] = useState("all");
+  const [page, setPage] = useState(1);
+  const [checking, setChecking] = useState<string | null>(null);
+  useEffect(() => setPage(1), [messId, status, refType, dateFrom, dateTo]);
+  const list = usePagedList<MessSmsLog>(`/mess/sms/logs${qs({ messId, status, refType, dateFrom, dateTo, page, limit: 50 })}`);
+  const byStatus = (list.meta?.byStatus ?? {}) as Record<string, number>;
+  const check = async (id: string) => {
+    setChecking(id);
+    try {
+      const r = await api.post<{ deliveryStatus: string }>(`/mess/sms/logs/${id}/delivery`, {});
+      toast.success(`ডেলিভারি অবস্থা: ${r.deliveryStatus}`);
+      await list.reload();
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setChecking(null);
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={status} onValueChange={setStatus}><SelectTrigger className="w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব অবস্থা</SelectItem><SelectItem value="failed,timeout">ব্যর্থ / সাড়া নেই</SelectItem>{Object.entries(SMS_STATUS_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
+        <Select value={refType} onValueChange={setRefType}><SelectTrigger className="w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">সব ঘটনা</SelectItem>{Object.entries(SMS_REF_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent></Select>
+        <p className="text-xs text-muted-foreground">{Object.entries(byStatus).map(([k, n]) => `${SMS_STATUS_LABELS[k] ?? k}: ${n}`).join(" • ")}</p>
+      </div>
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <Table>
+            <TableHeader><TableRow><TableHead>সময়</TableHead><TableHead>শিক্ষার্থী</TableHead><TableHead>নম্বর</TableHead><TableHead>ঘটনা</TableHead><TableHead>বার্তা</TableHead><TableHead>প্রোভাইডার অবস্থা</TableHead><TableHead>ডেলিভারি</TableHead></TableRow></TableHeader>
+            <TableBody>
+              <TableState colSpan={7} loading={list.loading} error={list.error} empty={list.items.length === 0} emptyText="কোনো মেস SMS নেই" />
+              {!list.loading && list.items.map((l) => (
+                <TableRow key={l._id}>
+                  <TableCell className="text-xs whitespace-nowrap">{new Date(l.createdAt).toLocaleString("bn-BD")}</TableCell>
+                  <TableCell className="text-sm">{l.studentId?.name ?? "—"}<p className="text-xs text-muted-foreground">{refName(l.messId)}</p></TableCell>
+                  <TableCell className="text-xs font-mono">{l.recipient}</TableCell>
+                  <TableCell className="text-xs">{SMS_REF_LABELS[l.refType ?? ""] ?? l.refType ?? "—"}</TableCell>
+                  <TableCell className="text-xs max-w-xs"><span className="line-clamp-2">{l.message}</span></TableCell>
+                  <TableCell><StatusBadge status={l.status === "sent" ? "completed" : l.status === "pending" ? "pending" : "rejected"} label={SMS_STATUS_LABELS[l.status] ?? l.status} />{l.errorMessage && <p className="text-[11px] text-destructive mt-0.5">{l.errorMessage}</p>}<p className="text-[11px] text-muted-foreground">{l.provider}</p></TableCell>
+                  <TableCell className="text-xs">
+                    {l.deliveryStatus ? <span>{l.deliveryStatus}<span className="block text-[11px] text-muted-foreground">{l.deliveryCheckedAt ? new Date(l.deliveryCheckedAt).toLocaleString("bn-BD") : ""}</span></span> : l.status === "sent" && l.providerRequestId ? (
+                      <Button size="sm" variant="outline" disabled={checking === l._id} onClick={() => check(l._id)}>{checking === l._id ? "..." : "যাচাই"}</Button>
+                    ) : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="p-3"><Pager meta={list.meta} page={page} onPage={setPage} /></div>
+        </CardContent>
+      </Card>
+      <p className="text-xs text-muted-foreground">"প্রোভাইডার গ্রহণ করেছে" মানে গেটওয়ে SMS নিয়েছে — হ্যান্ডসেটে পৌঁছানো আলাদা অবস্থা। ডেলিভারি রিপোর্ট শুধু Alpha SMS সক্রিয় থাকলে পাওয়া যায়।</p>
     </div>
   );
 }
@@ -204,8 +313,8 @@ function IncomeReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: 
   const rows = [...(data?.rows ?? []).map((r) => toRow(r.mess.name, r)), ...(data && data.rows.length > 1 ? [toRow("সর্বমোট", data.totals)] : [])];
   return (
     <div className="space-y-2">
-      <SimpleTable title="আয় বনাম খরচ ও মেসভিত্তিক ব্যালেন্স" headers={["মেস", "ভাড়া আদায়", "জামানত কর্তন", "অগ্রিম ফেরত", "নিট আয়", "খরচ", "নিট", "মোট বকেয়া (বর্তমান)", "জমা জামানত (বর্তমান)", "জমা অগ্রিম (বর্তমান)"]} rows={rows} loading={loading} error={error} />
-      <p className="text-xs text-muted-foreground">আয় = ভাড়া আদায় + জামানত থেকে কর্তন − নিষ্পত্তিতে অগ্রিম ফেরত। জামানত সংগ্রহ/ফেরত আয় নয় — শিক্ষার্থীর পক্ষে জমা অর্থ। বকেয়া/জামানত/অগ্রিম কলাম আজকের অবস্থা দেখায়।</p>
+      <SimpleTable title="আয় বনাম খরচ ও মেসভিত্তিক ব্যালেন্স" headers={["মেস", "ডাইনিং চার্জ আদায়", "জামানত কর্তন", "অগ্রিম ফেরত", "নিট আয়", "খরচ", "নিট", "মোট বকেয়া (বর্তমান)", "জমা জামানত (বর্তমান)", "জমা অগ্রিম (বর্তমান)"]} rows={rows} loading={loading} error={error} />
+      <p className="text-xs text-muted-foreground">আয় = ডাইনিং চার্জ আদায় + জামানত থেকে কর্তন − নিষ্পত্তিতে অগ্রিম ফেরত। জামানত সংগ্রহ/ফেরত আয় নয় — শিক্ষার্থীর পক্ষে জমা অর্থ। বকেয়া/জামানত/অগ্রিম কলাম আজকের অবস্থা দেখায়।</p>
     </div>
   );
 }

@@ -12,9 +12,12 @@ import { toast } from "sonner";
 import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
 import {
+  currentPeriod,
   errMsg,
   newIdempotencyKey,
+  periodName,
   PURPOSE_LABELS,
+  recentPeriods,
   qs,
   refName,
   statusTone,
@@ -290,12 +293,13 @@ export function ReceivePaymentDialog({
   const [date, setDate] = useState(todayISO());
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
+  const [billingMonth, setBillingMonth] = useState(currentPeriod());
   const [busy, setBusy] = useState(false);
   const keyRef = useRef(newIdempotencyKey());
   useEffect(() => {
     if (open) {
       keyRef.current = newIdempotencyKey();
-      setPurpose("rent"); setAmount(""); setMethod(""); setDate(todayISO()); setReference(""); setNote("");
+      setPurpose("rent"); setAmount(""); setMethod(""); setDate(todayISO()); setReference(""); setNote(""); setBillingMonth(currentPeriod());
     }
   }, [open]);
   if (!target) return null;
@@ -313,6 +317,7 @@ export function ReceivePaymentDialog({
         amount: n,
         method,
         date,
+        billingMonth: purpose === "rent" && target.membershipId ? billingMonth : undefined,
         reference: reference || undefined,
         note: note || undefined,
         idempotencyKey: keyRef.current,
@@ -349,7 +354,7 @@ export function ReceivePaymentDialog({
                   <SelectItem value="deposit">{PURPOSE_LABELS.deposit}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">বকেয়ার চেয়ে বেশি ভাড়া পেমেন্ট অগ্রিম হিসেবে জমা থাকবে। জামানত আলাদা হিসাবে রাখা হয়।</p>
+              <p className="text-xs text-muted-foreground">বকেয়ার চেয়ে বেশি ডাইনিং পেমেন্ট অগ্রিম হিসেবে জমা থাকবে। জামানত আলাদা হিসাবে রাখা হয়।</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -357,8 +362,22 @@ export function ReceivePaymentDialog({
             <div className="space-y-1.5"><Label>তারিখ</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
           </div>
           <div className="space-y-1.5"><Label>পেমেন্ট পদ্ধতি *</Label><MethodSelect value={method} onChange={setMethod} /></div>
+          {purpose === "rent" && target.membershipId && (
+            <div className="space-y-1.5">
+              <Label>বিলের মাস</Label>
+              <Select value={billingMonth} onValueChange={setBillingMonth}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{recentPeriods(12).map((p) => <SelectItem key={p} value={p}>{periodName(p)}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">রসিদে দেখানো হবে। হিসাবে পুরোনো বকেয়া আগে পরিশোধ ধরা হয়।</p>
+            </div>
+          )}
           <div className="space-y-1.5"><Label>রেফারেন্স (TrxID / স্লিপ নং)</Label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
           <div className="space-y-1.5"><Label>নোট</Label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
+          {Number(amount) > 0 && purpose === "rent" && (target.due ?? 0) > 0 && (
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">পেমেন্টের পর আনুমানিক বকেয়া: <b>{tk(Math.max(0, (target.due ?? 0) - Number(amount)))}</b> <span className="text-muted-foreground">(চূড়ান্ত হিসাব সার্ভার থেকে)</span></p>
+          )}
+          <p className="text-[11px] text-muted-foreground">SMS চালু থাকলে শিক্ষার্থীর মোবাইলে পেমেন্ট SMS যাবে। SMS ব্যর্থ হলেও পেমেন্ট বহাল থাকে।</p>
         </div>
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>বাতিল</Button>
@@ -366,5 +385,71 @@ export function ReceivePaymentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export interface InitialChargesValue {
+  initialDiningCharge: string;
+  advanceDeposit: string;
+  amountPaid: string;
+  method: string;
+  reference: string;
+}
+
+/**
+ * Admission's initial charges — Initial Dining Charge + ONE One-Month
+ * Advance / Security Deposit field (the same money, never added twice),
+ * Total Initial Payable, Amount Paid, method and Remaining Due. Display
+ * maths only; the backend recomputes and allocates everything.
+ */
+export function InitialChargesFields({
+  value,
+  onChange,
+  ruleHint,
+  depositEditable = true,
+  allowPayment = true,
+}: {
+  value: InitialChargesValue;
+  onChange: (v: InitialChargesValue) => void;
+  ruleHint?: string;
+  depositEditable?: boolean;
+  /** False for roles without the payment-collect permission — the backend refuses the payment anyway. */
+  allowPayment?: boolean;
+}) {
+  const dining = Number(value.initialDiningCharge) || 0;
+  const deposit = Number(value.advanceDeposit) || 0;
+  const total = dining + deposit;
+  const paid = allowPayment ? Number(value.amountPaid) || 0 : 0;
+  const set = (k: keyof InitialChargesValue, v: string) => onChange({ ...value, [k]: v });
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>প্রারম্ভিক ডাইনিং চার্জ (৳)</Label>
+          <Input type="number" min={0} value={value.initialDiningCharge} onChange={(e) => set("initialDiningCharge", e.target.value)} />
+          {ruleHint && <p className="text-[11px] text-muted-foreground">{ruleHint}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label>এক মাসের অগ্রিম / জামানত (৳)</Label>
+          <Input type="number" min={0} value={value.advanceDeposit} disabled={!depositEditable} onChange={(e) => set("advanceDeposit", e.target.value)} />
+          <p className="text-[11px] text-muted-foreground">একই টাকা — অগ্রিম ও জামানত আলাদা করে নেওয়া হয় না। আয় নয়, জমা হিসেবে থাকে।</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm">
+        <span>মোট প্রারম্ভিক প্রদেয়</span>
+        <b className="tabular-nums">{tk(total)}</b>
+      </div>
+      {!allowPayment && <p className="text-xs text-muted-foreground">পেমেন্ট নেওয়ার অনুমতি আপনার নেই — চার্জ যুক্ত হবে, পেমেন্ট হিসাবরক্ষক/অ্যাডমিন নেবেন।</p>}
+      {allowPayment && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="space-y-1.5"><Label>পরিশোধ (৳)</Label><Input type="number" min={0} value={value.amountPaid} onChange={(e) => set("amountPaid", e.target.value)} placeholder="0" /></div>
+        <div className="space-y-1.5"><Label>পেমেন্ট পদ্ধতি</Label><MethodSelect value={value.method} onChange={(v) => set("method", v)} /></div>
+        <div className="space-y-1.5"><Label>রেফারেন্স</Label><Input value={value.reference} onChange={(e) => set("reference", e.target.value)} placeholder="TrxID / স্লিপ" /></div>
+      </div>}
+      <div className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm">
+        <span>অবশিষ্ট বকেয়া</span>
+        <b className={`tabular-nums ${total - paid > 0 ? "text-destructive" : "text-success"}`}>{tk(Math.max(0, total - paid))}</b>
+      </div>
+      <p className="text-[11px] text-muted-foreground">আংশিক পরিশোধ করা যায়। পরিশোধ আগে ডাইনিং চার্জে, তারপর অগ্রিম/জামানতে ধরা হবে — একটি রসিদ তৈরি হবে।{paid > total && total > 0 ? " অতিরিক্ত অংশ অগ্রিম ডাইনিং জমা হিসেবে থাকবে।" : ""}</p>
+    </div>
   );
 }

@@ -75,7 +75,14 @@ async function getActiveMessOrThrow(messId: string | Types.ObjectId): Promise<Me
   return mess;
 }
 
-export async function createMess(req: Request, data: Partial<MessDoc>): Promise<MessDoc> {
+type MessPatch = Partial<Omit<MessDoc, "defaultDiningCharge" | "defaultDeposit" | "billingDay" | "dueDay">> & {
+  defaultDiningCharge?: number | null;
+  defaultDeposit?: number | null;
+  billingDay?: number | null;
+  dueDay?: number | null;
+};
+
+export async function createMess(req: Request, data: MessPatch): Promise<MessDoc> {
   const code = await generateSequenceCode("mess_code", "MESS", 3);
   const doc = await Mess.create({
     name: data.name,
@@ -85,6 +92,10 @@ export async function createMess(req: Request, data: Partial<MessDoc>): Promise<
     openingDate: data.openingDate,
     notes: data.notes,
     status: data.status ?? "active",
+    defaultDiningCharge: data.defaultDiningCharge ?? undefined,
+    defaultDeposit: data.defaultDeposit ?? undefined,
+    billingDay: data.billingDay ?? undefined,
+    dueDay: data.dueDay ?? undefined,
     staff: [],
     createdBy: req.user?.id,
   });
@@ -92,12 +103,17 @@ export async function createMess(req: Request, data: Partial<MessDoc>): Promise<
   return doc;
 }
 
-export async function updateMess(req: Request, id: string, patch: Partial<MessDoc>): Promise<MessDoc> {
+export async function updateMess(req: Request, id: string, patch: MessPatch): Promise<MessDoc> {
   await assertMessAccess(req, id);
   const doc = await getActiveMessOrThrow(id);
   const before = doc.toObject();
   for (const key of ["name", "address", "contactNumber", "openingDate", "notes", "status"] as const) {
     if (patch[key] !== undefined) (doc as unknown as Record<string, unknown>)[key] = patch[key];
+  }
+  // Per-Mess billing defaults: a number overrides Mess Settings for this Mess, null removes the override. Future admissions/bills only.
+  for (const key of ["defaultDiningCharge", "defaultDeposit", "billingDay", "dueDay"] as const) {
+    if (patch[key] === null) doc.set(key, undefined);
+    else if (patch[key] !== undefined) doc.set(key, patch[key]);
   }
   await doc.save();
   await recordAudit({ req, action: "mess.update", module: "mess", targetCollection: "messes", targetId: id, before, after: doc.toObject() });

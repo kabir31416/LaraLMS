@@ -4,7 +4,6 @@ import { ApiError } from "../../../common/utils/ApiError";
 import { recordAudit } from "../../../audit/auditLog.service";
 import { buildMeta, parsePagination } from "../../../common/utils/pagination";
 import { generateSequenceCode } from "../../../common/utils/idGenerators";
-import { logger } from "../../../logger/logger";
 import { PERMISSIONS } from "../../rbac/permissions";
 import { MessMembership } from "../models/messMembership.model";
 import { MessReservation } from "../models/messReservation.model";
@@ -14,39 +13,96 @@ import { assertMessAccess, hasPerm, messScopeFilter } from "../mess.scope";
 import { MessPaymentPurpose } from "../mess.constants";
 import { actorId, isDuplicateKeyError, money, todayISO, toObjectId } from "../mess.utils";
 import { assertMessPaymentMethod, getMessSettings } from "./messSettings.service";
-import { computeBalances, recomputeLedger } from "./messLedger.service";
+import { computeBalances, PAYMENT_DEPOSIT_PART, PAYMENT_RENT_PART, paymentPortions, recomputeLedger } from "./messLedger.service";
 import { resolveStudentFilter } from "./messMembership.service";
+import { fmtTaka, periodLabel, queueMessEventSms } from "./messSms.service";
 
 export interface ReceivePaymentInput {
   membershipId?: string;
   reservationId?: string;
-  purpose: MessPaymentPurpose;
+  purpose: Exclude<MessPaymentPurpose, "initial">;
   amount: number;
   method: string;
   date?: string;
+  /** "yyyy-mm" the payment is for (shown on the receipt). FIFO still clears the oldest due first. */
+  billingMonth?: string;
   reference?: string;
   note?: string;
   idempotencyKey?: string;
 }
 
-async function sendMessPaymentSms(studentId: Types.ObjectId, amount: number, receiptNo: string, due: number): Promise<void> {
+function paymentSmsVars(doc: MessPaymentDoc, due: number) {
+  return {
+    amount: fmtTaka(doc.amount),
+    paymentDate: doc.date,
+    receiptNo: doc.receiptNo,
+    paymentMethod: doc.method,
+    billingMonth: periodLabel(doc.billingMonth),
+    previousDue: fmtTaka(doc.dueBefore ?? 0),
+    remainingDue: fmtTaka(due),
+  };
+}
+
+interface InsertPaymentFields {
+  studentId: Types.ObjectId;
+  messId: Types.ObjectId;
+  membershipId?: Types.ObjectId;
+  reservationId?: Types.ObjectId;
+  purpose: MessPaymentPurpose;
+  amount: number;
+  allocation: { rent: number; deposit: number };
+  method: string;
+  date?: string;
+  billingMonth?: string;
+  dueBefore?: number;
+  reference?: string;
+  note?: string;
+  idempotencyKey?: string;
+}
+
+/** Receipt number, idempotent insert, ledger recompute and audit — shared by every way Mess money comes in. */
+async function insertPayment(req: Request, f: InsertPaymentFields): Promise<{ doc: MessPaymentDoc; duplicate: boolean; due: number }> {
+  await assertMessPaymentMethod(f.method);
+  const settings = await getMessSettings();
+  const prefix = settings.receiptPrefix || "MR";
+  let doc: MessPaymentDoc;
   try {
-    const settings = await getMessSettings();
-    if (!settings.paymentSmsEnabled) return;
-    const { Student } = await import("../../students/student.model");
-    const student = await Student.findById(studentId).select("name phone");
-    if (!student?.phone) return;
-    const { sendSms } = await import("../../sms/sms.service");
-    await sendSms({
-      to: student.phone,
-      message: `প্রিয় ${student.name}, মেস পেমেন্ট ৳${amount} গৃহীত হয়েছে। রসিদ: ${receiptNo}। বর্তমান বকেয়া: ৳${due}।`,
-      eventType: "mess",
-      studentId: String(studentId),
+    doc = await MessPayment.create({
+      receiptNo: await generateSequenceCode(`mess_receipt_${prefix}`, prefix, 5, true),
+      studentId: f.studentId,
+      membershipId: f.membershipId,
+      reservationId: f.reservationId,
+      messId: f.messId,
+      purpose: f.purpose,
+      amount: f.amount,
+      allocation: { rent: money(f.allocation.rent), deposit: money(f.allocation.deposit) },
+      method: f.method,
+      date: f.date || todayISO(),
+      billingMonth: f.billingMonth,
+      dueBefore: f.dueBefore,
+      reference: f.reference,
+      note: f.note,
+      idempotencyKey: f.idempotencyKey,
+      status: "active",
+      verified: false,
+      createdBy: actorId(req),
     });
   } catch (err) {
-    // An SMS problem must never affect a recorded payment.
-    logger.warn({ err }, "Mess payment SMS failed");
+    if (f.idempotencyKey && isDuplicateKeyError(err)) {
+      const existing = await MessPayment.findOne({ idempotencyKey: f.idempotencyKey });
+      if (existing) return { doc: existing, duplicate: true, due: existing.balanceAfter?.due ?? 0 };
+    }
+    throw err;
   }
+  let balanceAfter = { due: 0, advance: 0, depositBalance: 0 };
+  if (f.membershipId) {
+    const b = await recomputeLedger(f.membershipId);
+    balanceAfter = { due: b.due, advance: b.advance, depositBalance: b.depositBalance };
+    await MessPayment.updateOne({ _id: doc._id }, { $set: { balanceAfter } });
+    doc.balanceAfter = balanceAfter;
+  }
+  await recordAudit({ req, action: "mess.payment.create", module: "mess", targetCollection: "messpayments", targetId: String(doc._id), after: doc.toObject() });
+  return { doc, duplicate: false, due: balanceAfter.due };
 }
 
 /**
@@ -68,6 +124,8 @@ export async function receivePayment(req: Request, input: ReceivePaymentInput): 
   let messId: Types.ObjectId;
   let membershipId: Types.ObjectId | undefined;
   let reservationId: Types.ObjectId | undefined;
+  let dueBefore: number | undefined;
+  if (input.billingMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.billingMonth)) throw ApiError.badRequest("Invalid billing month");
 
   if (input.membershipId) {
     const m = await MessMembership.findById(toObjectId(input.membershipId, "membershipId"));
@@ -79,6 +137,7 @@ export async function receivePayment(req: Request, input: ReceivePaymentInput): 
       throw ApiError.conflict("এই সদস্যের চূড়ান্ত হিসাব নিষ্পত্তি চলছে — নিষ্পত্তি সম্পন্ন বা বাতিল হওয়ার পর পেমেন্ট নিন");
     }
     const balances = await computeBalances(m._id as Types.ObjectId);
+    dueBefore = balances.due;
     if (m.status === "left") {
       if (input.purpose !== "rent") throw ApiError.badRequest("সদস্যপদ শেষ — শুধু বকেয়া আদায় করা যাবে");
       if (amount > balances.due) throw ApiError.badRequest(`সদস্যপদ শেষ — সর্বোচ্চ বকেয়া ৳${balances.due} আদায় করা যাবে`);
@@ -101,46 +160,75 @@ export async function receivePayment(req: Request, input: ReceivePaymentInput): 
     reservationId = r._id as Types.ObjectId;
   }
 
-  await assertMessPaymentMethod(input.method);
-  const settings = await getMessSettings();
-  const prefix = settings.receiptPrefix || "MR";
-  let doc: MessPaymentDoc;
-  try {
-    doc = await MessPayment.create({
-      receiptNo: await generateSequenceCode(`mess_receipt_${prefix}`, prefix, 5, true),
-      studentId,
-      membershipId,
-      reservationId,
-      messId,
-      purpose: input.purpose,
-      amount,
-      method: input.method,
-      date: input.date || todayISO(),
-      reference: input.reference,
-      note: input.note,
-      idempotencyKey: input.idempotencyKey,
-      status: "active",
-      verified: false,
-      createdBy: actorId(req),
-    });
-  } catch (err) {
-    if (input.idempotencyKey && isDuplicateKeyError(err)) {
-      const existing = await MessPayment.findOne({ idempotencyKey: input.idempotencyKey });
-      if (existing) return existing;
-    }
-    throw err;
+  const { doc, duplicate, due } = await insertPayment(req, {
+    studentId,
+    messId,
+    membershipId,
+    reservationId,
+    purpose: input.purpose,
+    amount,
+    allocation: input.purpose === "deposit" ? { rent: 0, deposit: amount } : { rent: amount, deposit: 0 },
+    method: input.method,
+    date: input.date,
+    billingMonth: input.billingMonth,
+    dueBefore,
+    reference: input.reference,
+    note: input.note,
+    idempotencyKey: input.idempotencyKey,
+  });
+  // Payment SMS to the student's own phone — after the payment is safely recorded, never able to undo or fail it.
+  if (!duplicate) {
+    queueMessEventSms({ event: "payment", studentId, messId, vars: paymentSmsVars(doc, due), refType: "payment", refId: String(doc._id), dedupeKey: `payment:${String(doc._id)}` });
   }
-
-  let balanceAfter = { due: 0, advance: 0, depositBalance: 0 };
-  if (membershipId) {
-    const b = await recomputeLedger(membershipId);
-    balanceAfter = { due: b.due, advance: b.advance, depositBalance: b.depositBalance };
-    await MessPayment.updateOne({ _id: doc._id }, { $set: { balanceAfter } });
-    doc.balanceAfter = balanceAfter;
-  }
-  await recordAudit({ req, action: "mess.payment.create", module: "mess", targetCollection: "messpayments", targetId: String(doc._id), after: doc.toObject() });
-  void sendMessPaymentSms(studentId, amount, doc.receiptNo, balanceAfter.due);
   return doc;
+}
+
+/**
+ * Pure split of an admission payment: dining due first, then the advance/
+ * deposit still owed; anything beyond both stays on the dining side as an
+ * advance credit. rent + deposit always equals the amount — never more.
+ */
+export function splitInitialPayment(amount: number, diningDue: number, depositRemaining: number): { rent: number; deposit: number } {
+  const a = money(Math.max(0, amount));
+  const rent = money(Math.min(a, Math.max(0, diningDue)));
+  const deposit = money(Math.min(a - rent, Math.max(0, depositRemaining)));
+  return { rent: money(a - deposit), deposit };
+}
+
+/**
+ * The single admission receipt: Amount Paid is applied to the Initial Dining
+ * Charge first, then to the One-Month Advance / Security Deposit (the same
+ * money — never asked for twice). Anything beyond both is kept as a dining
+ * advance credit. Partial payment is allowed; whatever is unpaid stays as due.
+ */
+export async function recordInitialPayment(
+  req: Request,
+  membershipId: Types.ObjectId,
+  input: { amount: number; method: string; date?: string; reference?: string; note?: string; idempotencyKey?: string },
+): Promise<{ payment: MessPaymentDoc; allocation: { rent: number; deposit: number }; due: number; depositRemaining: number }> {
+  const m = await MessMembership.findById(membershipId);
+  if (!m) throw ApiError.notFound("Membership not found");
+  const amount = money(input.amount);
+  if (amount <= 0) throw ApiError.badRequest("পরিমাণ শূন্যের বেশি হতে হবে");
+  const balances = await computeBalances(membershipId);
+  const depositRemaining = money(Math.max(0, balances.depositRequired - balances.depositCollected));
+  const allocation = splitInitialPayment(amount, balances.due, depositRemaining);
+  const { doc, due } = await insertPayment(req, {
+    studentId: m.studentId,
+    messId: m.messId,
+    membershipId,
+    purpose: "initial",
+    amount,
+    allocation,
+    method: input.method,
+    date: input.date,
+    billingMonth: m.joiningDate.slice(0, 7),
+    dueBefore: balances.due,
+    reference: input.reference,
+    note: input.note || "ভর্তির প্রারম্ভিক পেমেন্ট (ডাইনিং চার্জ + অগ্রিম/জামানত)",
+    idempotencyKey: input.idempotencyKey,
+  });
+  return { payment: doc, allocation, due, depositRemaining: money(depositRemaining - allocation.deposit) };
 }
 
 export async function listPayments(req: Request) {
@@ -148,7 +236,7 @@ export async function listPayments(req: Request) {
   const filter: Record<string, unknown> = {};
   const scope = await messScopeFilter(req, req.query.messId);
   if (scope) filter.messId = scope;
-  for (const key of ["purpose", "method"] as const) {
+  for (const key of ["purpose", "method", "billingMonth"] as const) {
     if (typeof req.query[key] === "string" && req.query[key]) filter[key] = req.query[key];
   }
   if (typeof req.query.status === "string" && req.query.status) filter.status = req.query.status;
@@ -174,9 +262,9 @@ export async function listPayments(req: Request) {
       .populate("reservationId", "reservationNo")
       .lean(),
     MessPayment.countDocuments(filter),
-    MessPayment.aggregate<{ _id: string; total: number; count: number }>([
+    MessPayment.aggregate<{ _id: null; rent: number; deposit: number; count: number }>([
       { $match: { ...filter, status: "active" } },
-      { $group: { _id: "$purpose", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      { $group: { _id: null, rent: { $sum: PAYMENT_RENT_PART }, deposit: { $sum: PAYMENT_DEPOSIT_PART }, count: { $sum: 1 } } },
     ]),
   ]);
   return {
@@ -184,8 +272,8 @@ export async function listPayments(req: Request) {
     meta: {
       ...buildMeta(page, limit, total),
       totals: {
-        rent: totals.find((t) => t._id === "rent")?.total ?? 0,
-        deposit: totals.find((t) => t._id === "deposit")?.total ?? 0,
+        rent: money(totals[0]?.rent ?? 0),
+        deposit: money(totals[0]?.deposit ?? 0),
       },
     },
   };
@@ -222,9 +310,10 @@ export async function cancelPayment(req: Request, id: string, reason: string): P
     if (await MessSettlement.exists({ membershipId: p.membershipId, status: { $in: ["approved", "completed"] } })) {
       throw ApiError.conflict("এই সদস্যের চূড়ান্ত নিষ্পত্তি অনুমোদিত/সম্পন্ন — পেমেন্ট বাতিল করা যাবে না");
     }
-    if (p.purpose === "deposit") {
+    const portion = paymentPortions(p);
+    if (portion.deposit > 0) {
       const b = await computeBalances(p.membershipId);
-      if (money(b.depositBalance - b.depositPendingRefund - p.amount) < 0) {
+      if (money(b.depositBalance - b.depositPendingRefund - portion.deposit) < 0) {
         throw ApiError.conflict("এই জামানতের অর্থ ইতিমধ্যে সমন্বয়/ফেরত হয়েছে — পেমেন্ট বাতিল করা যাবে না");
       }
     }

@@ -211,6 +211,8 @@ export interface SendSmsParams {
   eventType: SmsLogEventType;
   studentId?: string;
   staffId?: string;
+  /** Optional source reference written onto the SmsLog row (used by Mess SMS for history and duplicate prevention). */
+  ref?: { messId?: string; refType?: string; refId?: string; dedupeKey?: string };
 }
 
 export interface SendSmsResult {
@@ -232,6 +234,7 @@ async function writePendingLog(params: SendSmsParams, provider: SmsProviderName)
       provider,
       message: params.message,
       status: "pending",
+      ...(params.ref ?? {}),
     });
   } catch (err) {
     logger.error({ err }, "Failed to write pending SMS log");
@@ -266,6 +269,7 @@ async function finalizeLog(
         eventType: params.eventType,
         provider,
         message: params.message,
+        ...(params.ref ?? {}),
         ...fields,
       });
     }

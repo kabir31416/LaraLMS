@@ -14,6 +14,12 @@ import * as v from "./mess.validation";
  * Fixed-segment paths are always registered before their "/:id" siblings.
  */
 const router = Router();
+
+// Backend scheduler entry point for serverless hosting (Vercel Cron, see
+// backend/vercel.json). Authenticated by the CRON_SECRET bearer token, so it
+// is registered BEFORE requireAuth; it fails closed when CRON_SECRET is unset.
+router.get("/cron/monthly-billing", c.cronMonthlyBilling);
+
 router.use(requireAuth);
 
 const view = requirePermission(P.MESS_VIEW);
@@ -73,6 +79,9 @@ router.post("/memberships/:id/activate", approveMembers, validate(v.activateMemb
 router.post("/memberships/:id/status", membersManage, validate(v.changeStatusSchema), c.changeMembershipStatus);
 router.post("/memberships/:id/cancel", membersManage, validate(v.reasonSchema), c.cancelMembership);
 router.post("/memberships/:id/transfer", membersManage, validate(v.transferSchema), c.transferMembership);
+router.get("/memberships/:id/joining-date-preview", requirePermission(P.MESS_MEMBERS_EDIT_DATES), validate(v.joiningDatePreviewSchema), c.joiningDatePreview);
+router.post("/memberships/:id/joining-date", requirePermission(P.MESS_MEMBERS_EDIT_DATES), validate(v.joiningDateChangeSchema), c.changeJoiningDate);
+router.post("/memberships/:id/initial-charges", collect, validate(v.initialChargesSchema), c.applyInitialCharges);
 router.post("/memberships/:id/deposit-transactions", collect, validate(v.createDepositTxSchema), c.createDepositTransaction);
 router.get("/memberships/:id/settlement-preview", view, validate(v.settlementPreviewSchema), c.settlementPreview);
 router.post("/memberships/:id/settlements", requirePermission(P.MESS_MEMBERS_MANAGE, P.MESS_FINANCE_APPROVE), validate(v.createSettlementSchema), c.createSettlement);
@@ -131,7 +140,15 @@ router.get("/notices", view, validate(v.listQuerySchema), c.listNotices);
 router.post("/notices", noticesManage, validate(v.createNoticeSchema), c.createNotice);
 router.patch("/notices/:id", noticesManage, validate(v.updateNoticeSchema), c.updateNotice);
 
+// Mess SMS (delivery always through the shared SMS module; no keys here)
+router.post("/sms/test", requirePermission(P.MESS_SETTINGS_MANAGE), validate(v.testMessSmsSchema), c.testSms);
+router.post("/sms/due-reminders", requirePermission(P.MESS_PAYMENTS_COLLECT, P.MESS_BILLING_MANAGE), validate(v.dueReminderSchema), c.sendDueReminders);
+router.get("/sms/logs", requirePermission(P.MESS_REPORTS_READ, P.MESS_SETTINGS_MANAGE), validate(v.listQuerySchema), c.listSmsLogs);
+router.post("/sms/logs/:id/delivery", requirePermission(P.MESS_REPORTS_READ, P.MESS_SETTINGS_MANAGE), validate(v.idParamSchema), c.checkSmsDelivery);
+
 // Reports
+router.get("/reports/monthly-summary", reportsRead, validate(v.listQuerySchema), c.reportMonthlySummary);
+router.get("/reports/previous-due", reportsRead, validate(v.listQuerySchema), c.reportPreviousDue);
 router.get("/reports/occupancy", reportsRead, validate(v.listQuerySchema), c.reportOccupancy);
 router.get("/reports/joining-leaving", reportsRead, validate(v.listQuerySchema), c.reportJoiningLeaving);
 router.get("/reports/collection", reportsRead, validate(v.listQuerySchema), c.reportCollection);

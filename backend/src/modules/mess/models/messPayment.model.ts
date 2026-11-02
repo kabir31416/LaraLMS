@@ -25,6 +25,17 @@ export interface MessPaymentDoc extends Document {
   reference?: string; // bKash/Nagad trx id, bank slip no, ...
   note?: string;
   idempotencyKey?: string;
+  /**
+   * How this receipt splits between the dining-charge ledger and the
+   * advance/deposit. Always written for new payments; for older rows
+   * (pre-split) the purpose alone decides — see PAYMENT_PORTION in
+   * messLedger.service.ts.
+   */
+  allocation?: { rent: number; deposit: number };
+  /** "yyyy-mm" the payment was taken against (operator's choice; FIFO still settles the oldest due first). */
+  billingMonth?: string;
+  /** Dining-charge due immediately BEFORE this payment — receipt snapshot ("previous due"). */
+  dueBefore?: number;
   /** Balances immediately after this payment — receipt snapshot, never recomputed. */
   balanceAfter?: { due: number; advance: number; depositBalance: number };
   status: "active" | "cancelled";
@@ -53,6 +64,9 @@ const messPaymentSchema = new Schema<MessPaymentDoc>(
     reference: { type: String, trim: true },
     note: { type: String, trim: true },
     idempotencyKey: { type: String },
+    allocation: { rent: Number, deposit: Number },
+    billingMonth: { type: String },
+    dueBefore: { type: Number },
     balanceAfter: {
       due: Number,
       advance: Number,

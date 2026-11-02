@@ -8,7 +8,7 @@ import { PERMISSIONS } from "../../rbac/permissions";
 import { Student } from "../../students/student.model";
 import { Mess } from "../models/mess.model";
 import { MessSeat, MessSeatDoc } from "../models/messSeat.model";
-import { MessMembership, MessMembershipDoc } from "../models/messMembership.model";
+import { DateChangeEntry, MessMembership, MessMembershipDoc } from "../models/messMembership.model";
 import { MessReservation, MessReservationDoc } from "../models/messReservation.model";
 import { MessBill } from "../models/messBill.model";
 import { MessPayment } from "../models/messPayment.model";
@@ -16,7 +16,7 @@ import { MessDepositTransaction } from "../models/messDepositTransaction.model";
 import { MessSettlement } from "../models/messSettlement.model";
 import { assertMessAccess, hasPerm, messScopeFilter } from "../mess.scope";
 import { MembershipStatus, OCCUPYING_STATUS } from "../mess.constants";
-import { actorId, isDuplicateKeyError, statusFlags, todayISO, toObjectId } from "../mess.utils";
+import { actorId, isDuplicateKeyError, money, statusFlags, todayISO, toObjectId } from "../mess.utils";
 import { claimSeat, releaseSeat } from "./messSetup.service";
 import { getMessSettings } from "./messSettings.service";
 import { recomputeLedger } from "./messLedger.service";
@@ -110,9 +110,125 @@ export interface CreateMembershipInput {
   documents?: { label: string; url: string; publicId?: string }[];
   initialStatus?: "pending" | "approved" | "active";
   reservationId?: string;
+  /** Admission (active only): dining charge for the joining month. Omitted → computed from the proration rule. */
+  initialDiningCharge?: number;
+  /** Admission (active only): what the student pays now — one receipt for dining + advance/deposit. */
+  initialPayment?: InitialPaymentInput;
 }
 
-export async function createMembership(req: Request, input: CreateMembershipInput): Promise<MessMembershipDoc> {
+export interface InitialPaymentInput {
+  amount: number;
+  method: string;
+  date?: string;
+  reference?: string;
+  note?: string;
+  idempotencyKey?: string;
+}
+
+export interface InitialChargesSummary {
+  initialDiningCharge: number;
+  advanceDeposit: number;
+  totalInitialPayable: number;
+  amountPaid: number;
+  remainingDue: number;
+  billId?: string;
+  billNo?: string;
+  paymentId?: string;
+  receiptNo?: string;
+  allocation?: { rent: number; deposit: number };
+}
+
+/**
+ * Money taken at admission/activation needs the same permission as any other
+ * Mess payment, and a valid method — checked BEFORE anything is created so an
+ * invalid request never leaves a half-done admission behind.
+ */
+async function assertCanTakeInitialPayment(req: Request, payment?: InitialPaymentInput) {
+  if (!payment || !(payment.amount > 0)) return;
+  if (!hasPerm(req, PERMISSIONS.MESS_PAYMENTS_COLLECT)) throw ApiError.forbidden("পেমেন্ট গ্রহণের অনুমতি আপনার নেই — পরিশোধ ছাড়া ভর্তি করুন");
+  const { assertMessPaymentMethod } = await import("./messSettings.service");
+  await assertMessPaymentMethod(payment.method);
+}
+
+export function firstOfNextMonth(date: string): string {
+  const [y, m] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * Admission's initial charges (Initial Dining Charge + One-Month Advance /
+ * Security Deposit, never counted twice):
+ *  1. The joining month's bill is created with the Initial Dining Charge
+ *     (default from the proration rule). A 0 charge means the joining month
+ *     is free — billing then starts on the 1st of the next month so neither
+ *     the scheduler nor a manual run bills it later.
+ *  2. The advance/deposit is the membership's `securityDeposit` (held, never income).
+ *  3. Amount Paid → one receipt, applied to dining first, then the deposit.
+ */
+export async function applyInitialCharges(
+  req: Request,
+  membershipId: Types.ObjectId,
+  input: { initialDiningCharge?: number; payment?: InitialPaymentInput },
+): Promise<InitialChargesSummary> {
+  const { buildBillForMember, diningChargeForPeriod, effectiveProrationMode } = await import("./messBilling.service");
+  const settings = await getMessSettings();
+  const m = await MessMembership.findById(membershipId);
+  if (!m) throw ApiError.notFound("Membership not found");
+  const mess = await Mess.findById(m.messId).select("billingDay dueDay").lean();
+  const cfg = { billingDay: mess?.billingDay ?? settings.billingDay, dueDay: mess?.dueDay ?? settings.dueDay };
+  const period = m.joiningDate.slice(0, 7);
+  const ruleCharge = diningChargeForPeriod(m.monthlyRent, m.joiningDate, period, effectiveProrationMode(settings));
+  const dining = money(input.initialDiningCharge ?? ruleCharge?.amount ?? 0);
+  const summary: InitialChargesSummary = { initialDiningCharge: dining, advanceDeposit: money(m.securityDeposit), totalInitialPayable: money(dining + m.securityDeposit), amountPaid: 0, remainingDue: 0 };
+
+  if (dining > 0) {
+    const defaultDue = `${period}-${String(cfg.dueDay).padStart(2, "0")}`;
+    const outcome = await buildBillForMember(
+      { req, source: "admission" },
+      m,
+      { period, dueDate: defaultDue < m.joiningDate ? m.joiningDate : defaultDue, notes: "ভর্তির সময় প্রারম্ভিক ডাইনিং চার্জ" },
+      settings,
+      cfg,
+      { amount: dining, label: ruleCharge && ruleCharge.amount === dining ? ruleCharge.label : "প্রারম্ভিক ডাইনিং চার্জ (যোগদানের মাস)" },
+    );
+    if (outcome.kind === "failed" || outcome.kind === "skipped") throw ApiError.badRequest(outcome.reason);
+    const bill = await MessBill.findOne({ membershipId: m._id, periodKey: period }).select("_id billNo").lean();
+    summary.billId = bill ? String(bill._id) : undefined;
+    summary.billNo = bill?.billNo;
+  } else if (m.billingStartDate.slice(0, 7) === period) {
+    await MessMembership.updateOne({ _id: m._id }, { $set: { billingStartDate: firstOfNextMonth(m.joiningDate) } });
+  }
+  await MessMembership.updateOne({ _id: m._id }, { $set: { initialDiningCharge: dining } });
+
+  let due = (await recomputeLedger(m._id as Types.ObjectId)).due;
+  let depositRemaining = money(Math.max(0, m.securityDeposit));
+  if (input.payment && input.payment.amount > 0) {
+    const { recordInitialPayment } = await import("./messPayment.service");
+    const r = await recordInitialPayment(req, m._id as Types.ObjectId, input.payment);
+    await MessMembership.updateOne({ _id: m._id }, { $set: { initialPaymentId: r.payment._id } });
+    summary.amountPaid = r.payment.amount;
+    summary.paymentId = String(r.payment._id);
+    summary.receiptNo = r.payment.receiptNo;
+    summary.allocation = r.allocation;
+    due = r.due;
+    depositRemaining = r.depositRemaining;
+  }
+  summary.remainingDue = money(due + depositRemaining);
+  await recordAudit({ req, action: "mess.membership.initial-charges", module: "mess", targetCollection: "messmemberships", targetId: String(m._id), after: summary });
+  const { fmtTaka, queueMessEventSms } = await import("./messSms.service");
+  queueMessEventSms({
+    event: "admission",
+    studentId: m.studentId,
+    messId: m.messId,
+    vars: { amount: fmtTaka(summary.amountPaid), receiptNo: summary.receiptNo ?? "—", remainingDue: fmtTaka(summary.remainingDue), totalPayable: fmtTaka(summary.totalInitialPayable), paymentDate: input.payment?.date || todayISO(), paymentMethod: input.payment?.method ?? "" },
+    refType: "membership",
+    refId: String(m._id),
+    dedupeKey: `admission:${String(m._id)}`,
+  });
+  return summary;
+}
+
+export async function createMembership(req: Request, input: CreateMembershipInput): Promise<Record<string, unknown>> {
   const messId = toObjectId(input.messId, "messId");
   await assertMessAccess(req, messId);
   const mess = await Mess.findById(messId);
@@ -121,6 +237,7 @@ export async function createMembership(req: Request, input: CreateMembershipInpu
   const student = await getStudentOrThrow(input.studentId);
   const initialStatus = input.initialStatus ?? "pending";
   if (initialStatus !== "pending") assertCanApprove(req);
+  if (initialStatus === "active") await assertCanTakeInitialPayment(req, input.initialPayment);
   await assertDiscountAllowed(req, input.discount);
   await assertNoOpenMembership(student._id as Types.ObjectId);
 
@@ -162,7 +279,8 @@ export async function createMembership(req: Request, input: CreateMembershipInpu
     seatClaimed = true;
   }
 
-  const monthlyRent = input.monthlyRent ?? seat.monthlyRent ?? settings.defaultRent;
+  // Monthly dining charge: typed value → seat's charge → this Mess's default → global default.
+  const monthlyRent = input.monthlyRent ?? (seat.monthlyRent || mess.defaultDiningCharge || settings.defaultRent);
   let doc: MessMembershipDoc;
   try {
     doc = await MessMembership.create({
@@ -177,7 +295,7 @@ export async function createMembership(req: Request, input: CreateMembershipInpu
       expectedLeavingDate: input.expectedLeavingDate,
       monthlyRent,
       discount: input.discount ?? 0,
-      securityDeposit: input.securityDeposit ?? settings.defaultDeposit,
+      securityDeposit: input.securityDeposit ?? mess.defaultDeposit ?? settings.defaultDeposit,
       setupCharge: input.setupCharge ?? 0,
       billingStartDate: input.billingStartDate || joiningDate,
       emergencyContact: input.emergencyContact,
@@ -214,7 +332,20 @@ export async function createMembership(req: Request, input: CreateMembershipInpu
   }
   await recomputeLedger(doc._id as Types.ObjectId);
   await recordAudit({ req, action: "mess.membership.create", module: "mess", targetCollection: "messmemberships", targetId: String(doc._id), after: doc.toObject() });
-  return doc;
+
+  // An active admission takes its initial charges now; a pending/approved one takes them at activation.
+  let initial: InitialChargesSummary | undefined;
+  let initialError: string | undefined;
+  if (initialStatus === "active" && (input.initialDiningCharge !== undefined || input.initialPayment)) {
+    try {
+      initial = await applyInitialCharges(req, doc._id as Types.ObjectId, { initialDiningCharge: input.initialDiningCharge, payment: input.initialPayment });
+    } catch (err) {
+      // The membership (and seat) stand; the operator finishes billing/payment from the member's profile.
+      initialError = err instanceof Error ? err.message : "Initial charges failed";
+    }
+  }
+  const fresh = await MessMembership.findById(doc._id).lean();
+  return { ...fresh, initial, initialError };
 }
 
 // -------------------- Lifecycle transitions --------------------
@@ -273,10 +404,15 @@ export async function rejectMembership(req: Request, id: string, reason: string)
 }
 
 /** Approved (or Pending) → Active: the member moves in and billing can start. */
-export async function activateMembership(req: Request, id: string, body: { joiningDate?: string; billingStartDate?: string; note?: string }): Promise<MessMembershipDoc> {
+export async function activateMembership(
+  req: Request,
+  id: string,
+  body: { joiningDate?: string; billingStartDate?: string; note?: string; applyInitialCharges?: boolean; initialDiningCharge?: number; initialPayment?: InitialPaymentInput },
+): Promise<Record<string, unknown>> {
   assertCanApprove(req);
   const m = await getMembershipOrThrow(req, id);
   if (m.status !== "approved" && m.status !== "pending") throw ApiError.badRequest("শুধু অনুমোদিত/অপেক্ষমাণ সদস্যপদ সক্রিয় করা যায়");
+  if (body.applyInitialCharges) await assertCanTakeInitialPayment(req, body.initialPayment);
   const joiningDate = body.joiningDate || m.joiningDate;
   const mid = m._id as Types.ObjectId;
   if (m.status === "approved") {
@@ -296,7 +432,16 @@ export async function activateMembership(req: Request, id: string, body: { joini
       body.note,
       { seatHistory: { messId: m.messId, roomId: m.roomId, seatId: m.seatId, fromDate: joiningDate, monthlyRent: m.monthlyRent, reason: "সক্রিয়করণ", changedBy: actorId(req) } },
     );
-    return updated;
+    let initial: InitialChargesSummary | undefined;
+    let initialError: string | undefined;
+    if (body.applyInitialCharges) {
+      try {
+        initial = await applyInitialCharges(req, updated._id as Types.ObjectId, { initialDiningCharge: body.initialDiningCharge, payment: body.initialPayment });
+      } catch (err) {
+        initialError = err instanceof Error ? err.message : "Initial charges failed";
+      }
+    }
+    return { ...updated.toObject(), initial, initialError };
   } catch (err) {
     if (m.status === "pending") await releaseSeat(m.seatId, { membershipId: mid });
     else await MessSeat.updateOne({ _id: m.seatId, currentMembershipId: mid }, { $set: { status: "reserved" } });
@@ -608,4 +753,202 @@ export async function getReservationOrThrow(req: Request, id: string): Promise<M
   if (!r) throw ApiError.notFound("Reservation not found");
   await assertMessAccess(req, r.messId);
   return r;
+}
+
+// -------------------- Joining-date correction --------------------
+
+export interface JoiningDateBillImpact {
+  billId?: string;
+  billNo?: string;
+  period: string;
+  oldAmount: number;
+  newAmount: number;
+  paid: number;
+  action: "cancelled" | "regenerated" | "created" | "unchanged";
+}
+
+export function monthsBetween(fromPeriod: string, toPeriod: string): string[] {
+  const out: string[] = [];
+  let [y, m] = fromPeriod.split("-").map(Number);
+  const [ty, tm] = toPeriod.split("-").map(Number);
+  while (y < ty || (y === ty && m <= tm)) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
+}
+
+/** The billing start date that goes with a new joining date. A free joining month (initial charge 0) stays free under the new date. */
+export function billingStartFor(m: Pick<MessMembershipDoc, "initialDiningCharge" | "billingStartDate" | "joiningDate">, newJoining: string): string {
+  if (m.initialDiningCharge === 0 && m.billingStartDate > m.joiningDate) return firstOfNextMonth(newJoining);
+  if (m.billingStartDate <= m.joiningDate || m.billingStartDate < newJoining) return newJoining;
+  return m.billingStartDate;
+}
+
+async function joiningDateImpact(m: MessMembershipDoc, newJoining: string) {
+  const { diningChargeForPeriod, effectiveProrationMode } = await import("./messBilling.service");
+  const settings = await getMessSettings();
+  const mode = effectiveProrationMode(settings);
+  const newStart = billingStartFor(m, newJoining);
+  const oldMonth = m.joiningDate.slice(0, 7);
+  const newMonth = newJoining.slice(0, 7);
+  const lastAffected = oldMonth > newMonth ? oldMonth : newMonth;
+  const bills = await MessBill.find({ membershipId: m._id, status: { $ne: "cancelled" }, period: { $lte: lastAffected } }).sort({ period: 1 }).lean();
+  const impacts: JoiningDateBillImpact[] = [];
+  for (const b of bills) {
+    const oldDining = money(b.items.filter((i) => i.kind === "rent").reduce((s, i) => s + i.amount, 0));
+    const rule = b.period < newStart.slice(0, 7) ? null : diningChargeForPeriod(m.monthlyRent, newStart, b.period, mode);
+    if (!rule) {
+      impacts.push({ billId: String(b._id), billNo: b.billNo, period: b.period, oldAmount: b.currentCharges, newAmount: 0, paid: b.paidAmount, action: "cancelled" });
+    } else if (rule.amount === oldDining) {
+      impacts.push({ billId: String(b._id), billNo: b.billNo, period: b.period, oldAmount: b.currentCharges, newAmount: b.currentCharges, paid: b.paidAmount, action: "unchanged" });
+    } else {
+      impacts.push({ billId: String(b._id), billNo: b.billNo, period: b.period, oldAmount: b.currentCharges, newAmount: money(b.currentCharges - oldDining + rule.amount), paid: b.paidAmount, action: "regenerated" });
+    }
+  }
+  // Moving the date EARLIER can leave already-passed months with no bill — listed, never billed silently.
+  const current = todayISO().slice(0, 7);
+  if (newMonth < oldMonth) {
+    const billed = new Set(bills.map((b) => b.period));
+    const lastMissing = oldMonth < current ? oldMonth : current;
+    for (const period of monthsBetween(newMonth, lastMissing)) {
+      if (billed.has(period) || period < newStart.slice(0, 7)) continue;
+      const rule = diningChargeForPeriod(m.monthlyRent, newStart, period, mode);
+      if (rule && rule.amount > 0) impacts.push({ period, oldAmount: 0, newAmount: rule.amount, paid: 0, action: "created" });
+    }
+  }
+  impacts.sort((a, b) => a.period.localeCompare(b.period));
+  const netChange = money(impacts.reduce((s, i) => s + (i.action === "unchanged" ? 0 : i.newAmount - i.oldAmount), 0));
+  return { newStart, mode, impacts, netChange, bills };
+}
+
+async function assertJoiningDateEditable(m: MessMembershipDoc, newJoining: string) {
+  if (m.status === "cancelled" || m.status === "left") throw ApiError.badRequest("চেক-আউট/বাতিল সদস্যপদের যোগদানের তারিখ পরিবর্তন করা যাবে না");
+  if (newJoining === m.joiningDate) throw ApiError.badRequest("নতুন তারিখ বর্তমান যোগদানের তারিখের মতোই");
+  if (m.leftDate && newJoining > m.leftDate) throw ApiError.badRequest("যোগদানের তারিখ ছাড়ার তারিখের পরে হতে পারে না");
+  if (await MessSettlement.exists({ membershipId: m._id, status: { $in: ["approved", "completed"] } })) {
+    throw ApiError.conflict("চূড়ান্ত নিষ্পত্তি অনুমোদিত/সম্পন্ন — যোগদানের তারিখ পরিবর্তন করা যাবে না");
+  }
+}
+
+/** What changing the joining date would do to bills — read-only; nothing is written. */
+export async function previewJoiningDateChange(req: Request, id: string, joiningDate: string) {
+  const m = await getMembershipOrThrow(req, id);
+  await assertJoiningDateEditable(m, joiningDate);
+  const { newStart, mode, impacts, netChange } = await joiningDateImpact(m, joiningDate);
+  return {
+    membershipNo: m.membershipNo,
+    from: m.joiningDate,
+    to: joiningDate,
+    billingStartFrom: m.billingStartDate,
+    billingStartTo: newStart,
+    prorationMode: mode,
+    monthlyRent: m.monthlyRent,
+    impacts,
+    changedBills: impacts.filter((i) => i.action !== "unchanged").length,
+    netChange,
+  };
+}
+
+/**
+ * Changes the joining date. Bills are only touched when the operator opts in
+ * (`applyBillChanges`) after seeing the preview: affected bills are
+ * cancelled (with the reason) and re-issued under the new date, and missing
+ * months are billed. Payments are never edited — the ledger re-allocates
+ * them. Either way the change, its reason and every bill effect are kept in
+ * the membership's dateHistory (the adjustment record) and the AuditLog.
+ */
+export async function changeJoiningDate(req: Request, id: string, body: { joiningDate: string; reason: string; applyBillChanges?: boolean }) {
+  const m = await getMembershipOrThrow(req, id);
+  await assertJoiningDateEditable(m, body.joiningDate);
+  const { newStart, impacts, bills } = await joiningDateImpact(m, body.joiningDate);
+  const before = { joiningDate: m.joiningDate, billingStartDate: m.billingStartDate };
+
+  const history = m.seatHistory.map((h) => (h as unknown as { toObject?: () => object }).toObject?.() ?? h) as MessMembershipDoc["seatHistory"];
+  if (history.length && history[0].fromDate === m.joiningDate) history[0].fromDate = body.joiningDate;
+  const updated = await MessMembership.findOneAndUpdate(
+    { _id: m._id, joiningDate: m.joiningDate },
+    { $set: { joiningDate: body.joiningDate, billingStartDate: newStart, seatHistory: history } },
+    { new: true },
+  );
+  if (!updated) throw ApiError.conflict("সদস্যপদ ইতিমধ্যে পরিবর্তিত হয়েছে — পেজ রিফ্রেশ করে আবার চেষ্টা করুন");
+
+  const results: DateChangeBill[] = [];
+  if (body.applyBillChanges) {
+    const billing = await import("./messBilling.service");
+    const settings = await getMessSettings();
+    const mess = await Mess.findById(updated.messId).select("billingDay dueDay").lean();
+    const cfg = { billingDay: mess?.billingDay ?? settings.billingDay, dueDay: mess?.dueDay ?? settings.dueDay };
+    const reason = `যোগদানের তারিখ সংশোধন: ${before.joiningDate} → ${body.joiningDate} (${body.reason})`;
+    const mode = billing.effectiveProrationMode(settings);
+    for (const impact of impacts) {
+      if (impact.action === "unchanged") {
+        results.push({ period: impact.period, billNo: impact.billNo, oldAmount: impact.oldAmount, newAmount: impact.newAmount, action: "unchanged" });
+        continue;
+      }
+      const old = impact.billId ? bills.find((b) => String(b._id) === impact.billId) : undefined;
+      if (old) {
+        const doc = await MessBill.findById(old._id);
+        if (doc && doc.status !== "cancelled") await billing.cancelBillDoc(req, doc, reason);
+      }
+      if (impact.action === "cancelled") {
+        results.push({ period: impact.period, billNo: impact.billNo, oldAmount: impact.oldAmount, newAmount: 0, action: "cancelled" });
+        continue;
+      }
+      const fresh = (await MessMembership.findById(updated._id))!;
+      const rule = billing.diningChargeForPeriod(fresh.monthlyRent, newStart, impact.period, mode);
+      const outcome = await billing.buildBillForMember(
+        { req, source: "regenerate" },
+        fresh,
+        {
+          period: impact.period,
+          additionalCharges: (old?.items ?? []).filter((i) => i.kind === "additional").map((i) => ({ label: i.label, amount: i.amount })),
+          extraDiscount: old ? Math.max(0, money(old.discount - fresh.discount)) : undefined,
+          dueDate: old?.dueDate,
+          notes: reason,
+        },
+        settings,
+        cfg,
+        rule ?? undefined,
+      );
+      const created = outcome.kind === "created" ? await MessBill.findById(outcome.billId).select("billNo currentCharges").lean() : null;
+      results.push({ period: impact.period, billNo: created?.billNo ?? impact.billNo, oldAmount: impact.oldAmount, newAmount: created?.currentCharges ?? 0, action: impact.action === "created" ? "created" : "regenerated" });
+    }
+  } else {
+    for (const impact of impacts) results.push({ period: impact.period, billNo: impact.billNo, oldAmount: impact.oldAmount, newAmount: impact.oldAmount, action: impact.action === "unchanged" ? "unchanged" : "kept" });
+  }
+
+  await MessMembership.updateOne(
+    { _id: updated._id },
+    { $push: { dateHistory: { field: "joiningDate", from: before.joiningDate, to: body.joiningDate, reason: body.reason, at: new Date(), by: actorId(req), bills: results } } },
+  );
+  await recomputeLedger(updated._id as Types.ObjectId);
+  await recordAudit({
+    req,
+    action: "mess.membership.joining-date",
+    module: "mess",
+    targetCollection: "messmemberships",
+    targetId: id,
+    before,
+    after: { joiningDate: body.joiningDate, billingStartDate: newStart, reason: body.reason, applyBillChanges: !!body.applyBillChanges, bills: results },
+  });
+  return { membershipId: id, from: before.joiningDate, to: body.joiningDate, billingStartDate: newStart, bills: results };
+}
+
+type DateChangeBill = DateChangeEntry["bills"][number];
+
+/** Initial charges for an active member who has none yet (e.g. admitted before this feature, or the admission's payment step failed). */
+export async function applyInitialChargesForMember(req: Request, id: string, body: { initialDiningCharge?: number; initialPayment?: InitialPaymentInput }) {
+  const m = await getMembershipOrThrow(req, id);
+  if (!["active", "on_leave", "notice_given"].includes(m.status)) throw ApiError.badRequest("শুধু সক্রিয় সদস্যের প্রারম্ভিক চার্জ নেওয়া যায়");
+  if (m.initialDiningCharge !== undefined && m.initialDiningCharge !== null) throw ApiError.conflict("এই সদস্যের প্রারম্ভিক চার্জ ইতিমধ্যে নেওয়া হয়েছে");
+  await assertCanTakeInitialPayment(req, body.initialPayment);
+  if (await MessBill.exists({ membershipId: m._id, periodKey: m.joiningDate.slice(0, 7) })) {
+    throw ApiError.conflict("যোগদানের মাসের বিল ইতিমধ্যে আছে — বিলিং/পেমেন্ট পেজ থেকে পেমেন্ট নিন");
+  }
+  return applyInitialCharges(req, m._id as Types.ObjectId, { initialDiningCharge: body.initialDiningCharge, payment: body.initialPayment });
 }
