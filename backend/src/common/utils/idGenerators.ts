@@ -87,6 +87,23 @@ export async function generateReceiptNumber(): Promise<string> {
   return `${prefix}-${String(seq).padStart(padding, "0")}`;
 }
 
+/**
+ * Generic "PREFIX-YYYY-0001" code for modules that need their own
+ * human-facing sequence (Mess codes, Mess bill/receipt numbers, ...). Built
+ * on the same atomic Counter as every other generated id here, so two
+ * concurrent callers can never receive the same number. `yearly` scopes the
+ * sequence (and the code) to the current calendar year.
+ */
+export async function generateSequenceCode(counterKey: string, prefix: string, padding = 4, yearly = false): Promise<string> {
+  if (yearly) {
+    const year = new Date().getFullYear();
+    const seq = await nextSeq(`${counterKey}_${year}`);
+    return `${prefix}-${year}-${String(seq).padStart(padding, "0")}`;
+  }
+  const seq = await nextSeq(counterKey);
+  return `${prefix}-${String(seq).padStart(padding, "0")}`;
+}
+
 /** BK-0007 style. */
 export async function generateBookCode(): Promise<string> {
   const seq = await nextSeq("book_code");

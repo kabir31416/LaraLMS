@@ -1,6 +1,8 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { ADMISSION_RESULTS_MANAGE, REPORTS_READ } from "@/lib/permissions";
+import { hasPermission, useAuth } from "@/contexts/AuthContext";
+import { ADMISSION_RESULTS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ } from "@/lib/permissions";
+import { MessScopeProvider } from "@/components/mess/MessShell";
 import Login from "./pages/Login";
 import PublicInfo from "./pages/PublicInfo";
 import PublicStudentSearch from "./pages/PublicStudentSearch";
@@ -49,6 +51,29 @@ import StudentPayments from "./pages/student/StudentPayments";
 import StudentBooks from "./pages/student/StudentBooks";
 import StudentVideos from "./pages/student/StudentVideos";
 import StudentNotices from "./pages/student/StudentNotices";
+import StudentMess from "./pages/student/StudentMess";
+
+// Mess / Hostel Management (Admin + Mess staff portal)
+import MessDashboard from "./pages/mess/MessDashboard";
+import MessSetup from "./pages/mess/MessSetup";
+import MessMembers from "./pages/mess/MessMembers";
+import MessMemberProfile from "./pages/mess/MessMemberProfile";
+import MessBilling from "./pages/mess/MessBilling";
+import MessPayments from "./pages/mess/MessPayments";
+import MessDeposits from "./pages/mess/MessDeposits";
+import MessExpenses from "./pages/mess/MessExpenses";
+import MessComplaints from "./pages/mess/MessComplaints";
+import MessNotices from "./pages/mess/MessNotices";
+import MessReports from "./pages/mess/MessReports";
+import MessSettingsPage from "./pages/mess/MessSettingsPage";
+import { MessInvoicePage, MessReceiptPage, MessSettlementPrintPage } from "./pages/mess/MessPrint";
+
+/** Passes when the user holds ANY of the keys (ProtectedRoute's `permission` checks just one). */
+function AnyPermission({ perms, children }: { perms: string[]; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!perms.some((p) => hasPermission(user, p))) return <Navigate to="/mess" replace />;
+  return <>{children}</>;
+}
 
 export function AppRoutes() {
   return (
@@ -95,6 +120,27 @@ export function AppRoutes() {
         <Route path="/reports" element={<Reports />} />
       </Route>
 
+      {/* Mess / Hostel Management — Admin and Mess staff portal logins. The
+          route-level permission only stops the page rendering for a caller
+          the API would reject anyway; every endpoint (and Mess-level scope)
+          is enforced server-side. */}
+      <Route element={<ProtectedRoute roles={["Admin", "Mess Staff"]} permission={MESS_VIEW}><MessScopeProvider><Outlet /></MessScopeProvider></ProtectedRoute>}>
+        <Route path="/mess" element={<MessDashboard />} />
+        <Route path="/mess/setup" element={<MessSetup />} />
+        <Route path="/mess/members" element={<MessMembers />} />
+        <Route path="/mess/members/:id" element={<MessMemberProfile />} />
+        <Route path="/mess/billing" element={<MessBilling />} />
+        <Route path="/mess/payments" element={<MessPayments />} />
+        <Route path="/mess/deposits" element={<MessDeposits />} />
+        <Route path="/mess/reports" element={<ProtectedRoute permission={MESS_REPORTS_READ}><MessReports /></ProtectedRoute>} />
+      </Route>
+      <Route element={<ProtectedRoute roles={["Admin", "Mess Staff"]}><MessScopeProvider><Outlet /></MessScopeProvider></ProtectedRoute>}>
+        <Route path="/mess/expenses" element={<AnyPermission perms={[MESS_EXPENSES_MANAGE, MESS_EXPENSES_APPROVE]}><MessExpenses /></AnyPermission>} />
+        <Route path="/mess/complaints" element={<AnyPermission perms={[MESS_COMPLAINTS_MANAGE]}><MessComplaints /></AnyPermission>} />
+        <Route path="/mess/notices" element={<AnyPermission perms={[MESS_NOTICES_MANAGE]}><MessNotices /></AnyPermission>} />
+        <Route path="/mess/settings" element={<AnyPermission perms={[MESS_SETTINGS_MANAGE]}><MessSettingsPage /></AnyPermission>} />
+      </Route>
+
       {/* Admin or Director can view a student's full profile */}
       <Route
         path="/students/:id"
@@ -111,6 +157,10 @@ export function AppRoutes() {
             Admin (Fee Management) and a Student viewing their own payment
             (backend enforces the ownership check either way). */}
         <Route path="/payments/:paymentId/receipt" element={<PaymentReceipt />} />
+        {/* Mess print documents — staff (within their Mess scope) or the student who owns them; the backend enforces which. */}
+        <Route path="/mess/payments/:id/receipt" element={<MessReceiptPage />} />
+        <Route path="/mess/bills/:id/invoice" element={<MessInvoicePage />} />
+        <Route path="/mess/settlements/:id/print" element={<MessSettlementPrintPage />} />
       </Route>
 
       {/* Director */}
@@ -135,6 +185,7 @@ export function AppRoutes() {
         <Route path="/student/books" element={<StudentBooks />} />
         <Route path="/student/notices" element={<StudentNotices />} />
         <Route path="/student/videos" element={<StudentVideos />} />
+        <Route path="/student/mess" element={<StudentMess />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

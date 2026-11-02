@@ -13,6 +13,7 @@ interface Props {
 export function homeRouteFor(role: Role): string {
   if (role === "Batch Director") return "/director";
   if (role === "Student") return "/student";
+  if (role === "Mess Staff") return "/mess";
   return "/";
 }
 

@@ -24,3 +24,18 @@ export const photoUpload = multer({
     cb(null, true);
   },
 });
+
+/** Mess Management attachments — an image or a PDF invoice, max 5MB. */
+const ATTACHMENT_EXTENSIONS = [...IMAGE_EXTENSIONS, ".pdf"];
+const ATTACHMENT_MIMETYPES = [...IMAGE_MIMETYPES, "application/pdf"];
+
+export const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf("."));
+    const ok = ATTACHMENT_EXTENSIONS.includes(ext) && ATTACHMENT_MIMETYPES.includes(file.mimetype);
+    if (!ok) return cb(new ApiError(400, "BAD_REQUEST", "শুধুমাত্র JPG, PNG, WEBP ছবি বা PDF ফাইল আপলোড করা যাবে (সর্বোচ্চ ৫MB)।"));
+    cb(null, true);
+  },
+});

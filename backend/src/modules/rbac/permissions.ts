@@ -99,6 +99,29 @@ export const PERMISSIONS = {
   // Admission Result matching (PDF import, Chance Students, institute/batch analysis)
   ADMISSION_RESULTS_MANAGE: "admission-results:manage",
   ADMISSION_RESULTS_READ_OWN_BATCH: "admission-results:read:own-batch",
+
+  // Mess / Hostel Management. Scope ("which Mess") is applied separately in
+  // mess.scope.ts: a holder of MESS_ALL_ACCESS (or "*") sees every Mess, while
+  // everyone else only sees the Messes they're assigned to as staff
+  // (Mess.staff[].staffId), the same split Batch Directors already use.
+  MESS_VIEW: "mess:view",
+  MESS_MANAGE: "mess:manage",
+  MESS_ALL_ACCESS: "mess:all-access",
+  MESS_MEMBERS_MANAGE: "mess:members:manage",
+  MESS_MEMBERS_APPROVE: "mess:members:approve",
+  MESS_BILLING_MANAGE: "mess:billing:manage",
+  MESS_PAYMENTS_COLLECT: "mess:payments:collect",
+  MESS_PAYMENTS_CANCEL: "mess:payments:cancel",
+  /** Approvals with money attached: discounts/adjustments (when required by Mess Settings), deposit refunds, payment verification, final settlements. */
+  MESS_FINANCE_APPROVE: "mess:finance:approve",
+  MESS_EXPENSES_MANAGE: "mess:expenses:manage",
+  MESS_EXPENSES_APPROVE: "mess:expenses:approve",
+  MESS_COMPLAINTS_MANAGE: "mess:complaints:manage",
+  MESS_NOTICES_MANAGE: "mess:notices:manage",
+  MESS_REPORTS_READ: "mess:reports:read",
+  MESS_SETTINGS_MANAGE: "mess:settings:manage",
+  /** Student Portal — a student's own Mess membership, bills, payments, deposit, notices and complaints only. */
+  MESS_READ_OWN: "mess:read:own",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -106,7 +129,9 @@ export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export const ALL_PERMISSION_KEYS: string[] = Object.values(PERMISSIONS);
 
 /** Seeded on first run (scripts/seed.ts) — matches the Phase 1 §8/§19 role matrix. */
-export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "student", string[]> = {
+export type DefaultRoleName = "admin" | "batch_director" | "student" | "mess_manager" | "mess_accountant" | "mess_caretaker";
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<DefaultRoleName, string[]> = {
   admin: ["*"],
   batch_director: [
     PERMISSIONS.STUDENTS_READ_OWN_BATCH,
@@ -132,5 +157,32 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<"admin" | "batch_director" | "stud
     PERMISSIONS.VIDEOS_READ,
     PERMISSIONS.NOTICES_READ,
     PERMISSIONS.MATERIALS_READ_OWN,
+    PERMISSIONS.MESS_READ_OWN,
+  ],
+  // Mess staff portal roles (phone + Staff ID login, same as Batch Director).
+  // None of them holds MESS_ALL_ACCESS, so every one is limited to the Messes
+  // they're assigned to. Settings, deleting/cancelling money, and financial
+  // approvals stay with Admin.
+  mess_manager: [
+    PERMISSIONS.MESS_VIEW,
+    PERMISSIONS.MESS_MEMBERS_MANAGE,
+    PERMISSIONS.MESS_MEMBERS_APPROVE,
+    PERMISSIONS.MESS_BILLING_MANAGE,
+    PERMISSIONS.MESS_PAYMENTS_COLLECT,
+    PERMISSIONS.MESS_EXPENSES_MANAGE,
+    PERMISSIONS.MESS_COMPLAINTS_MANAGE,
+    PERMISSIONS.MESS_NOTICES_MANAGE,
+    PERMISSIONS.MESS_REPORTS_READ,
+  ],
+  mess_accountant: [
+    PERMISSIONS.MESS_VIEW,
+    PERMISSIONS.MESS_BILLING_MANAGE,
+    PERMISSIONS.MESS_PAYMENTS_COLLECT,
+    PERMISSIONS.MESS_EXPENSES_MANAGE,
+    PERMISSIONS.MESS_REPORTS_READ,
+  ],
+  mess_caretaker: [
+    PERMISSIONS.MESS_VIEW,
+    PERMISSIONS.MESS_COMPLAINTS_MANAGE,
   ],
 };

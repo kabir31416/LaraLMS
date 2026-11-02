@@ -29,6 +29,8 @@ LaraLMS ships with **three** built-in roles. 🔵 **Requires Verification**: Tea
 | User/Staff account management | ✓ (Admin accounts: Super Admin only — see §4.3) | — | — |
 | Change own password | ✓ | ✓ | *(N/A — Batch Director/Student portals don't use passwords; see Document 01 §1.5)* |
 
+> **Mess / Hostel Management roles.** Three additional Staff types — *Mess Manager*, *Mess Accountant*, *Mess Caretaker* — log in through the Staff Portal (phone + Staff ID) with a fixed Mess permission set each, limited to the Messes they're assigned to; Students additionally get read access to their own Mess data. The full Mess permission matrix is in Document 10 §10.7. Admin's per-module picker gained a **মেস / হোস্টেল** toggle.
+
 > **Custom roles.** The backend can technically store additional roles with any custom permission combination, but there is currently no screen to create one — see Document 02, §2.2.
 
 ## 4.2 The Admission Result Permission, In Detail

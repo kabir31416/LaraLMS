@@ -58,6 +58,35 @@ export async function uploadStudentPhoto(buffer: Buffer, publicIdSeed: string): 
   });
 }
 
+const MESS_ATTACHMENT_FOLDER = "laralms/mess";
+
+/**
+ * Mess Management attachments (expense invoices, complaint photos, member
+ * documents) — same server-side-only signed upload as student photos, so the
+ * Cloudinary secret never reaches the browser. `resource_type: "auto"` lets a
+ * PDF invoice through as well as an image; nothing is resized.
+ */
+export async function uploadMessAttachment(buffer: Buffer, publicIdSeed: string): Promise<UploadedPhoto & { resourceType: string }> {
+  if (!isCloudinaryConfigured) {
+    throw ApiError.internal("File storage is not configured — contact the site administrator");
+  }
+  const safeSeed = publicIdSeed.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const publicId = `${safeSeed}_${Date.now()}`;
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: MESS_ATTACHMENT_FOLDER, public_id: publicId, overwrite: false, resource_type: "auto" },
+      (error, result) => {
+        if (error || !result) {
+          reject(ApiError.internal("File upload to storage failed"));
+          return;
+        }
+        resolve({ url: result.secure_url, publicId: result.public_id, resourceType: result.resource_type });
+      },
+    );
+    stream.end(buffer);
+  });
+}
+
 /**
  * Best-effort delete of a previous photo — called only after the new photo
  * has already been uploaded and saved (Student Photo Management §2's

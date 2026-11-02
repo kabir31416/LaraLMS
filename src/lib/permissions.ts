@@ -43,6 +43,24 @@ export const PUBLIC_RESULTS_MANAGE = "public-results:manage";
 export const PAYMENT_METHODS_MANAGE = "payment-methods:manage";
 export const SMS_MANAGE = "sms:manage";
 
+// Mess / Hostel Management (backend/src/modules/rbac/permissions.ts)
+export const MESS_VIEW = "mess:view";
+export const MESS_MANAGE = "mess:manage";
+export const MESS_ALL_ACCESS = "mess:all-access";
+export const MESS_MEMBERS_MANAGE = "mess:members:manage";
+export const MESS_MEMBERS_APPROVE = "mess:members:approve";
+export const MESS_BILLING_MANAGE = "mess:billing:manage";
+export const MESS_PAYMENTS_COLLECT = "mess:payments:collect";
+export const MESS_PAYMENTS_CANCEL = "mess:payments:cancel";
+export const MESS_FINANCE_APPROVE = "mess:finance:approve";
+export const MESS_EXPENSES_MANAGE = "mess:expenses:manage";
+export const MESS_EXPENSES_APPROVE = "mess:expenses:approve";
+export const MESS_COMPLAINTS_MANAGE = "mess:complaints:manage";
+export const MESS_NOTICES_MANAGE = "mess:notices:manage";
+export const MESS_REPORTS_READ = "mess:reports:read";
+export const MESS_SETTINGS_MANAGE = "mess:settings:manage";
+export const MESS_READ_OWN = "mess:read:own";
+
 export interface SidebarModule {
   /** Stable key — used as the React key and as the StaffForm checkbox id, never shown to the user. */
   key: string;
@@ -102,4 +120,16 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
   },
   { key: "accounts", label: "হিসাব", permissions: [ACCOUNTS_MANAGE, BRANCH_LEDGER_MANAGE], urls: ["/accounts"] },
   { key: "settings", label: "সেটিংস", permissions: [SETTINGS_MANAGE, PUBLIC_INFO_MANAGE, PUBLIC_RESULTS_MANAGE, PAYMENT_METHODS_MANAGE, SMS_MANAGE], urls: ["/settings"] },
+  // Only MESS_VIEW gates the nav item itself (every page inside /mess checks
+  // its own finer permission); denying the module denies every Mess key.
+  {
+    key: "mess",
+    label: "মেস / হোস্টেল",
+    permissions: [
+      MESS_VIEW, MESS_MANAGE, MESS_ALL_ACCESS, MESS_MEMBERS_MANAGE, MESS_MEMBERS_APPROVE, MESS_BILLING_MANAGE,
+      MESS_PAYMENTS_COLLECT, MESS_PAYMENTS_CANCEL, MESS_FINANCE_APPROVE, MESS_EXPENSES_MANAGE, MESS_EXPENSES_APPROVE,
+      MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE,
+    ],
+    urls: ["/mess"],
+  },
 ];

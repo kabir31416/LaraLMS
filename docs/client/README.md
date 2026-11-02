@@ -22,8 +22,12 @@ Every feature described in these documents was verified directly in the LaraLMS 
 6. [Known Limitations](06-known-limitations.md) — everything partial, not included, or needing verification, in one place.
 7. [Technical Handover](07-technical-handover.md) — architecture, environment variables, build/deploy notes for whoever operates this system next.
 8. [Client Handover Checklist](08-client-handover-checklist.md) — the concrete steps to complete before go-live.
+9. [Subject / Course Architecture](09-subject-course-architecture.md).
+10. [Mess / Hostel Management](10-mess-management.md) — Mess setup, rooms/seats, student membership, billing, payments, deposit & settlement, expenses, complaints, notices, Student Portal, reports, settings, roles, limitations and verification status.
 
 ## Changelog
+
+- **v1.2** — Added **Mess / Hostel Management** (Document 10): multi-Mess setup, rooms and seats, membership lifecycle for existing students, reservations, idempotent monthly billing, Mess payments kept separate from Course Fee collections, security deposit and final settlement, Mess expenses, complaints/maintenance, Mess notices, a Student Portal Mess page, Mess reports and Mess Settings. New Mess staff types (Mess Manager / Accountant / Caretaker) log in through the existing Staff Portal and see only their assigned Mess. Meal Management is **not** included. 🔵 Database-backed flows still require live verification on a test database (Document 10 §10.13).
 
 - **v1.1** — Added: self-service **Change Password** (Topbar user menu) and a forced password-change screen shown when the backend flags an account as `mustChangePassword` (previously this flag existed but nothing in the app acted on it — the default seeded Super Admin password could not be rotated through the UI). See §3.5 and §8.
 - **v1.0** — Initial handover package.

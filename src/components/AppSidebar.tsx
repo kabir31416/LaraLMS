@@ -19,6 +19,13 @@ import {
   User,
   ListChecks,
   FileSpreadsheet,
+  BedDouble,
+  Building2,
+  Receipt,
+  Coins,
+  ShieldCheck,
+  HandCoins,
+  Wrench,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -34,7 +41,10 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import { SIDEBAR_MODULES } from "@/lib/permissions";
+import {
+  MESS_BILLING_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_EXPENSES_MANAGE, MESS_MEMBERS_MANAGE, MESS_NOTICES_MANAGE,
+  MESS_PAYMENTS_COLLECT, MESS_REPORTS_READ, MESS_VIEW, SIDEBAR_MODULES,
+} from "@/lib/permissions";
 
 const adminMenu = [
   { title: "ড্যাশবোর্ড", url: "/", icon: LayoutDashboard },
@@ -54,6 +64,8 @@ const adminMenu = [
   { title: "ব্যাচ", url: "/batches", icon: Layers },
   { title: "ম্যাটেরিয়াল", url: "/books", icon: BookOpen },
   { title: "হিসাব", url: "/accounts", icon: Calculator },
+  // One entry for the whole Mess module — its pages have their own section tabs (MessShell.tsx).
+  { title: "মেস / হোস্টেল", url: "/mess", icon: BedDouble },
   { title: "সেটিংস", url: "/settings", icon: Settings },
 ];
 
@@ -73,6 +85,20 @@ const directorMenu = [
   { title: "ভিডিও ক্লাস", url: "/videos", icon: Video },
 ];
 
+/** Mess staff portal (Mess Manager / Accountant / Caretaker) — each item still filtered by the login's own permissions below. */
+const messStaffMenu = [
+  { title: "মেস ড্যাশবোর্ড", url: "/mess", icon: LayoutDashboard, permission: MESS_VIEW },
+  { title: "রুম ও সিট", url: "/mess/setup", icon: Building2, permission: MESS_VIEW },
+  { title: "সদস্য ও ভর্তি", url: "/mess/members", icon: Users, permission: MESS_MEMBERS_MANAGE },
+  { title: "বিলিং", url: "/mess/billing", icon: Receipt, permission: MESS_BILLING_MANAGE },
+  { title: "পেমেন্ট", url: "/mess/payments", icon: Coins, permission: MESS_PAYMENTS_COLLECT },
+  { title: "জামানত ও নিষ্পত্তি", url: "/mess/deposits", icon: ShieldCheck, permission: MESS_PAYMENTS_COLLECT },
+  { title: "খরচ", url: "/mess/expenses", icon: HandCoins, permission: MESS_EXPENSES_MANAGE },
+  { title: "অভিযোগ ও রক্ষণাবেক্ষণ", url: "/mess/complaints", icon: Wrench, permission: MESS_COMPLAINTS_MANAGE },
+  { title: "নোটিশ", url: "/mess/notices", icon: Bell, permission: MESS_NOTICES_MANAGE },
+  { title: "রিপোর্ট", url: "/mess/reports", icon: ReportIcon, permission: MESS_REPORTS_READ },
+];
+
 const studentMenu = [
   { title: "ড্যাশবোর্ড", url: "/student", icon: LayoutDashboard },
   { title: "প্রোফাইল", url: "/student/profile", icon: User },
@@ -82,6 +108,7 @@ const studentMenu = [
   { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen },
   { title: "নোটিশ", url: "/student/notices", icon: Bell },
   { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video },
+  { title: "মেস / হোস্টেল", url: "/student/mess", icon: BedDouble },
 ];
 
 export function AppSidebar() {
@@ -92,6 +119,7 @@ export function AppSidebar() {
 
   const rawMenuItems = user?.role === "Batch Director" ? directorMenu
     : user?.role === "Student" ? studentMenu
+    : user?.role === "Mess Staff" ? messStaffMenu.filter((item) => hasPermission(user, item.permission))
     : adminMenu;
   // Batch Director/Student menus never appear in PERMISSIONS_BY_URL (it's
   // built only from admin sidebar modules), so this only ever filters
@@ -127,12 +155,12 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
                     asChild
-                    isActive={location.pathname === item.url}
+                    isActive={location.pathname === item.url || (item.url === "/mess" && user?.role !== "Mess Staff" && location.pathname.startsWith("/mess/"))}
                     tooltip={item.title}
                   >
                     <NavLink
                       to={item.url}
-                      end={item.url === "/" || item.url === "/director" || item.url === "/student"}
+                      end={item.url === "/" || item.url === "/director" || item.url === "/student" || (user?.role === "Mess Staff" && item.url === "/mess")}
                       className="hover:bg-sidebar-accent/50 transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                     >

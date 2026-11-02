@@ -13,6 +13,7 @@ Everything partial, not included, or needing live verification, gathered in one 
 | Branch creation screen | Requires Verification | The Branch record and Branch Ledger are fully implemented and used elsewhere, but no dedicated "create/edit a Branch" screen was located in this audit. Confirm with the development team whether branches are seeded directly or managed from a screen this audit didn't locate. |
 | Online exam-taking | Not included | Permission keys exist in the access-control catalogue, but no screen lets a student take an exam online. All exams/results are entered offline by staff. |
 | Notice attachments | Not included | A notice is text-only; no file-attachment field exists. |
+| Mess / Hostel Management | Requires Verification | Implemented and type/lint/build-checked, with pure-logic and HTTP access-control checks executed — but not yet exercised end-to-end against a live MongoDB. Run Document 10 §10.13's checklist on a test database before production. Mess-specific limitations (no Accounts-ledger mirroring, load-time reservation expiry, monthly cycle only, Meal Management not included, etc.) are listed in Document 10 §10.11. |
 | Deployment automation | Not included | No Docker, CI/CD, or hosting scripts exist in the repository. Deployment today is a manual build-and-run process (see Document 07). |
 
 ## Cosmetic-only items (not fixed — out of scope for a production-blocker audit)
