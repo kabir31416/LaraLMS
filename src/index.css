@@ -4,52 +4,68 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 220 20% 15%;
+    /*
+     * LaraLMS design tokens — white / soft neutral gray / charcoal / silver,
+     * with deep orange as the single accent. Colour carries meaning only:
+     * orange = primary action/highlight, green = success/paid, red = due/
+     * error, amber = warning/pending, gray = secondary information.
+     */
+    --background: 30 8% 97.5%;
+    --foreground: 24 10% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 15%;
+    --card-foreground: 24 10% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 15%;
+    --popover-foreground: 24 10% 11%;
 
-    --primary: 217 91% 60%;
+    --primary: 21 90% 48%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 220 20% 15%;
+    --secondary: 30 7% 94%;
+    --secondary-foreground: 24 10% 15%;
 
-    --muted: 210 30% 95%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 30 7% 95%;
+    --muted-foreground: 25 5% 40%;
 
-    --accent: 210 40% 96%;
-    --accent-foreground: 220 20% 15%;
+    --accent: 30 9% 93%;
+    --accent-foreground: 24 10% 11%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --border: 30 7% 89%;
+    --input: 30 6% 85%;
+    --ring: 21 90% 48%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 220 20% 15%;
-    --sidebar-foreground: 210 20% 80%;
-    --sidebar-primary: 217 91% 60%;
+    /* Light sidebar: charcoal text, orange active state, hairline divider. */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 24 8% 28%;
+    --sidebar-primary: 21 90% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 18% 20%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 220 18% 22%;
-    --sidebar-ring: 217 91% 60%;
-    --sidebar-muted: 220 15% 40%;
+    --sidebar-accent: 24 80% 96%;
+    --sidebar-accent-foreground: 21 85% 36%;
+    --sidebar-border: 30 7% 90%;
+    --sidebar-ring: 21 90% 48%;
+    --sidebar-muted: 25 5% 52%;
 
-    --success: 152 60% 52%;
+    --success: 145 63% 34%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --warning: 36 92% 42%;
     --warning-foreground: 0 0% 100%;
-    --info: 199 89% 48%;
+    /* "info" is deliberately a neutral charcoal-gray, not blue/cyan. */
+    --info: 25 6% 36%;
     --info-foreground: 0 0% 100%;
+
+    /* Chart palette — orange, charcoal, silver, amber, green, light orange. */
+    --chart-1: 21 90% 48%;
+    --chart-2: 24 10% 24%;
+    --chart-3: 30 5% 66%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 145 55% 38%;
+    --chart-6: 24 90% 72%;
 
     --font-sans: 'Hind Siliguri', sans-serif;
   }
@@ -60,8 +76,34 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-sans antialiased;
     font-family: var(--font-sans);
+  }
+  h1, h2, h3 {
+    @apply tracking-tight;
+  }
+  /* One visible, consistent keyboard focus style everywhere. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+  /* Quiet scrollbars inside scrolling panels (tables, dialogs, sidebar). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+/* Respect the OS "reduce motion" setting for every transition/animation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

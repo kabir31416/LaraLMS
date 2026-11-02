@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../common/utils/ApiError";
+import { localToday } from "../../common/utils/localDate";
 import { MembershipStatus, OPEN_MEMBERSHIP_STATUS, SEAT_HOLDING_STATUS } from "./mess.constants";
 
 export function isDuplicateKeyError(err: unknown): boolean {
@@ -11,12 +12,9 @@ export function money(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-/** Local calendar date "yyyy-mm-dd" — the same plain-string date convention the rest of the ERP stores. */
+/** Calendar date "yyyy-mm-dd" in the institution's timezone (APP_TIMEZONE) — the same plain-string date convention the rest of the ERP stores. */
 export function todayISO(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
+  return localToday();
 }
 
 export function currentPeriod(): string {
