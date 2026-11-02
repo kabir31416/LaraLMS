@@ -13,6 +13,7 @@ import * as reports from "./services/messReport.service";
 import * as portal from "./services/messPortal.service";
 import * as settings from "./services/messSettings.service";
 import * as sms from "./services/messSms.service";
+import * as admin from "./services/messAdmin.service";
 import { runMonthlyBillingSweep } from "./services/messBilling.scheduler";
 import { env } from "../../config/env";
 
@@ -166,3 +167,6 @@ export const checkSmsDelivery = ok((req) => sms.checkMessSmsDelivery(req, req.pa
 // Extra reports
 export const reportMonthlySummary = ok((req) => reports.monthlySummary(req));
 export const reportPreviousDue = paged((req) => reports.previousDue(req));
+
+// Super Admin permanent delete (service enforces isSuperAdmin + confirm=DELETE)
+export const superDelete = ok((req) => admin.superDelete(req, req.params.entity, req.params.id, req.query.confirm));

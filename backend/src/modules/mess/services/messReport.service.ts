@@ -235,9 +235,9 @@ export async function monthlySummary(req: Request) {
   const months = Math.min(24, Math.max(1, Number(req.query.months) || 12));
   const keys = monthKeysEnding(currentPeriod(), months);
   const [bills, payments] = await Promise.all([
-    MessBill.aggregate<{ _id: string; bills: number; charges: number; paid: number; due: number; advanceAdjusted: number }>([
+    MessBill.aggregate<{ _id: string; bills: number; charges: number; paid: number; due: number }>([
       { $match: { ...scope, period: { $in: keys }, status: { $ne: "cancelled" } } },
-      { $group: { _id: "$period", bills: { $sum: 1 }, charges: { $sum: "$currentCharges" }, paid: { $sum: "$paidAmount" }, due: { $sum: "$dueAmount" }, advanceAdjusted: { $sum: { $ifNull: ["$advanceAdjusted", 0] } } } },
+      { $group: { _id: "$period", bills: { $sum: 1 }, charges: { $sum: "$currentCharges" }, paid: { $sum: "$paidAmount" }, due: { $sum: "$dueAmount" } } },
     ]),
     MessPayment.aggregate<{ _id: string; rent: number; deposit: number; count: number }>([
       { $match: { ...scope, status: "active", date: { $gte: `${keys[0]}-01`, $lte: `${keys[keys.length - 1]}-31` } } },
@@ -254,8 +254,7 @@ export async function monthlySummary(req: Request) {
         billed: money(b?.charges ?? 0),
         billPaid: money(b?.paid ?? 0),
         billDue: money(b?.due ?? 0),
-        advanceAdjusted: money(b?.advanceAdjusted ?? 0),
-        diningCollected: money(p?.rent ?? 0),
+        rentCollected: money(p?.rent ?? 0),
         depositCollected: money(p?.deposit ?? 0),
         receipts: p?.count ?? 0,
       };

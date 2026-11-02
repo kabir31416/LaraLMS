@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { Pager, ReasonDialog, ReceivePaymentDialog, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
@@ -47,12 +48,12 @@ export default function MessPayments() {
   return (
     <MessPage
       title="মেস পেমেন্ট"
-      subtitle="ডাইনিং চার্জ ও অগ্রিম/জামানত সংগ্রহ — কোর্স ফি থেকে সম্পূর্ণ আলাদা হিসাব"
+      subtitle="মাসিক ভাড়া, ডাইনিং চার্জ ও অগ্রিম সংগ্রহ — কোর্স ফি থেকে সম্পূর্ণ আলাদা হিসাব"
       actions={can(MESS_PAYMENTS_COLLECT) && <Button onClick={() => setPickOpen(true)}><Coins className="h-4 w-4 mr-1" />পেমেন্ট গ্রহণ</Button>}
     >
       <div className="grid grid-cols-2 gap-3">
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">ডাইনিং চার্জ আদায় (ফিল্টার অনুযায়ী)</p><p className="text-lg font-bold">{tk(totals.rent)}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">অগ্রিম / জামানত সংগ্রহ (আয় নয়)</p><p className="text-lg font-bold">{tk(totals.deposit)}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">ভাড়া ও ডাইনিং চার্জ আদায় (ফিল্টার অনুযায়ী)</p><p className="text-lg font-bold">{tk(totals.rent)}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">অগ্রিম সংগ্রহ (আয় নয়)</p><p className="text-lg font-bold">{tk(totals.deposit)}</p></CardContent></Card>
       </div>
       <Card>
         <CardHeader>
@@ -88,6 +89,7 @@ export default function MessPayments() {
                     <Button size="sm" variant="outline" className="mr-1" onClick={() => navigate(`/mess/payments/${p._id}/receipt`)} title="রসিদ"><Receipt className="h-3.5 w-3.5" /></Button>
                     {p.status === "active" && !p.verified && can(MESS_FINANCE_APPROVE) && <Button size="sm" variant="outline" className="mr-1" onClick={() => verify(p)} title="যাচাই"><BadgeCheck className="h-3.5 w-3.5" /></Button>}
                     {p.status === "active" && can(MESS_PAYMENTS_CANCEL) && <Button size="sm" variant="outline" onClick={() => setCancelling(p)} title="বাতিল/রিভার্স"><Ban className="h-3.5 w-3.5" /></Button>}
+                    <SuperDeleteButton entity="payment" id={p._id} what={`পেমেন্ট ${p.receiptNo} — ${p.studentId?.name ?? ""} (${tk(p.amount)})`} onDeleted={list.reload} className="ml-1" />
                   </TableCell>
                 </TableRow>
               ))}

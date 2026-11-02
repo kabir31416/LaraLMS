@@ -163,11 +163,11 @@ type CollAgg = { _id: string; rent: number; deposit: number; total: number; coun
 function CollectionReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: string; dateTo: string }) {
   const { data, loading, error } = useApiData<{ byDate: CollAgg[]; byMethod: CollAgg[]; byMess: CollAgg[]; byMonth: CollAgg[] }>(`/mess/reports/collection${qs({ messId, dateFrom, dateTo })}`);
   const sum = (k: "rent" | "deposit") => (data?.byMethod ?? []).reduce((s, a) => s + (a[k] ?? 0), 0);
-  const headers = ["লেনদেন", "ডাইনিং চার্জ", "অগ্রিম/জামানত", "মোট"];
+  const headers = ["লেনদেন", "ভাড়া ও ডাইনিং চার্জ", "এক মাসের অগ্রিম", "মোট"];
   const row = (label: string, a: CollAgg) => [label, a.count, a.rent, a.deposit, a.total];
   return (
     <div className="space-y-4">
-      <p className="text-sm">ডাইনিং চার্জ আদায় <b>{tk(sum("rent"))}</b> • অগ্রিম/জামানত সংগ্রহ <b>{tk(sum("deposit"))}</b> <span className="text-xs text-muted-foreground">(অগ্রিম/জামানত আয় নয় — শিক্ষার্থীর পক্ষে জমা। ভর্তির একটি রসিদের দুই অংশ আলাদা করে দেখানো হয়েছে।)</span></p>
+      <p className="text-sm">ভাড়া ও ডাইনিং চার্জ আদায় <b>{tk(sum("rent"))}</b> • অগ্রিম সংগ্রহ <b>{tk(sum("deposit"))}</b> <span className="text-xs text-muted-foreground">(অগ্রিম আয় নয় — শিক্ষার্থীর পক্ষে জমা। ভর্তির একটি রসিদের দুই অংশ আলাদা করে দেখানো হয়েছে।)</span></p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SimpleTable title="তারিখভিত্তিক আদায়" headers={["তারিখ", ...headers]} rows={(data?.byDate ?? []).map((a) => row(a._id, a))} loading={loading} error={error} />
         <div className="space-y-4">
@@ -180,16 +180,16 @@ function CollectionReport({ messId, dateFrom, dateTo }: { messId: string; dateFr
   );
 }
 
-interface MonthlyRow { period: string; bills: number; billed: number; billPaid: number; billDue: number; advanceAdjusted: number; diningCollected: number; depositCollected: number; receipts: number }
+interface MonthlyRow { period: string; bills: number; billed: number; billPaid: number; billDue: number; rentCollected: number; depositCollected: number; receipts: number }
 
 function MonthlySummaryReport({ messId }: { messId: string }) {
   const [months, setMonths] = useState("12");
   const { data, loading, error } = useApiData<MonthlyRow[]>(`/mess/reports/monthly-summary${qs({ messId, months })}`);
-  const rows = (data ?? []).map((r) => [periodName(r.period), r.bills, r.billed, r.advanceAdjusted, r.billPaid, r.billDue, r.diningCollected, r.depositCollected, r.receipts]);
+  const rows = (data ?? []).map((r) => [periodName(r.period), r.bills, r.billed, r.billPaid, r.billDue, r.rentCollected, r.depositCollected, r.receipts]);
   return (
     <div className="space-y-2">
       <Select value={months} onValueChange={setMonths}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent>{["6", "12", "24"].map((m) => <SelectItem key={m} value={m}>শেষ {m} মাস</SelectItem>)}</SelectContent></Select>
-      <SimpleTable title="মাসভিত্তিক বিল ও আদায়" headers={["মাস", "বিল", "বিলের চার্জ", "অগ্রিম সমন্বয়", "বিলের পরিশোধ", "বিলের বকেয়া", "ডাইনিং আদায় (ঐ মাসে)", "অগ্রিম/জামানত সংগ্রহ", "রসিদ"]} rows={rows} loading={loading} error={error} />
+      <SimpleTable title="মাসভিত্তিক বিল ও আদায়" headers={["মাস", "ভাড়ার বিল", "বিলের ভাড়া ও চার্জ", "বিলের পরিশোধ", "বিলের বকেয়া", "ভাড়া/ডাইনিং আদায় (ঐ মাসে)", "অগ্রিম সংগ্রহ", "রসিদ"]} rows={rows} loading={loading} error={error} />
       <p className="text-xs text-muted-foreground">"বিলের পরিশোধ/বকেয়া" — ঐ মাসের বিলের বর্তমান অবস্থা (পুরোনো বিল আগে পরিশোধ ধরা হয়)। "আদায়" — ঐ মাসে নেওয়া টাকা।</p>
     </div>
   );
@@ -313,8 +313,8 @@ function IncomeReport({ messId, dateFrom, dateTo }: { messId: string; dateFrom: 
   const rows = [...(data?.rows ?? []).map((r) => toRow(r.mess.name, r)), ...(data && data.rows.length > 1 ? [toRow("সর্বমোট", data.totals)] : [])];
   return (
     <div className="space-y-2">
-      <SimpleTable title="আয় বনাম খরচ ও মেসভিত্তিক ব্যালেন্স" headers={["মেস", "ডাইনিং চার্জ আদায়", "জামানত কর্তন", "অগ্রিম ফেরত", "নিট আয়", "খরচ", "নিট", "মোট বকেয়া (বর্তমান)", "জমা জামানত (বর্তমান)", "জমা অগ্রিম (বর্তমান)"]} rows={rows} loading={loading} error={error} />
-      <p className="text-xs text-muted-foreground">আয় = ডাইনিং চার্জ আদায় + জামানত থেকে কর্তন − নিষ্পত্তিতে অগ্রিম ফেরত। জামানত সংগ্রহ/ফেরত আয় নয় — শিক্ষার্থীর পক্ষে জমা অর্থ। বকেয়া/জামানত/অগ্রিম কলাম আজকের অবস্থা দেখায়।</p>
+      <SimpleTable title="আয় বনাম খরচ ও মেসভিত্তিক ব্যালেন্স" headers={["মেস", "ভাড়া/ডাইনিং আদায়", "জামানত কর্তন", "অগ্রিম ফেরত", "নিট আয়", "খরচ", "নিট", "মোট বকেয়া (বর্তমান)", "জমা জামানত (বর্তমান)", "জমা অগ্রিম (বর্তমান)"]} rows={rows} loading={loading} error={error} />
+      <p className="text-xs text-muted-foreground">আয় = ভাড়া ও ডাইনিং চার্জ আদায় + জামানত থেকে কর্তন − নিষ্পত্তিতে অগ্রিম ফেরত। জামানত সংগ্রহ/ফেরত আয় নয় — শিক্ষার্থীর পক্ষে জমা অর্থ। বকেয়া/জামানত/অগ্রিম কলাম আজকের অবস্থা দেখায়।</p>
     </div>
   );
 }

@@ -146,6 +146,9 @@ router.post("/sms/due-reminders", requirePermission(P.MESS_PAYMENTS_COLLECT, P.M
 router.get("/sms/logs", requirePermission(P.MESS_REPORTS_READ, P.MESS_SETTINGS_MANAGE), validate(v.listQuerySchema), c.listSmsLogs);
 router.post("/sms/logs/:id/delivery", requirePermission(P.MESS_REPORTS_READ, P.MESS_SETTINGS_MANAGE), validate(v.idParamSchema), c.checkSmsDelivery);
 
+// Super Admin only: permanent delete of any Mess record (checked in the service; audit-logged)
+router.delete("/admin/:entity/:id", validate(v.superDeleteSchema), c.superDelete);
+
 // Reports
 router.get("/reports/monthly-summary", reportsRead, validate(v.listQuerySchema), c.reportMonthlySummary);
 router.get("/reports/previous-due", reportsRead, validate(v.listQuerySchema), c.reportPreviousDue);

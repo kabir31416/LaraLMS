@@ -113,8 +113,8 @@ export function MessReceiptPage() {
                 <Line label="পেমেন্টের ধরন" value={PURPOSE_LABELS[p.purpose]} />
                 {p.billingMonth && <Line label="বিলের মাস" value={periodName(p.billingMonth)} />}
                 {p.dueBefore != null && <Line label="পূর্বের বকেয়া (পেমেন্টের আগে)" value={tk(p.dueBefore)} />}
-                {p.purpose === "initial" && p.allocation && <Line label="— ডাইনিং চার্জে" value={tk(p.allocation.rent)} />}
-                {p.purpose === "initial" && p.allocation && <Line label="— এক মাসের অগ্রিম / জামানতে" value={tk(p.allocation.deposit)} />}
+                {p.purpose === "initial" && p.allocation && <Line label="— একবারের ডাইনিং চার্জে (অতিরিক্ত হলে ভাড়ায়)" value={tk(p.allocation.rent)} />}
+                {p.purpose === "initial" && p.allocation && <Line label="— এক মাসের অগ্রিমে" value={tk(p.allocation.deposit)} />}
                 {typeof p.reservationId === "object" && p.reservationId && <Line label="রিজার্ভেশন" value={p.reservationId.reservationNo} />}
                 <Line label="পেমেন্ট পদ্ধতি" value={p.method} />
                 {p.reference && <Line label="রেফারেন্স" value={p.reference} />}
@@ -125,12 +125,12 @@ export function MessReceiptPage() {
               <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-2 pt-2 border-t text-center">
                 <div><p className={`text-sm font-bold ${p.balanceAfter.due > 0 ? "text-destructive" : "text-success"}`}>{tk(p.balanceAfter.due)}</p><p className="text-[10px] text-muted-foreground">অবশিষ্ট বকেয়া</p></div>
                 <div><p className="text-sm font-bold text-success">{tk(p.balanceAfter.advance)}</p><p className="text-[10px] text-muted-foreground">অতিরিক্ত পরিশোধ জমা</p></div>
-                <div><p className="text-sm font-bold">{tk(p.balanceAfter.depositBalance)}</p><p className="text-[10px] text-muted-foreground">অগ্রিম / জামানত ব্যালেন্স</p></div>
+                <div><p className="text-sm font-bold">{tk(p.balanceAfter.depositBalance)}</p><p className="text-[10px] text-muted-foreground">অগ্রিম ব্যালেন্স</p></div>
               </div>
             )}
           </section>
           {p.note && <p className="text-xs text-muted-foreground border-t pt-1.5"><span className="font-medium text-foreground">নোট: </span>{p.note}</p>}
-          {(p.purpose === "deposit" || (p.allocation?.deposit ?? 0) > 0) && <p className="text-[10px] text-muted-foreground mt-2">এক মাসের অগ্রিম / জামানত ফেরতযোগ্য জমা — মেস সেটিংসের নিয়ম অনুযায়ী মাসিক বিলে বা চেক-আউটের চূড়ান্ত হিসাবে সমন্বয় হবে।</p>}
+          {(p.purpose === "deposit" || (p.allocation?.deposit ?? 0) > 0) && <p className="text-[10px] text-muted-foreground mt-2">এক মাসের অগ্রিম জমা থাকে — চেক-আউটের চূড়ান্ত হিসাবে বকেয়া কেটে বাকিটা ফেরত দেওয়া হবে। এটি আয় নয়।</p>}
         </>
       )}
     </PrintFrame>
@@ -144,7 +144,7 @@ export function MessInvoicePage() {
   const { data, loading, error } = useApiData<InvoiceData>(id ? `/mess/bills/${id}/invoice` : null);
   const b = data?.bill;
   return (
-    <PrintFrame loading={loading} error={error} institution={data?.institution} title={`মেস বিল / ইনভয়েস — ${b?.period ?? ""}`} docNo={b?.billNo} date={b?.issueDate} cancelled={b?.status === "cancelled" ? `এই বিলটি বাতিল করা হয়েছে${b.cancelReason ? ` (${b.cancelReason})` : ""}` : undefined}>
+    <PrintFrame loading={loading} error={error} institution={data?.institution} title={`মাসিক ভাড়ার বিল — ${b?.period ?? ""}`} docNo={b?.billNo} date={b?.issueDate} cancelled={b?.status === "cancelled" ? `এই বিলটি বাতিল করা হয়েছে${b.cancelReason ? ` (${b.cancelReason})` : ""}` : undefined}>
       {b && (
         <>
           <StudentSection s={b.studentId} mess={b.messId} room={b.roomId} seat={b.seatId} membershipNo={data?.membership?.membershipNo} />
@@ -156,9 +156,8 @@ export function MessInvoicePage() {
                 {b.items.map((i, idx) => <Line key={idx} label={i.label} value={tk(i.amount)} />)}
                 {b.discount > 0 && <Line label="− ছাড়" value={`− ${tk(b.discount)}`} tone="text-success" />}
                 {b.adjustment > 0 && <Line label={`− অনুমোদিত সমন্বয়${b.adjustmentReason ? ` (${b.adjustmentReason})` : ""}`} value={`− ${tk(b.adjustment)}`} tone="text-success" />}
-                <Line label="এই মাসের চার্জ" value={tk(b.currentCharges)} tone="font-semibold" />
+                <Line label="এই মাসের ভাড়া ও চার্জ" value={tk(b.currentCharges)} tone="font-semibold" />
                 <Line label={b.previousDue >= 0 ? "+ পূর্বের বকেয়া" : "− পূর্বের অতিরিক্ত পরিশোধ"} value={tk(Math.abs(b.previousDue))} />
-                {(b.advanceAdjusted ?? 0) > 0 && <Line label="− এক মাসের অগ্রিম সমন্বয়" value={`− ${tk(b.advanceAdjusted)}`} tone="text-success" />}
                 <Line label="মোট প্রদেয়" value={tk(b.totalPayable)} tone="font-bold" />
               </TableBody>
             </Table>
@@ -192,15 +191,15 @@ export function MessSettlementPrintPage() {
             <h3 className="text-xs font-semibold border-b pb-1 mb-1.5">হিসাব</h3>
             <Table>
               <TableBody>
-                <Line label="যোগদান → ছাড়া" value={`${m?.joiningDate ?? "—"} → ${s.leavingDate}`} />
-                <Line label="জামানত ব্যালেন্স" value={tk(s.depositBalance)} />
-                <Line label="+ অগ্রিম ব্যালেন্স" value={tk(s.advanceBalance)} />
-                <Line label="− বকেয়া" value={tk(s.outstandingDue)} />
+                <Line label="যোগদান → চেক-আউট" value={`${m?.joiningDate ?? "—"} → ${s.leavingDate}`} />
+                <Line label="এক মাসের অগ্রিম (জমা)" value={tk(s.depositBalance)} />
+                <Line label="+ অতিরিক্ত পরিশোধ" value={tk(s.advanceBalance)} />
+                <Line label="− বকেয়া (ভাড়া ও ডাইনিং চার্জ)" value={tk(s.outstandingDue)} />
                 <Line label={`− ক্ষতি/অন্যান্য${s.damageNote ? ` (${s.damageNote})` : ""}`} value={tk(s.damageCharges)} />
                 <Line label="= ফেরতযোগ্য" value={tk(s.refundableAmount)} tone="font-bold" />
-                <Line label="জামানত থেকে বকেয়ায় সমন্বয়" value={tk(s.depositApplied)} />
-                <Line label="জামানত ফেরত" value={tk(s.depositRefund)} />
-                <Line label="অগ্রিম ফেরত" value={tk(s.advanceRefund)} />
+                <Line label="অগ্রিম থেকে বকেয়ায় সমন্বয়" value={tk(s.depositApplied)} />
+                <Line label="অগ্রিম ফেরত" value={tk(s.depositRefund)} />
+                <Line label="অতিরিক্ত পরিশোধ ফেরত" value={tk(s.advanceRefund)} />
                 {s.remainingDue > 0 && <Line label="শিক্ষার্থীর অবশিষ্ট বকেয়া" value={tk(s.remainingDue)} tone="font-bold text-destructive" />}
                 {s.refundMethod && <Line label="ফেরতের পদ্ধতি / তারিখ" value={`${s.refundMethod} • ${s.refundDate ?? ""}`} />}
               </TableBody>

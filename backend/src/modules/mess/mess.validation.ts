@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  ADVANCE_ADJUSTMENT_RULES,
   MESS_SMS_EVENTS,
   PRORATION_MODES,
   COMPLAINT_KINDS,
@@ -52,6 +51,7 @@ const messBody = z.object({
   notes: text(1000).optional(),
   status: z.enum(MESS_STATUS).optional(),
   // Per-Mess defaults (null = use Mess Settings).
+  defaultRent: money.nullable().optional(),
   defaultDiningCharge: money.nullable().optional(),
   defaultDeposit: money.nullable().optional(),
   billingDay: z.number().int().min(1).max(28).nullable().optional(),
@@ -135,7 +135,7 @@ export const createMembershipSchema = z.object({
     documents: documents.optional(),
     initialStatus: z.enum(["pending", "approved", "active"]).optional(),
     reservationId: objectId.optional(),
-    initialDiningCharge: money.optional(),
+    diningCharge: money.optional(),
     initialPayment: initialPayment.optional(),
   }),
 });
@@ -145,6 +145,7 @@ export const updateMembershipSchema = z.object({
     monthlyRent: money.optional(),
     discount: money.optional(),
     securityDeposit: money.optional(),
+    diningCharge: money.optional(),
     setupCharge: money.optional(),
     expectedLeavingDate: isoDate.optional(),
     billingStartDate: isoDate.optional(),
@@ -160,12 +161,11 @@ export const activateMembershipSchema = z.object({
     joiningDate: isoDate.optional(),
     billingStartDate: isoDate.optional(),
     note: text(500).optional(),
-    applyInitialCharges: z.boolean().optional(),
-    initialDiningCharge: money.optional(),
+    diningCharge: money.optional(),
     initialPayment: initialPayment.optional(),
   }),
 });
-export const initialChargesSchema = z.object({ params: idParam, body: z.object({ initialDiningCharge: money.optional(), initialPayment: initialPayment.optional() }) });
+export const initialChargesSchema = z.object({ params: idParam, body: z.object({ diningCharge: money.optional(), initialPayment: initialPayment.optional() }) });
 export const joiningDatePreviewSchema = z.object({ params: idParam, query: z.object({ joiningDate: isoDate }) });
 export const joiningDateChangeSchema = z.object({
   params: idParam,
@@ -351,7 +351,7 @@ export const updateMessSettingsSchema = z.object({
     paymentMethods: z.array(reqText(60)).max(30).optional(),
     paymentSmsEnabled: z.boolean().optional(),
     prorationMode: z.enum(PRORATION_MODES).optional(),
-    advanceAdjustmentRule: z.enum(ADVANCE_ADJUSTMENT_RULES).optional(),
+    defaultDiningCharge: money.optional(),
     autoBillingEnabled: z.boolean().optional(),
     billSmsEnabled: z.boolean().optional(),
     dueReminderSmsEnabled: z.boolean().optional(),
@@ -374,3 +374,11 @@ export const testMessSmsSchema = z.object({
   }),
 });
 export const dueReminderSchema = z.object({ body: z.object({ messId: objectId.optional(), membershipIds: z.array(objectId).max(1000).optional() }) });
+
+export const superDeleteSchema = z.object({
+  params: z.object({
+    entity: z.enum(["mess", "room", "seat", "membership", "reservation", "bill", "payment", "deposit-transaction", "settlement", "expense", "complaint", "notice"]),
+    id: objectId,
+  }),
+  query: z.object({ confirm: z.literal("DELETE") }).passthrough(),
+});

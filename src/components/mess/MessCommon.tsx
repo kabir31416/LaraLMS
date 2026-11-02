@@ -354,7 +354,7 @@ export function ReceivePaymentDialog({
                   <SelectItem value="deposit">{PURPOSE_LABELS.deposit}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">বকেয়ার চেয়ে বেশি ডাইনিং পেমেন্ট অগ্রিম হিসেবে জমা থাকবে। জামানত আলাদা হিসাবে রাখা হয়।</p>
+              <p className="text-xs text-muted-foreground">বকেয়ার চেয়ে বেশি পেমেন্ট পরের ভাড়ার জন্য জমা থাকবে। এক মাসের অগ্রিম আলাদা হিসাবে রাখা হয়।</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -389,54 +389,53 @@ export function ReceivePaymentDialog({
 }
 
 export interface InitialChargesValue {
-  initialDiningCharge: string;
-  advanceDeposit: string;
+  diningCharge: string;
+  advance: string;
   amountPaid: string;
   method: string;
   reference: string;
 }
 
 /**
- * Admission's initial charges — Initial Dining Charge + ONE One-Month
- * Advance / Security Deposit field (the same money, never added twice),
- * Total Initial Payable, Amount Paid, method and Remaining Due. Display
- * maths only; the backend recomputes and allocates everything.
+ * Admission charges — one-time DINING CHARGE + ONE-MONTH ADVANCE only.
+ * Monthly seat rent is never part of this; it is billed monthly. Display
+ * maths only — the backend recomputes and allocates everything.
  */
 export function InitialChargesFields({
   value,
   onChange,
-  ruleHint,
-  depositEditable = true,
+  editable = true,
   allowPayment = true,
+  note,
 }: {
   value: InitialChargesValue;
   onChange: (v: InitialChargesValue) => void;
-  ruleHint?: string;
-  depositEditable?: boolean;
+  /** False when the amounts are already fixed on the membership (edit them from "terms"). */
+  editable?: boolean;
   /** False for roles without the payment-collect permission — the backend refuses the payment anyway. */
   allowPayment?: boolean;
+  note?: string;
 }) {
-  const dining = Number(value.initialDiningCharge) || 0;
-  const deposit = Number(value.advanceDeposit) || 0;
-  const total = dining + deposit;
+  const dining = Number(value.diningCharge) || 0;
+  const advance = Number(value.advance) || 0;
+  const total = dining + advance;
   const paid = allowPayment ? Number(value.amountPaid) || 0 : 0;
   const set = (k: keyof InitialChargesValue, v: string) => onChange({ ...value, [k]: v });
   return (
     <div className="space-y-3 rounded-lg border p-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>প্রারম্ভিক ডাইনিং চার্জ (৳)</Label>
-          <Input type="number" min={0} value={value.initialDiningCharge} onChange={(e) => set("initialDiningCharge", e.target.value)} />
-          {ruleHint && <p className="text-[11px] text-muted-foreground">{ruleHint}</p>}
+          <Label>ডাইনিং চার্জ — একবারই (৳)</Label>
+          <Input type="number" min={0} value={value.diningCharge} disabled={!editable} onChange={(e) => set("diningCharge", e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label>এক মাসের অগ্রিম / জামানত (৳)</Label>
-          <Input type="number" min={0} value={value.advanceDeposit} disabled={!depositEditable} onChange={(e) => set("advanceDeposit", e.target.value)} />
-          <p className="text-[11px] text-muted-foreground">একই টাকা — অগ্রিম ও জামানত আলাদা করে নেওয়া হয় না। আয় নয়, জমা হিসেবে থাকে।</p>
+          <Label>এক মাসের অগ্রিম (৳)</Label>
+          <Input type="number" min={0} value={value.advance} disabled={!editable} onChange={(e) => set("advance", e.target.value)} />
+          <p className="text-[11px] text-muted-foreground">জমা থাকে, চেক-আউটে বকেয়া কেটে বাকিটা ফেরত। আয় নয়।</p>
         </div>
       </div>
       <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm">
-        <span>মোট প্রারম্ভিক প্রদেয়</span>
+        <span>ভর্তির সময় মোট প্রদেয়</span>
         <b className="tabular-nums">{tk(total)}</b>
       </div>
       {!allowPayment && <p className="text-xs text-muted-foreground">পেমেন্ট নেওয়ার অনুমতি আপনার নেই — চার্জ যুক্ত হবে, পেমেন্ট হিসাবরক্ষক/অ্যাডমিন নেবেন।</p>}
@@ -449,7 +448,8 @@ export function InitialChargesFields({
         <span>অবশিষ্ট বকেয়া</span>
         <b className={`tabular-nums ${total - paid > 0 ? "text-destructive" : "text-success"}`}>{tk(Math.max(0, total - paid))}</b>
       </div>
-      <p className="text-[11px] text-muted-foreground">আংশিক পরিশোধ করা যায়। পরিশোধ আগে ডাইনিং চার্জে, তারপর অগ্রিম/জামানতে ধরা হবে — একটি রসিদ তৈরি হবে।{paid > total && total > 0 ? " অতিরিক্ত অংশ অগ্রিম ডাইনিং জমা হিসেবে থাকবে।" : ""}</p>
+      <p className="text-[11px] text-muted-foreground">আংশিক পরিশোধ করা যায়। পরিশোধ আগে ডাইনিং চার্জে, তারপর অগ্রিমে ধরা হবে — একটি রসিদ তৈরি হবে।{paid > total && total > 0 ? " অতিরিক্ত অংশ ভাড়ার জন্য জমা থাকবে।" : ""}</p>
+      {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
     </div>
   );
 }

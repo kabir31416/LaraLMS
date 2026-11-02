@@ -14,12 +14,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { Checkbox } from "@/components/ui/checkbox";
 import { InitialChargesFields, MethodSelect, ReasonDialog, ReceivePaymentDialog, SeatPicker, StatusBadge, type InitialChargesValue } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import {
-  BILL_STATUS_LABELS, currentPeriod, DEPOSIT_TX_LABELS, DEPOSIT_TX_STATUS_LABELS, effectiveProration, errMsg, MEMBERSHIP_STATUS_LABELS, newIdempotencyKey, periodName,
-  previewJoiningCharge, PRORATION_MODE_LABELS, PURPOSE_LABELS, recentPeriods, refName, SETTLEMENT_STATUS_LABELS, tk, todayISO, useApiData,
+  BILL_STATUS_LABELS, currentPeriod, DEPOSIT_TX_LABELS, DEPOSIT_TX_STATUS_LABELS, errMsg, MEMBERSHIP_STATUS_LABELS, newIdempotencyKey, periodName,
+  PRORATION_MODE_LABELS, PURPOSE_LABELS, recentPeriods, refName, SETTLEMENT_STATUS_LABELS, tk, todayISO, useApiData,
   type Bill, type DepositTx, type InitialChargesSummary, type Membership, type MessPayment, type Settlement,
 } from "@/lib/mess";
 import {
@@ -79,6 +80,7 @@ export default function MessMemberProfile() {
         <>
           <Button variant="ghost" onClick={() => navigate("/mess/members")}><ArrowLeft className="h-4 w-4 mr-1" />তালিকা</Button>
           {m.status !== "pending" && m.status !== "cancelled" && can(MESS_PAYMENTS_COLLECT) && <Button onClick={() => setDialog("pay")}><Coins className="h-4 w-4 mr-1" />পেমেন্ট নিন</Button>}
+          <SuperDeleteButton entity="membership" id={m._id} variant="button" what={`সদস্যপদ ${m.membershipNo} — ${s?.name ?? ""}`} warning="এই সদস্যপদের সব বিল, পেমেন্ট, অগ্রিম লেনদেন ও নিষ্পত্তি মুছে যাবে এবং সিট খালি হবে। শিক্ষার্থীর মূল প্রোফাইল অপরিবর্তিত থাকবে।" onDeleted={() => navigate("/mess/members")} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="outline">আরও কাজ</Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -89,10 +91,10 @@ export default function MessMemberProfile() {
               {m.holdsSeat && can(MESS_MEMBERS_MANAGE) && <DropdownMenuItem onClick={() => setDialog("transfer")}>মেস / রুম / সিট পরিবর্তন</DropdownMenuItem>}
               {isOpen && can(MESS_MEMBERS_MANAGE) && <DropdownMenuItem onClick={() => setDialog("terms")}>চার্জ/অগ্রিম/তথ্য সম্পাদনা</DropdownMenuItem>}
               {isOpen && can(MESS_MEMBERS_EDIT_DATES) && <DropdownMenuItem onClick={() => setDialog("joining")}>যোগদানের তারিখ সংশোধন</DropdownMenuItem>}
-              {["active", "on_leave", "notice_given"].includes(m.status) && m.initialDiningCharge == null && can(MESS_PAYMENTS_COLLECT) && <DropdownMenuItem onClick={() => setDialog("initial")}>প্রারম্ভিক চার্জ ও পেমেন্ট</DropdownMenuItem>}
+              {["active", "on_leave", "notice_given"].includes(m.status) && !m.initialPaymentId && can(MESS_PAYMENTS_COLLECT) && <DropdownMenuItem onClick={() => setDialog("initial")}>ভর্তির চার্জ ও পেমেন্ট (ডাইনিং + অগ্রিম)</DropdownMenuItem>}
               <DropdownMenuSeparator />
               {["active", "on_leave", "notice_given"].includes(m.status) && can(MESS_BILLING_MANAGE) && <DropdownMenuItem onClick={() => setDialog("bill")}>এই সদস্যের বিল তৈরি</DropdownMenuItem>}
-              {m.status !== "cancelled" && m.status !== "left" && can(MESS_PAYMENTS_COLLECT) && <DropdownMenuItem onClick={() => setDialog("deposit")}>অগ্রিম/জামানত সমন্বয় / ফেরত</DropdownMenuItem>}
+              {m.status !== "cancelled" && m.status !== "left" && can(MESS_PAYMENTS_COLLECT) && <DropdownMenuItem onClick={() => setDialog("deposit")}>অগ্রিম সমন্বয় / ফেরত</DropdownMenuItem>}
               {["approved", "active", "on_leave", "notice_given"].includes(m.status) && !liveSettlement && can(MESS_MEMBERS_MANAGE) && <DropdownMenuItem onClick={() => setDialog("settle")}>চেক-আউট — চূড়ান্ত হিসাব</DropdownMenuItem>}
               {isOpen && can(MESS_MEMBERS_MANAGE) && <DropdownMenuItem className="text-destructive" onClick={() => setDialog("cancel")}>সদস্যপদ বাতিল</DropdownMenuItem>}
             </DropdownMenuContent>
@@ -104,8 +106,8 @@ export default function MessMemberProfile() {
         <Figure label="বর্তমান বকেয়া" value={tk(b?.due)} tone={b?.due > 0 ? "text-destructive" : ""} />
         <Figure label="অগ্রিম জমা" value={tk(b?.advance)} tone="text-success" />
         <Figure label="মোট বিল / পরিশোধ" value={`${tk(b?.totalBilled)} / ${tk(b?.totalPaid)}`} />
-        <Figure label="অগ্রিম/জামানত (জমা / নির্ধারিত)" value={`${tk(b?.depositBalance)} / ${tk(m.securityDeposit)}`} />
-        <Figure label="মাসিক ডাইনিং চার্জ − ছাড়" value={`${tk(m.monthlyRent)} − ${tk(m.discount)}`} />
+        <Figure label="অগ্রিম (জমা / নির্ধারিত)" value={`${tk(b?.depositBalance)} / ${tk(m.securityDeposit)}`} />
+        <Figure label="মাসিক ভাড়া − ছাড়" value={`${tk(m.monthlyRent)} − ${tk(m.discount)}`} />
       </div>
 
       {liveSettlement && (
@@ -124,7 +126,8 @@ export default function MessMemberProfile() {
             <Row label="রুম / সিট">{refName(m.roomId)} / {refName(m.seatId, "seatNumber")}</Row>
             <Row label="যোগদান">{m.joiningDate}</Row>
             <Row label="বিলিং শুরু">{m.billingStartDate}</Row>
-            <Row label="প্রারম্ভিক ডাইনিং চার্জ">{m.initialDiningCharge != null ? tk(m.initialDiningCharge) : "—"}</Row>
+            <Row label="ডাইনিং চার্জ (একবার)">{m.diningCharge != null ? <>{tk(m.diningCharge)}{(m.balance?.diningDue ?? 0) > 0 ? <span className="text-destructive"> — বাকি {tk(m.balance?.diningDue)}</span> : m.diningCharge > 0 ? <span className="text-success"> — পরিশোধিত</span> : null}</> : "—"}</Row>
+            <Row label="এক মাসের অগ্রিম">{tk(m.balance?.depositBalance)} / {tk(m.securityDeposit)}</Row>
             {m.expectedLeavingDate && <Row label="সম্ভাব্য ছাড়া">{m.expectedLeavingDate}</Row>}
             {m.leftDate && <Row label="ছেড়েছেন">{m.leftDate}</Row>}
             {m.setupCharge > 0 && <Row label="সেটআপ চার্জ">{tk(m.setupCharge)} {m.setupChargeBilled ? "(বিলে যুক্ত)" : "(পরবর্তী বিলে যুক্ত হবে)"}</Row>}
@@ -170,20 +173,19 @@ export default function MessMemberProfile() {
         <TabsContent value="bills">
           <Card><CardContent className="p-0 overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>বিল নং</TableHead><TableHead>মাস</TableHead><TableHead className="text-right">চার্জ</TableHead><TableHead className="text-right">পূর্বের বকেয়া</TableHead><TableHead className="text-right">অগ্রিম সমন্বয়</TableHead><TableHead className="text-right">মোট প্রদেয়</TableHead><TableHead className="text-right">পরিশোধ</TableHead><TableHead className="text-right">বাকি</TableHead><TableHead>অবস্থা</TableHead><TableHead /></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>বিল নং</TableHead><TableHead>মাস</TableHead><TableHead className="text-right">চার্জ</TableHead><TableHead className="text-right">পূর্বের বকেয়া</TableHead><TableHead className="text-right">মোট প্রদেয়</TableHead><TableHead className="text-right">পরিশোধ</TableHead><TableHead className="text-right">বাকি</TableHead><TableHead>অবস্থা</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
-                {data.bills.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center py-6 text-muted-foreground">কোনো বিল নেই</TableCell></TableRow> : data.bills.map((x) => (
+                {data.bills.length === 0 ? <TableRow><TableCell colSpan={9} className="text-center py-6 text-muted-foreground">কোনো বিল নেই</TableCell></TableRow> : data.bills.map((x) => (
                   <TableRow key={x._id}>
                     <TableCell className="font-mono text-xs">{x.billNo}</TableCell>
                     <TableCell>{periodName(x.period)}{x.source === "auto" && <p className="text-[11px] text-muted-foreground">স্বয়ংক্রিয়</p>}{x.source === "admission" && <p className="text-[11px] text-muted-foreground">ভর্তি</p>}</TableCell>
                     <TableCell className="text-right">{tk(x.currentCharges)}</TableCell>
                     <TableCell className="text-right">{tk(x.previousDue)}</TableCell>
-                    <TableCell className="text-right">{x.advanceAdjusted ? tk(x.advanceAdjusted) : "—"}</TableCell>
                     <TableCell className="text-right">{tk(x.totalPayable)}</TableCell>
                     <TableCell className="text-right">{tk(x.paidAmount)}</TableCell>
                     <TableCell className="text-right">{tk(x.dueAmount)}</TableCell>
                     <TableCell><StatusBadge status={x.status} label={BILL_STATUS_LABELS[x.status]} /></TableCell>
-                    <TableCell><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/bills/${x._id}/invoice`)}><Printer className="h-3.5 w-3.5" /></Button></TableCell>
+                    <TableCell className="whitespace-nowrap"><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/bills/${x._id}/invoice`)}><Printer className="h-3.5 w-3.5" /></Button><SuperDeleteButton entity="bill" id={x._id} what={`বিল ${x.billNo} (${x.period})`} onDeleted={reload} className="ml-1" /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -203,7 +205,7 @@ export default function MessMemberProfile() {
                     <TableCell>{p.method}{p.reference ? <p className="text-xs text-muted-foreground">{p.reference}</p> : null}</TableCell>
                     <TableCell className="text-right">{tk(p.amount)}</TableCell>
                     <TableCell>{p.status === "cancelled" ? <StatusBadge status="cancelled" label="বাতিল" /> : p.verified ? <StatusBadge status="approved" label="যাচাইকৃত" /> : <StatusBadge status="active" label="সক্রিয়" />}</TableCell>
-                    <TableCell><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/payments/${p._id}/receipt`)}><Receipt className="h-3.5 w-3.5" /></Button></TableCell>
+                    <TableCell className="whitespace-nowrap"><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/payments/${p._id}/receipt`)}><Receipt className="h-3.5 w-3.5" /></Button><SuperDeleteButton entity="payment" id={p._id} what={`পেমেন্ট ${p.receiptNo} (${tk(p.amount)})`} onDeleted={reload} className="ml-1" /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -220,9 +222,9 @@ export default function MessMemberProfile() {
                     <TableCell className="font-mono text-xs">{t.txNo}</TableCell>
                     <TableCell>{t.date}</TableCell>
                     <TableCell>{DEPOSIT_TX_LABELS[t.type]}</TableCell>
-                    <TableCell className="text-sm">{t.reason || "—"}{t.period && <p className="text-[11px] text-muted-foreground">সমন্বয়ের মাস: {periodName(t.period)}{t.source === "advance_rule" ? " (নিয়ম অনুযায়ী স্বয়ংক্রিয়)" : ""}</p>}</TableCell>
+                    <TableCell className="text-sm">{t.reason || "—"}{t.period && <p className="text-[11px] text-muted-foreground">সমন্বয়ের মাস: {periodName(t.period)}</p>}</TableCell>
                     <TableCell className="text-right">{tk(t.amount)}</TableCell>
-                    <TableCell><StatusBadge status={t.status} label={DEPOSIT_TX_STATUS_LABELS[t.status]} /></TableCell>
+                    <TableCell className="whitespace-nowrap"><StatusBadge status={t.status} label={DEPOSIT_TX_STATUS_LABELS[t.status]} /><SuperDeleteButton entity="deposit-transaction" id={t._id} what={`অগ্রিম লেনদেন ${t.txNo}`} onDeleted={reload} className="ml-1" /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -274,7 +276,7 @@ export default function MessMemberProfile() {
               <TableBody>
                 {data.settlements.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">নেই</TableCell></TableRow> : data.settlements.map((x) => (
                   <TableRow key={x._id}><TableCell className="font-mono text-xs">{x.settlementNo}</TableCell><TableCell>{x.leavingDate}</TableCell><TableCell className="text-right">{tk(x.refundableAmount)}</TableCell><TableCell className="text-right">{tk(x.remainingDue)}</TableCell><TableCell><StatusBadge status={x.status} label={SETTLEMENT_STATUS_LABELS[x.status]} /></TableCell>
-                    <TableCell><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/settlements/${x._id}/print`)}><Printer className="h-3.5 w-3.5" /></Button></TableCell></TableRow>
+                    <TableCell className="whitespace-nowrap"><Button size="sm" variant="ghost" onClick={() => navigate(`/mess/settlements/${x._id}/print`)}><Printer className="h-3.5 w-3.5" /></Button><SuperDeleteButton entity="settlement" id={x._id} what={`নিষ্পত্তি ${x.settlementNo}`} onDeleted={reload} className="ml-1" /></TableCell></TableRow>
                 ))}
               </TableBody>
             </Table>
@@ -337,72 +339,58 @@ function SimpleDialog({ open, onClose, title, description, busy, onSubmit, child
   );
 }
 
-function useInitialCharges(m: Membership, open: boolean, joiningDate: string) {
+function useInitialCharges(m: Membership, open: boolean) {
   const { settings, can } = useMessScope();
   const allowPayment = can(MESS_PAYMENTS_COLLECT);
-  const mode = effectiveProration(settings);
-  const rule = previewJoiningCharge(m.monthlyRent, joiningDate, mode);
-  const [value, setValue] = useState<InitialChargesValue>({ initialDiningCharge: String(rule), advanceDeposit: String(m.securityDeposit), amountPaid: "", method: "", reference: "" });
-  const [touched, setTouched] = useState(false);
+  const initial = (): InitialChargesValue => ({ diningCharge: String(m.diningCharge ?? settings?.defaultDiningCharge ?? 0), advance: String(m.securityDeposit), amountPaid: "", method: "", reference: "" });
+  const [value, setValue] = useState<InitialChargesValue>(initial);
   const keyRef = useRef(newIdempotencyKey());
   useEffect(() => {
     if (open) {
-      setValue({ initialDiningCharge: String(rule), advanceDeposit: String(m.securityDeposit), amountPaid: "", method: "", reference: "" });
-      setTouched(false);
+      setValue(initial());
       keyRef.current = newIdempotencyKey();
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!touched) setValue((v) => ({ ...v, initialDiningCharge: String(rule) }));
-  }, [rule, touched]);
-  const onChange = (v: InitialChargesValue) => { if (v.initialDiningCharge !== value.initialDiningCharge) setTouched(true); setValue(v); };
-  const hint = `নিয়ম: ${PRORATION_MODE_LABELS[mode]} — হিসাব অনুযায়ী ${tk(rule)}`;
   const payload = () => {
     const paid = allowPayment ? Number(value.amountPaid) || 0 : 0;
     if (paid > 0 && !value.method) throw new Error("পরিশোধের পেমেন্ট পদ্ধতি নির্বাচন করুন");
     return {
-      initialDiningCharge: Number(value.initialDiningCharge) || 0,
+      diningCharge: Number(value.diningCharge) || 0,
       initialPayment: paid > 0 ? { amount: paid, method: value.method, reference: value.reference || undefined, idempotencyKey: keyRef.current } : undefined,
     };
   };
-  return { value, onChange, hint, payload, allowPayment };
+  return { value, setValue, payload, allowPayment };
 }
 
 function ActivateDialog({ open, membership: m, onClose, onDone }: ChildProps) {
   const [joiningDate, setJoiningDate] = useState(m.joiningDate);
-  const [withInitial, setWithInitial] = useState(true);
-  const ic = useInitialCharges(m, open, joiningDate);
+  const ic = useInitialCharges(m, open);
   const { busy, run } = useBusy();
-  useEffect(() => { if (open) { setJoiningDate(m.joiningDate); setWithInitial(true); } }, [open, m]);
+  useEffect(() => { if (open) setJoiningDate(m.joiningDate); }, [open, m]);
   return (
-    <SimpleDialog open={open} onClose={onClose} title="সদস্যপদ সক্রিয় করুন" description="সদস্য মেসে উঠেছেন — সিট দখলকৃত হবে, প্রারম্ভিক চার্জ নেওয়া হবে এবং মাসিক বিলিং শুরু হবে।" busy={busy}
+    <SimpleDialog open={open} onClose={onClose} title="সদস্যপদ সক্রিয় করুন" description="সদস্য মেসে উঠেছেন — সিট দখলকৃত হবে, ডাইনিং চার্জ ও অগ্রিম নেওয়া হবে, এবং যোগদানের মাস থেকে মাসিক ভাড়ার বিল শুরু হবে।" busy={busy}
       onSubmit={() => run(async () => {
-        const res = await api.post<{ initial?: InitialChargesSummary; initialError?: string }>(`/mess/memberships/${m._id}/activate`, {
-          joiningDate,
-          ...(withInitial ? { applyInitialCharges: true, ...ic.payload() } : {}),
-        });
-        if (res.initialError) toast.warning(`সক্রিয় হয়েছে, কিন্তু প্রারম্ভিক চার্জ সম্পন্ন হয়নি: ${res.initialError}`, { duration: 10000 });
+        const res = await api.post<{ initial?: InitialChargesSummary; initialError?: string }>(`/mess/memberships/${m._id}/activate`, { joiningDate, ...ic.payload() });
+        if (res.initialError) toast.warning(`সক্রিয় হয়েছে, কিন্তু ভর্তির চার্জ/পেমেন্ট সম্পন্ন হয়নি: ${res.initialError}`, { duration: 10000 });
         await onDone(res.initial?.receiptNo ? `সক্রিয় হয়েছে — রসিদ ${res.initial.receiptNo}, অবশিষ্ট ${tk(res.initial.remainingDue)}` : "সদস্যপদ সক্রিয় হয়েছে");
       })}>
       <div className="space-y-1.5"><Label>প্রকৃত যোগদানের তারিখ</Label><Input type="date" value={joiningDate} onChange={(e) => setJoiningDate(e.target.value)} /></div>
-      <label className="flex items-center gap-2 text-sm"><Checkbox checked={withInitial} onCheckedChange={(v) => setWithInitial(v === true)} />প্রারম্ভিক ডাইনিং চার্জ ও অগ্রিম/জামানত এখনই নিন</label>
-      {withInitial && <InitialChargesFields value={ic.value} onChange={ic.onChange} ruleHint={ic.hint} depositEditable={false} allowPayment={ic.allowPayment} />}
+      <InitialChargesFields value={ic.value} onChange={ic.setValue} allowPayment={ic.allowPayment} note={`মাসিক ভাড়া ${tk(m.monthlyRent)} এই পেমেন্টের অংশ নয় — মাসিক বিলে আসবে। অগ্রিমের পরিমাণ বদলাতে "চার্জ/অগ্রিম/তথ্য সম্পাদনা" ব্যবহার করুন।`} />
     </SimpleDialog>
   );
 }
 
 function InitialChargesDialog({ open, membership: m, onClose, onDone, onReceipt }: ChildProps & { onReceipt: (paymentId: string) => void }) {
-  const ic = useInitialCharges(m, open, m.joiningDate);
+  const ic = useInitialCharges(m, open);
   const { busy, run } = useBusy();
   return (
-    <SimpleDialog open={open} onClose={onClose} title="প্রারম্ভিক চার্জ ও পেমেন্ট" description={`যোগদান ${m.joiningDate} — যোগদানের মাসের বিল ও অগ্রিম/জামানত`} busy={busy}
+    <SimpleDialog open={open} onClose={onClose} title="ভর্তির চার্জ ও পেমেন্ট" description="একবারের ডাইনিং চার্জ ও এক মাসের অগ্রিম — একটি রসিদ" busy={busy}
       onSubmit={() => run(async () => {
         const res = await api.post<InitialChargesSummary>(`/mess/memberships/${m._id}/initial-charges`, ic.payload());
-        await onDone(res.receiptNo ? `সম্পন্ন — রসিদ ${res.receiptNo}` : "প্রারম্ভিক চার্জ যুক্ত হয়েছে");
+        await onDone(res.receiptNo ? `সম্পন্ন — রসিদ ${res.receiptNo}` : "ডাইনিং চার্জ যুক্ত হয়েছে");
         if (res.paymentId) onReceipt(res.paymentId);
       })}>
-      <InitialChargesFields value={ic.value} onChange={ic.onChange} ruleHint={ic.hint} depositEditable={false} allowPayment={ic.allowPayment} />
-      <p className="text-xs text-muted-foreground">অগ্রিম/জামানতের পরিমাণ বদলাতে "চার্জ/অগ্রিম/তথ্য সম্পাদনা" ব্যবহার করুন।</p>
+      <InitialChargesFields value={ic.value} onChange={(v) => ic.setValue({ ...v, advance: ic.value.advance })} allowPayment={ic.allowPayment} note={'অগ্রিমের পরিমাণ বদলাতে "চার্জ/অগ্রিম/তথ্য সম্পাদনা" ব্যবহার করুন।'} />
     </SimpleDialog>
   );
 }
@@ -475,7 +463,7 @@ function StatusDialog({ open, membership: m, onClose, onDone }: ChildProps) {
   const { busy, run } = useBusy();
   useEffect(() => { if (open) { setStatus(options[0]); setExpected(m.expectedLeavingDate ?? ""); setNote(""); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <SimpleDialog open={open} onClose={onClose} title="অবস্থা পরিবর্তন" description="ছুটিতে থাকলেও সিট ও মাসিক ডাইনিং চার্জ বহাল থাকে।" busy={busy}
+    <SimpleDialog open={open} onClose={onClose} title="অবস্থা পরিবর্তন" description="ছুটিতে থাকলেও সিট ও মাসিক ভাড়া বহাল থাকে।" busy={busy}
       onSubmit={() => run(async () => { await api.post(`/mess/memberships/${m._id}/status`, { status, expectedLeavingDate: expectedLeavingDate || undefined, note: note || undefined }); await onDone("অবস্থা পরিবর্তিত হয়েছে"); })}>
       <Select value={status} onValueChange={setStatus}>
         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -505,7 +493,7 @@ function TransferDialog({ open, membership: m, onClose, onDone }: ChildProps) {
       <div className="space-y-1.5"><Label>মেস</Label><MessSelect value={messId} onChange={(v) => { setMessId(v); setSeatId(""); }} activeOnly /></div>
       <div className="space-y-1.5"><Label>নতুন সিট</Label><SeatPicker messId={messId} value={seatId} onChange={(id, seat) => { setSeatId(id); if (seat) setRent(String(seat.monthlyRent)); }} /></div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5"><Label>নতুন মাসিক ডাইনিং চার্জ</Label><Input type="number" min={0} value={rent} onChange={(e) => setRent(e.target.value)} placeholder={String(m.monthlyRent)} /></div>
+        <div className="space-y-1.5"><Label>নতুন মাসিক ভাড়া</Label><Input type="number" min={0} value={rent} onChange={(e) => setRent(e.target.value)} placeholder={String(m.monthlyRent)} /></div>
         <div className="space-y-1.5"><Label>কার্যকর তারিখ</Label><Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} /></div>
       </div>
       <Input placeholder="কারণ" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -514,16 +502,16 @@ function TransferDialog({ open, membership: m, onClose, onDone }: ChildProps) {
 }
 
 function TermsDialog({ open, membership: m, onClose, onDone }: ChildProps) {
-  const [f, setF] = useState({ monthlyRent: "", discount: "", securityDeposit: "", setupCharge: "", expectedLeavingDate: "", billingStartDate: "", ecName: "", ecPhone: "", ecRelation: "", notes: "" });
+  const [f, setF] = useState({ monthlyRent: "", discount: "", securityDeposit: "", diningCharge: "", setupCharge: "", expectedLeavingDate: "", billingStartDate: "", ecName: "", ecPhone: "", ecRelation: "", notes: "" });
   const { busy, run } = useBusy();
   useEffect(() => {
-    if (open) setF({ monthlyRent: String(m.monthlyRent), discount: String(m.discount), securityDeposit: String(m.securityDeposit), setupCharge: String(m.setupCharge), expectedLeavingDate: m.expectedLeavingDate ?? "", billingStartDate: m.billingStartDate, ecName: m.emergencyContact?.name ?? "", ecPhone: m.emergencyContact?.phone ?? "", ecRelation: m.emergencyContact?.relation ?? "", notes: m.notes ?? "" });
+    if (open) setF({ monthlyRent: String(m.monthlyRent), discount: String(m.discount), securityDeposit: String(m.securityDeposit), diningCharge: String(m.diningCharge ?? 0), setupCharge: String(m.setupCharge), expectedLeavingDate: m.expectedLeavingDate ?? "", billingStartDate: m.billingStartDate, ecName: m.emergencyContact?.name ?? "", ecPhone: m.emergencyContact?.phone ?? "", ecRelation: m.emergencyContact?.relation ?? "", notes: m.notes ?? "" });
   }, [open, m]);
   return (
-    <SimpleDialog open={open} onClose={onClose} title="সদস্যপদের শর্ত সম্পাদনা" description="পরিবর্তন শুধু ভবিষ্যতের বিলে প্রযোজ্য — আগের বিল অপরিবর্তিত থাকে।" busy={busy}
+    <SimpleDialog open={open} onClose={onClose} title="সদস্যপদের শর্ত সম্পাদনা" description="মাসিক ভাড়ার পরিবর্তন শুধু ভবিষ্যতের বিলে প্রযোজ্য। ডাইনিং চার্জ ও অগ্রিমের পরিবর্তন সাথে সাথে হিসাবে যুক্ত হয় (অডিট লগে থাকে)।" busy={busy}
       onSubmit={() => run(async () => {
         await api.patch(`/mess/memberships/${m._id}`, {
-          monthlyRent: Number(f.monthlyRent) || 0, discount: Number(f.discount) || 0, securityDeposit: Number(f.securityDeposit) || 0,
+          monthlyRent: Number(f.monthlyRent) || 0, discount: Number(f.discount) || 0, securityDeposit: Number(f.securityDeposit) || 0, diningCharge: Number(f.diningCharge) || 0,
           ...(m.setupChargeBilled ? {} : { setupCharge: Number(f.setupCharge) || 0 }),
           expectedLeavingDate: f.expectedLeavingDate || undefined, billingStartDate: f.billingStartDate || undefined,
           emergencyContact: { name: f.ecName || undefined, phone: f.ecPhone || undefined, relation: f.ecRelation || undefined }, notes: f.notes || undefined,
@@ -531,9 +519,10 @@ function TermsDialog({ open, membership: m, onClose, onDone }: ChildProps) {
         await onDone("তথ্য আপডেট হয়েছে");
       })}>
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5"><Label>মাসিক ডাইনিং চার্জ</Label><Input type="number" min={0} value={f.monthlyRent} onChange={(e) => setF({ ...f, monthlyRent: e.target.value })} /></div>
+        <div className="space-y-1.5"><Label>মাসিক ভাড়া</Label><Input type="number" min={0} value={f.monthlyRent} onChange={(e) => setF({ ...f, monthlyRent: e.target.value })} /></div>
         <div className="space-y-1.5"><Label>মাসিক ছাড়</Label><Input type="number" min={0} value={f.discount} onChange={(e) => setF({ ...f, discount: e.target.value })} /></div>
-        <div className="space-y-1.5"><Label>জামানত</Label><Input type="number" min={0} value={f.securityDeposit} onChange={(e) => setF({ ...f, securityDeposit: e.target.value })} /></div>
+        <div className="space-y-1.5"><Label>এক মাসের অগ্রিম</Label><Input type="number" min={0} value={f.securityDeposit} onChange={(e) => setF({ ...f, securityDeposit: e.target.value })} /></div>
+        <div className="space-y-1.5"><Label>ডাইনিং চার্জ (একবার)</Label><Input type="number" min={0} value={f.diningCharge} onChange={(e) => setF({ ...f, diningCharge: e.target.value })} /></div>
         <div className="space-y-1.5"><Label>সেটআপ চার্জ</Label><Input type="number" min={0} disabled={m.setupChargeBilled} value={f.setupCharge} onChange={(e) => setF({ ...f, setupCharge: e.target.value })} /></div>
         <div className="space-y-1.5"><Label>বিলিং শুরু</Label><Input type="date" value={f.billingStartDate} onChange={(e) => setF({ ...f, billingStartDate: e.target.value })} /></div>
         <div className="space-y-1.5"><Label>সম্ভাব্য ছাড়া</Label><Input type="date" value={f.expectedLeavingDate} onChange={(e) => setF({ ...f, expectedLeavingDate: e.target.value })} /></div>
@@ -594,7 +583,7 @@ function DepositTxDialog({ open, membership: m, onClose, onDone }: ChildProps) {
   const { busy, run } = useBusy();
   useEffect(() => { if (open) { setType("deduct"); setAmount(""); setReason(""); setMethod(""); setPeriod(currentPeriod()); } }, [open]);
   return (
-    <SimpleDialog open={open} onClose={onClose} title="অগ্রিম/জামানত সমন্বয় / ফেরত" description={`বর্তমান জামানত: ${tk(m.balance?.depositBalance)} • বকেয়া: ${tk(m.balance?.due)}`} busy={busy}
+    <SimpleDialog open={open} onClose={onClose} title="অগ্রিম সমন্বয় / ফেরত" description={`বর্তমান জামানত: ${tk(m.balance?.depositBalance)} • বকেয়া: ${tk(m.balance?.due)}`} busy={busy}
       onSubmit={() => run(async () => {
         const tx = await api.post<{ status: string }>(`/mess/memberships/${m._id}/deposit-transactions`, { type, amount: Number(amount), reason: reason || undefined, method: type === "refund" && method ? method : undefined, period: type === "apply_to_due" ? period : undefined });
         await onDone(tx.status === "pending" ? "অনুরোধ জমা হয়েছে — অনুমোদনের অপেক্ষায়" : "সম্পন্ন হয়েছে");
@@ -634,7 +623,7 @@ function SettlementDialog({ open, membership: m, onClose, onDone, canApprove }: 
     return () => clearTimeout(t);
   }, [open, damage, m._id]);
   return (
-    <SimpleDialog open={open} onClose={onClose} title="চেক-আউট ও চূড়ান্ত হিসাব" description="অগ্রিম/জামানত + জমা অগ্রিম − বকেয়া − ক্ষতি/অন্যান্য চার্জ = ফেরতযোগ্য (ঋণাত্মক হলে শিক্ষার্থীর বকেয়া)" busy={busy} submitLabel={canApprove ? "নিষ্পত্তি তৈরি ও অনুমোদন" : "অনুমোদনের জন্য জমা দিন"}
+    <SimpleDialog open={open} onClose={onClose} title="চেক-আউট ও চূড়ান্ত হিসাব" description="অগ্রিম + জমা অগ্রিম − বকেয়া − ক্ষতি/অন্যান্য চার্জ = ফেরতযোগ্য (ঋণাত্মক হলে শিক্ষার্থীর বকেয়া)" busy={busy} submitLabel={canApprove ? "নিষ্পত্তি তৈরি ও অনুমোদন" : "অনুমোদনের জন্য জমা দিন"}
       onSubmit={() => run(async () => {
         await api.post(`/mess/memberships/${m._id}/settlements`, { leavingDate, damageCharges: Number(damage) || 0, damageNote: damageNote || undefined });
         await onDone(canApprove ? "নিষ্পত্তি অনুমোদিত — 'জামানত ও নিষ্পত্তি' থেকে সম্পন্ন করুন" : "নিষ্পত্তি অনুমোদনের জন্য জমা হয়েছে");
@@ -646,13 +635,13 @@ function SettlementDialog({ open, membership: m, onClose, onDone, canApprove }: 
       {Number(damage) > 0 && <Input placeholder="চার্জের বিবরণ *" value={damageNote} onChange={(e) => setDamageNote(e.target.value)} />}
       {preview && (
         <div className="rounded-md border text-sm divide-y">
-          <PRow label="অগ্রিম/জামানত ব্যালেন্স" value={tk(preview.depositBalance)} />
+          <PRow label="অগ্রিম ব্যালেন্স" value={tk(preview.depositBalance)} />
           <PRow label="+ অতিরিক্ত পরিশোধ (জমা অগ্রিম)" value={tk(preview.advanceBalance)} />
-          <PRow label="− বকেয়া ডাইনিং চার্জ" value={tk(preview.outstandingDue)} />
+          <PRow label="− বকেয়া (ভাড়া ও ডাইনিং চার্জ)" value={tk(preview.outstandingDue)} />
           <PRow label="− ক্ষতি/অন্যান্য" value={tk(preview.damageCharges)} />
           <PRow label="= ফেরতযোগ্য" value={tk(preview.refundableAmount)} bold />
-          <PRow label="অগ্রিম/জামানত থেকে বকেয়ায় সমন্বয়" value={tk(preview.depositApplied)} />
-          <PRow label="অগ্রিম/জামানত ফেরত" value={tk(preview.depositRefund)} />
+          <PRow label="অগ্রিম থেকে বকেয়ায় সমন্বয়" value={tk(preview.depositApplied)} />
+          <PRow label="অগ্রিম ফেরত" value={tk(preview.depositRefund)} />
           <PRow label="অতিরিক্ত পরিশোধ ফেরত" value={tk(preview.advanceRefund)} />
           <PRow label="চূড়ান্ত পরিমাণ" value={preview.refundableAmount >= 0 ? `${tk(preview.refundableAmount)} ফেরত` : `${tk(-preview.refundableAmount)} পাওনা`} bold />
           {preview.remainingDue > 0 && <PRow label="নিষ্পত্তির পরও শিক্ষার্থীর বকেয়া" value={tk(preview.remainingDue)} bold />}

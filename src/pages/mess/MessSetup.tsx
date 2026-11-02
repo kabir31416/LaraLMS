@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { Pager, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import {
@@ -99,6 +100,7 @@ function MessesTab({ canManage }: { canManage: boolean }) {
                       <Button size="sm" variant="outline" className="mr-1" onClick={() => { setEditing(m); setFormOpen(true); }} title="সম্পাদনা"><Edit className="h-3.5 w-3.5" /></Button>
                       <Button size="sm" variant="outline" className="mr-1" onClick={() => toggleStatus(m)}>{m.status === "active" ? "নিষ্ক্রিয়" : "সক্রিয়"}</Button>
                       <Button size="sm" variant="outline" onClick={() => setDeleting(m)} title="মুছুন"><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <SuperDeleteButton entity="mess" id={m._id} what={`মেস: ${m.name} (${m.code})`} warning="এই মেসের সব রুম, সিট, সদস্য, বিল, পেমেন্ট, অগ্রিম, নিষ্পত্তি, খরচ, অভিযোগ ও নোটিশ একসাথে মুছে যাবে।" onDeleted={reloadMesses} className="ml-1" />
                     </TableCell>
                   )}
                 </TableRow>
@@ -124,12 +126,12 @@ function MessesTab({ canManage }: { canManage: boolean }) {
 
 function MessFormDialog({ open, onOpenChange, editing, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; editing: Mess | null; onSaved: () => Promise<void> }) {
   const { settings } = useMessScope();
-  const blank = { name: "", address: "", contactNumber: "", openingDate: "", notes: "", defaultDiningCharge: "", defaultDeposit: "", billingDay: "", dueDay: "" };
+  const blank = { name: "", address: "", contactNumber: "", openingDate: "", notes: "", defaultRent: "", defaultDiningCharge: "", defaultDeposit: "", billingDay: "", dueDay: "" };
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
   const str = (n?: number) => (n == null ? "" : String(n));
   useEffect(() => {
-    if (open) setForm({ name: editing?.name ?? "", address: editing?.address ?? "", contactNumber: editing?.contactNumber ?? "", openingDate: editing?.openingDate ?? "", notes: editing?.notes ?? "", defaultDiningCharge: str(editing?.defaultDiningCharge), defaultDeposit: str(editing?.defaultDeposit), billingDay: str(editing?.billingDay), dueDay: str(editing?.dueDay) });
+    if (open) setForm({ name: editing?.name ?? "", address: editing?.address ?? "", contactNumber: editing?.contactNumber ?? "", openingDate: editing?.openingDate ?? "", notes: editing?.notes ?? "", defaultRent: str(editing?.defaultRent), defaultDiningCharge: str(editing?.defaultDiningCharge), defaultDeposit: str(editing?.defaultDeposit), billingDay: str(editing?.billingDay), dueDay: str(editing?.dueDay) });
   }, [open, editing]);
   // Blank = use the global Mess Settings value (sent as null so an existing override is cleared).
   const num = (v: string) => (v.trim() === "" ? null : Number(v));
@@ -138,7 +140,7 @@ function MessFormDialog({ open, onOpenChange, editing, onSaved }: { open: boolea
     setBusy(true);
     try {
       const day = (v: string) => { const n = num(v); return n == null ? null : Math.min(28, Math.max(1, Math.round(n))); };
-      const body = { ...form, openingDate: form.openingDate || undefined, defaultDiningCharge: num(form.defaultDiningCharge), defaultDeposit: num(form.defaultDeposit), billingDay: day(form.billingDay), dueDay: day(form.dueDay) };
+      const body = { ...form, openingDate: form.openingDate || undefined, defaultRent: num(form.defaultRent), defaultDiningCharge: num(form.defaultDiningCharge), defaultDeposit: num(form.defaultDeposit), billingDay: day(form.billingDay), dueDay: day(form.dueDay) };
       if (editing) await api.patch(`/mess/messes/${editing._id}`, body);
       else await api.post("/mess/messes", body);
       toast.success(editing ? "মেস আপডেট হয়েছে" : "মেস তৈরি হয়েছে");
@@ -161,11 +163,12 @@ function MessFormDialog({ open, onOpenChange, editing, onSaved }: { open: boolea
           <div className="space-y-1.5"><Label>চালুর তারিখ</Label><Input type="date" value={form.openingDate} onChange={(e) => setForm({ ...form, openingDate: e.target.value })} /></div>
           <div className="sm:col-span-2 space-y-1.5"><Label>নোট</Label><Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
           <p className="sm:col-span-2 text-sm font-semibold pt-1">এই মেসের বিলিং ডিফল্ট <span className="font-normal text-xs text-muted-foreground">(ফাঁকা = মেস সেটিংসের মান)</span></p>
-          <div className="space-y-1.5"><Label>ডিফল্ট মাসিক ডাইনিং চার্জ (৳)</Label><Input type="number" min={0} value={form.defaultDiningCharge} placeholder={String(settings?.defaultRent ?? "")} onChange={(e) => setForm({ ...form, defaultDiningCharge: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>ডিফল্ট এক মাসের অগ্রিম / জামানত (৳)</Label><Input type="number" min={0} value={form.defaultDeposit} placeholder={String(settings?.defaultDeposit ?? "")} onChange={(e) => setForm({ ...form, defaultDeposit: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>ডিফল্ট মাসিক সিট ভাড়া (৳)</Label><Input type="number" min={0} value={form.defaultRent} placeholder={String(settings?.defaultRent ?? "")} onChange={(e) => setForm({ ...form, defaultRent: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>ডিফল্ট ডাইনিং চার্জ — একবার (৳)</Label><Input type="number" min={0} value={form.defaultDiningCharge} placeholder={String(settings?.defaultDiningCharge ?? 0)} onChange={(e) => setForm({ ...form, defaultDiningCharge: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>ডিফল্ট এক মাসের অগ্রিম (৳)</Label><Input type="number" min={0} value={form.defaultDeposit} placeholder={String(settings?.defaultDeposit ?? "")} onChange={(e) => setForm({ ...form, defaultDeposit: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>বিল তৈরির দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={form.billingDay} placeholder={String(settings?.billingDay ?? 1)} onChange={(e) => setForm({ ...form, billingDay: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>পরিশোধের শেষ দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={form.dueDay} placeholder={String(settings?.dueDay ?? 10)} onChange={(e) => setForm({ ...form, dueDay: e.target.value })} /></div>
-          <p className="sm:col-span-2 text-xs text-muted-foreground">পরিবর্তন শুধু ভবিষ্যতের ভর্তি ও বিলে প্রযোজ্য। সিটের নিজস্ব চার্জ থাকলে সেটিই আগে ব্যবহৃত হয়।</p>
+          <p className="sm:col-span-2 text-xs text-muted-foreground">পরিবর্তন শুধু ভবিষ্যতের ভর্তি ও বিলে প্রযোজ্য। সিটের নিজস্ব ভাড়া থাকলে সেটিই আগে ব্যবহৃত হয়।</p>
           {!editing && <p className="sm:col-span-2 text-xs text-muted-foreground">মেস কোড স্বয়ংক্রিয়ভাবে তৈরি হবে।</p>}
         </div>
         <DialogFooter>
@@ -314,6 +317,7 @@ function RoomsTab({ canManage }: { canManage: boolean }) {
                       <Button size="sm" variant="outline" className="mr-1" onClick={() => setSeatForm({ open: true, editing: null })} title="সিট যোগ"><BedDouble className="h-3.5 w-3.5" /></Button>
                       <Button size="sm" variant="outline" className="mr-1" onClick={() => setRoomForm({ open: true, editing: r })}><Edit className="h-3.5 w-3.5" /></Button>
                       <Button size="sm" variant="outline" onClick={() => removeRoom(r)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <SuperDeleteButton entity="room" id={r._id} what={`রুম ${r.name}`} warning="রুমের সব সিটও মুছে যাবে। কোনো সিটে সদস্য থাকলে আগে তাদের সরাতে হবে।" onDeleted={reloadAll} className="ml-1" />
                     </TableCell>
                   )}
                 </TableRow>
@@ -344,7 +348,7 @@ function RoomsTab({ canManage }: { canManage: boolean }) {
         <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>রুম</TableHead><TableHead>সিট</TableHead><TableHead>ধরন</TableHead><TableHead>মাসিক ডাইনিং চার্জ</TableHead>
+              <TableHead>রুম</TableHead><TableHead>সিট</TableHead><TableHead>ধরন</TableHead><TableHead>মাসিক ভাড়া</TableHead>
               <TableHead>বর্তমান সদস্য</TableHead><TableHead>খালি হবে</TableHead><TableHead>অবস্থা</TableHead><TableHead className="text-right">কাজ</TableHead>
             </TableRow></TableHeader>
             <TableBody>
@@ -362,6 +366,7 @@ function RoomsTab({ canManage }: { canManage: boolean }) {
                     <Button size="sm" variant="outline" className="mr-1" onClick={() => setHistoryFor(s)} title="ইতিহাস"><History className="h-3.5 w-3.5" /></Button>
                     {canManage && <Button size="sm" variant="outline" className="mr-1" onClick={() => setSeatForm({ open: true, editing: s })}><Edit className="h-3.5 w-3.5" /></Button>}
                     {canManage && <Button size="sm" variant="outline" onClick={() => removeSeat(s)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                    <SuperDeleteButton entity="seat" id={s._id} what={`সিট ${s.seatNumber}`} warning="সিটে সদস্য থাকলে আগে তাকে সরাতে হবে।" onDeleted={reloadAll} className="ml-1" />
                   </TableCell>
                 </TableRow>
               ))}
@@ -504,7 +509,7 @@ function SeatFormDialog({ open, editing, rooms, seatTypes, defaultRent, onOpenCh
               <SelectContent><SelectItem value="__none">—</SelectItem>{seatTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5"><Label>মাসিক ডাইনিং চার্জ (৳) *</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} /></div>
+          <div className="space-y-1.5"><Label>মাসিক ভাড়া (৳) *</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} /></div>
           <div className="space-y-1.5"><Label>খালি হবে (তারিখ)</Label><Input type="date" value={form.availableFrom} onChange={(e) => setForm({ ...form, availableFrom: e.target.value })} /></div>
           {editing && (
             <div className="space-y-1.5"><Label>অবস্থা</Label>

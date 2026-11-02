@@ -38,6 +38,7 @@ export interface Mess {
   status: "active" | "inactive";
   staff: MessStaffRow[];
   /** Per-Mess defaults (unset = Mess Settings). */
+  defaultRent?: number;
   defaultDiningCharge?: number;
   defaultDeposit?: number;
   billingDay?: number;
@@ -92,6 +93,8 @@ export interface Balance {
   depositCollected: number;
   depositBalance: number;
   depositPendingRefund: number;
+  /** Unpaid part of the one-time dining charge (included in due). */
+  diningDue?: number;
 }
 
 export interface Membership {
@@ -119,7 +122,8 @@ export interface Membership {
   cancelReason?: string;
   seatHistory?: { messId: NamedRef; roomId: RoomRef; seatId: SeatRef; fromDate: string; toDate?: string; monthlyRent: number; reason?: string }[];
   statusHistory?: { status: MembershipStatus; at: string; note?: string }[];
-  initialDiningCharge?: number;
+  /** One-time dining charge (never in a monthly bill). */
+  diningCharge?: number;
   initialPaymentId?: string;
   dateHistory?: { field: "joiningDate"; from: string; to: string; reason: string; at: string; bills: { period: string; billNo?: string; oldAmount: number; newAmount: number; action: string }[] }[];
   balance: Balance;
@@ -159,7 +163,6 @@ export interface Bill {
   adjustment: number;
   adjustmentReason?: string;
   previousDue: number;
-  advanceAdjusted?: number;
   source?: "auto" | "manual" | "admission" | "regenerate";
   currentCharges: number;
   totalPayable: number;
@@ -208,7 +211,6 @@ export interface DepositTx {
   settlementId?: string;
   rejectedReason?: string;
   period?: string;
-  source?: "manual" | "advance_rule";
 }
 
 export interface Settlement {
@@ -306,7 +308,8 @@ export interface MessSettings {
   lateFeeAmount: number;
   prorationEnabled: boolean;
   prorationMode?: ProrationMode;
-  advanceAdjustmentRule: AdvanceRule;
+  /** One-time dining charge default. */
+  defaultDiningCharge: number;
   autoBillingEnabled: boolean;
   billSmsEnabled: boolean;
   dueReminderSmsEnabled: boolean;
@@ -326,22 +329,16 @@ export interface MessSettings {
 }
 
 export type ProrationMode = "full" | "prorate" | "next_month";
-export type AdvanceRule = "on_checkout" | "next_bill" | "manual";
 export type MessSmsEvent = "payment" | "bill" | "dueReminder" | "admission" | "checkout";
 
 export const PRORATION_MODE_LABELS: Record<ProrationMode, string> = {
-  full: "পূর্ণ মাসের চার্জ",
-  prorate: "বাকি দিনের আনুপাতিক চার্জ",
-  next_month: "যোগদানের মাস ফ্রি — পরের মাস থেকে বিল",
-};
-export const ADVANCE_RULE_LABELS: Record<AdvanceRule, string> = {
-  on_checkout: "চেক-আউটের সময় চূড়ান্ত হিসাবে সমন্বয়",
-  next_bill: "যোগদানের পরের মাসের বিলে একবার সমন্বয়",
-  manual: "শুধু ম্যানুয়ালি (জামানত → বকেয়ায় সমন্বয়)",
+  full: "পূর্ণ মাসের ভাড়া",
+  prorate: "বাকি দিনের আনুপাতিক ভাড়া",
+  next_month: "যোগদানের মাসের ভাড়া নেই — পরের মাস থেকে",
 };
 export const SMS_EVENT_LABELS: Record<MessSmsEvent, string> = {
   payment: "পেমেন্ট গ্রহণ",
-  bill: "মাসিক বিল তৈরি",
+  bill: "মাসিক ভাড়ার বিল তৈরি",
   dueReminder: "বকেয়া রিমাইন্ডার",
   admission: "ভর্তি / প্রারম্ভিক পেমেন্ট",
   checkout: "চেক-আউট / চূড়ান্ত হিসাব",
@@ -386,24 +383,23 @@ export interface MessSmsLog {
 }
 
 export interface InitialChargesSummary {
-  initialDiningCharge: number;
-  advanceDeposit: number;
+  diningCharge: number;
+  advance: number;
   totalInitialPayable: number;
   amountPaid: number;
   remainingDue: number;
-  billId?: string;
-  billNo?: string;
+  rentBills: { period: string; billNo?: string; amount: number }[];
   paymentId?: string;
   receiptNo?: string;
   allocation?: { rent: number; deposit: number };
 }
 
 /**
- * Display-only preview of the joining month's dining charge under the
- * configured rule — the same formula the backend applies
- * (messBilling.service diningChargeForPeriod); the backend recomputes it.
+ * Display-only preview of the joining month's RENT under the configured
+ * rule — the same formula the backend applies (messBilling.service
+ * rentForPeriod); the backend recomputes it.
  */
-export function previewJoiningCharge(monthlyRent: number, joiningDate: string, mode: ProrationMode): number {
+export function previewJoiningRent(monthlyRent: number, joiningDate: string, mode: ProrationMode): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(joiningDate)) return monthlyRent;
   const [y, m, d] = joiningDate.split("-").map(Number);
   if (d <= 1) return monthlyRent;
@@ -469,8 +465,8 @@ export const MEMBERSHIP_STATUS_LABELS: Record<MembershipStatus, string> = {
 };
 export const RESERVATION_STATUS_LABELS: Record<Reservation["status"], string> = { active: "সক্রিয়", converted: "সদস্যপদে রূপান্তরিত", expired: "মেয়াদোত্তীর্ণ", cancelled: "বাতিল" };
 export const BILL_STATUS_LABELS: Record<Bill["status"], string> = { unpaid: "অপরিশোধিত", partial: "আংশিক", paid: "পরিশোধিত", cancelled: "বাতিল" };
-export const PURPOSE_LABELS: Record<MessPayment["purpose"], string> = { rent: "ডাইনিং চার্জ / বকেয়া", deposit: "অগ্রিম / জামানত", initial: "ভর্তি (ডাইনিং + অগ্রিম)" };
-export const DEPOSIT_TX_LABELS: Record<DepositTx["type"], string> = { deduct: "ক্ষতি/অন্যান্য কর্তন", apply_to_due: "অগ্রিম/জামানত বকেয়ায় সমন্বয়", refund: "ফেরত" };
+export const PURPOSE_LABELS: Record<MessPayment["purpose"], string> = { rent: "ভাড়া / বকেয়া", deposit: "এক মাসের অগ্রিম", initial: "ভর্তি (ডাইনিং চার্জ + অগ্রিম)" };
+export const DEPOSIT_TX_LABELS: Record<DepositTx["type"], string> = { deduct: "ক্ষতি/অন্যান্য কর্তন", apply_to_due: "অগ্রিম থেকে বকেয়ায় সমন্বয়", refund: "ফেরত" };
 export const DEPOSIT_TX_STATUS_LABELS: Record<DepositTx["status"], string> = { pending: "অপেক্ষমাণ", approved: "অনুমোদিত", completed: "সম্পন্ন", rejected: "প্রত্যাখ্যাত", cancelled: "বাতিল" };
 export const SETTLEMENT_STATUS_LABELS: Record<Settlement["status"], string> = { pending: "অপেক্ষমাণ", approved: "অনুমোদিত", completed: "সম্পন্ন", cancelled: "বাতিল" };
 export const EXPENSE_STATUS_LABELS: Record<Expense["status"], string> = { pending: "অনুমোদনের অপেক্ষায়", approved: "অনুমোদিত", rejected: "প্রত্যাখ্যাত", cancelled: "বাতিল" };

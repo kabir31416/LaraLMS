@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { AttachmentInput, MethodSelect, Pager, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import {
@@ -62,7 +63,7 @@ export default function MessComplaints() {
                   <TableCell><StatusBadge status={c.priority === "urgent" ? "urgent" : c.priority === "high" ? "pending" : "neutral"} label={COMPLAINT_PRIORITY_LABELS[c.priority]} /></TableCell>
                   <TableCell className="text-sm">{c.assignedStaffId?.name ?? "—"}</TableCell>
                   <TableCell><StatusBadge status={c.status} label={COMPLAINT_STATUS_LABELS[c.status]} /></TableCell>
-                  <TableCell><Button size="sm" variant="ghost"><Eye className="h-3.5 w-3.5" /></Button></TableCell>
+                  <TableCell className="whitespace-nowrap"><Button size="sm" variant="ghost"><Eye className="h-3.5 w-3.5" /></Button><SuperDeleteButton entity="complaint" id={c._id} what={`টিকিট ${c.ticketNo} — ${c.title}`} onDeleted={list.reload} className="ml-1" /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

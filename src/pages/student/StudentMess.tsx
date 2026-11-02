@@ -75,7 +75,7 @@ export default function StudentMess() {
               <Fig label="বর্তমান বকেয়া" value={tk(data.balances?.due)} tone={data.balances && data.balances.due > 0 ? "text-destructive" : "text-success"} />
               <Fig label="মোট পরিশোধ" value={tk(data.balances?.totalPaid)} />
               <Fig label="অতিরিক্ত পরিশোধ জমা" value={tk(data.balances?.advance)} tone="text-success" />
-              <Fig label="অগ্রিম / জামানত (জমা / নির্ধারিত)" value={`${tk(data.balances?.depositBalance)} / ${tk(data.balances?.depositRequired)}`} />
+              <Fig label="অগ্রিম (জমা / নির্ধারিত)" value={`${tk(data.balances?.depositBalance)} / ${tk(data.balances?.depositRequired)}`} />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card>
@@ -85,20 +85,21 @@ export default function StudentMess() {
                   <Row label="সদস্যপদ নং">{data.current.membershipNo}</Row>
                   <Row label="মেস">{refName(data.current.messId)}</Row>
                   <Row label="রুম / সিট">{refName(data.current.roomId)} / {refName(data.current.seatId, "seatNumber")}</Row>
-                  <Row label="মাসিক ডাইনিং চার্জ">{tk(data.current.monthlyRent)}{data.current.discount > 0 ? ` (ছাড় ${tk(data.current.discount)})` : ""}</Row>
+                  <Row label="মাসিক ভাড়া">{tk(data.current.monthlyRent)}{data.current.discount > 0 ? ` (ছাড় ${tk(data.current.discount)})` : ""}</Row>
+                  <Row label="ডাইনিং চার্জ (একবার)">{tk(data.current.diningCharge ?? 0)}{(data.current.balance?.diningDue ?? 0) > 0 ? ` — বাকি ${tk(data.current.balance?.diningDue)}` : ""}</Row>
+                  <Row label="এক মাসের অগ্রিম">{tk(data.balances?.depositBalance)} / {tk(data.balances?.depositRequired)} <span className="text-xs text-muted-foreground">(চেক-আউটে সমন্বয়)</span></Row>
                   <Row label="যোগদান">{data.current.joiningDate}</Row>
                   {data.current.leftDate && <Row label="চেক-আউট">{data.current.leftDate}</Row>}
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-base">চলতি বিল</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-base">চলতি মাসের ভাড়ার বিল</CardTitle></CardHeader>
                 <CardContent className="space-y-1.5 text-sm">
                   {!data.currentBill ? <p className="text-muted-foreground">কোনো বিল নেই</p> : (
                     <>
                       <Row label="মাস">{periodName(data.currentBill.period)}</Row>
                       <Row label="এই মাসের চার্জ">{tk(data.currentBill.currentCharges)}</Row>
                       <Row label="পূর্বের বকেয়া">{tk(Math.max(0, data.currentBill.previousDue))}</Row>
-                      {(data.currentBill.advanceAdjusted ?? 0) > 0 && <Row label="অগ্রিম সমন্বয়">− {tk(data.currentBill.advanceAdjusted)}</Row>}
                       <Row label="মোট প্রদেয় (বিল তৈরির সময়)">{tk(data.currentBill.totalPayable)}</Row>
                       <Row label="এই বিলের বাকি">{tk(data.currentBill.dueAmount)}</Row>
                       <Row label="মোট অবশিষ্ট বকেয়া (আজ)"><b className={data.balances && data.balances.due > 0 ? "text-destructive" : "text-success"}>{tk(data.balances?.due)}</b></Row>

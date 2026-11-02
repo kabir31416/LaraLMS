@@ -21,13 +21,8 @@ export interface MessDepositTransactionDoc extends Document {
   method?: string; // refunds only
   reference?: string;
   settlementId?: Types.ObjectId;
-  /** "yyyy-mm" the advance/deposit was adjusted against (apply_to_due) — the "which month was the advance used" record. */
+  /** "yyyy-mm" a manual apply_to_due was for — the "which month was the advance used" record. */
   period?: string;
-  billId?: Types.ObjectId;
-  /** "advance_rule" = posted automatically by the advance-adjustment rule. */
-  source?: "manual" | "advance_rule";
-  /** `${membershipId}` for the one automatic advance adjustment per membership (unique) — renamed when that bill is cancelled. */
-  advanceKey?: string;
   requestedBy?: Types.ObjectId;
   approvedBy?: Types.ObjectId;
   approvedAt?: Date;
@@ -53,9 +48,6 @@ const messDepositTransactionSchema = new Schema<MessDepositTransactionDoc>(
     reference: { type: String, trim: true },
     settlementId: { type: Schema.Types.ObjectId, ref: "MessSettlement" },
     period: { type: String },
-    billId: { type: Schema.Types.ObjectId, ref: "MessBill" },
-    source: { type: String, enum: ["manual", "advance_rule"] },
-    advanceKey: { type: String },
     requestedBy: { type: Schema.Types.ObjectId, ref: "User" },
     approvedBy: { type: Schema.Types.ObjectId, ref: "User" },
     approvedAt: { type: Date },
@@ -74,8 +66,5 @@ messDepositTransactionSchema.index(
   { settlementId: 1, type: 1 },
   { unique: true, partialFilterExpression: { settlementId: { $exists: true } } },
 );
-
-// At most one automatic advance adjustment per membership — a retried or concurrent bill run can never use the advance twice.
-messDepositTransactionSchema.index({ advanceKey: 1 }, { unique: true, partialFilterExpression: { advanceKey: { $exists: true } } });
 
 export const MessDepositTransaction = model<MessDepositTransactionDoc>("MessDepositTransaction", messDepositTransactionSchema);

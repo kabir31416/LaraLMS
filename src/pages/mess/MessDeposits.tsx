@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { MethodSelect, Pager, ReasonDialog, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import {
@@ -74,7 +75,7 @@ function TransactionsTab() {
                 <TableCell className="font-mono text-xs">{t.txNo}</TableCell>
                 <TableCell>{t.date}</TableCell>
                 <TableCell><button className="text-left hover:underline" onClick={() => navigate(`/mess/members/${refId(t.membershipId)}`)}><p className="font-medium">{t.studentId?.name}</p><p className="text-xs text-muted-foreground">{typeof t.membershipId === "object" ? t.membershipId.membershipNo : ""} • {refName(t.messId)}</p></button></TableCell>
-                <TableCell className="text-sm">{DEPOSIT_TX_LABELS[t.type]}{t.settlementId && <p className="text-xs text-muted-foreground">নিষ্পত্তি থেকে</p>}{t.period && <p className="text-xs text-muted-foreground">মাস: {periodName(t.period)}{t.source === "advance_rule" ? " • স্বয়ংক্রিয়" : ""}</p>}</TableCell>
+                <TableCell className="text-sm">{DEPOSIT_TX_LABELS[t.type]}{t.settlementId && <p className="text-xs text-muted-foreground">নিষ্পত্তি থেকে</p>}{t.period && <p className="text-xs text-muted-foreground">মাস: {periodName(t.period)}</p>}</TableCell>
                 <TableCell className="text-sm">{t.reason || "—"}{t.rejectedReason && <p className="text-xs text-destructive">{t.rejectedReason}</p>}{t.method && <p className="text-xs text-muted-foreground">{t.method}{t.reference ? ` • ${t.reference}` : ""}</p>}</TableCell>
                 <TableCell className="text-right font-medium">{tk(t.amount)}</TableCell>
                 <TableCell><StatusBadge status={t.status} label={DEPOSIT_TX_STATUS_LABELS[t.status]} /></TableCell>
@@ -85,6 +86,7 @@ function TransactionsTab() {
                   </>}
                   {t.type === "refund" && t.status === "approved" && can(MESS_PAYMENTS_COLLECT) && <Button size="sm" className="mr-1" onClick={() => setPaying(t)}>ফেরত পরিশোধ</Button>}
                   {!t.settlementId && t.status === "approved" && can(MESS_FINANCE_APPROVE) && <Button size="sm" variant="outline" onClick={() => setCancelling(t)}>রিভার্স</Button>}
+                  <SuperDeleteButton entity="deposit-transaction" id={t._id} what={`অগ্রিম লেনদেন ${t.txNo} (${tk(t.amount)})`} onDeleted={list.reload} className="ml-1" />
                 </TableCell>
               </TableRow>
             ))}
@@ -151,6 +153,7 @@ function SettlementsTab() {
                   {s.status === "pending" && can(MESS_FINANCE_APPROVE) && <Button size="sm" variant="outline" className="mr-1" onClick={() => approve(s)}>অনুমোদন</Button>}
                   {s.status === "approved" && can(MESS_FINANCE_APPROVE) && <Button size="sm" className="mr-1" onClick={() => setCompleting(s)}>সম্পন্ন করুন</Button>}
                   {(s.status === "pending" || s.status === "approved") && (can(MESS_MEMBERS_MANAGE) || can(MESS_FINANCE_APPROVE)) && <Button size="sm" variant="outline" onClick={() => setCancelling(s)}>বাতিল</Button>}
+                  <SuperDeleteButton entity="settlement" id={s._id} what={`নিষ্পত্তি ${s.settlementNo}`} warning="এই নিষ্পত্তির অগ্রিম সমন্বয়/ফেরতের লেনদেনও মুছে যাবে; চেক-আউট করা সদস্য চেক-আউটই থাকবেন।" onDeleted={list.reload} className="ml-1" />
                 </TableCell>
               </TableRow>
             ))}

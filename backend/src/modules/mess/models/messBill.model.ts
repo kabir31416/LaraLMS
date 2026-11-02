@@ -31,15 +31,13 @@ export interface MessBillDoc extends Document {
   adjustment: number;
   adjustmentReason?: string;
   adjustmentApprovedBy?: Types.ObjectId;
-  /** Advance/deposit adjusted against this bill under the advance-adjustment rule (recorded as an apply_to_due deposit transaction). */
-  advanceAdjusted: number;
-  /** How the bill was created: the monthly scheduler, an operator, or the admission's initial dining charge. */
+  /** How the bill was created: the monthly scheduler, an operator, the admission (joining month's rent) or a joining-date re-issue. */
   source: "auto" | "manual" | "admission" | "regenerate";
   /** Balance BEFORE this bill (positive = due carried forward, negative = advance credit). Snapshot only — never recomputed. */
   previousDue: number;
   /** Σ items − discount − adjustment — what this bill itself adds to the member's ledger. */
   currentCharges: number;
-  /** currentCharges + previousDue − advanceAdjusted — the invoice's "Total Payable" at the time it was issued. */
+  /** currentCharges + previousDue — the invoice's "Total Payable" at the time it was issued. */
   totalPayable: number;
   /** FIFO-allocated share of the member's payments/credits — recomputed by messLedger.service.ts. */
   paidAmount: number;
@@ -82,7 +80,6 @@ const messBillSchema = new Schema<MessBillDoc>(
     adjustmentReason: { type: String, trim: true },
     adjustmentApprovedBy: { type: Schema.Types.ObjectId, ref: "User" },
     previousDue: { type: Number, default: 0 },
-    advanceAdjusted: { type: Number, default: 0, min: 0 },
     source: { type: String, enum: ["auto", "manual", "admission", "regenerate"], default: "manual" },
     currentCharges: { type: Number, required: true, min: 0 },
     totalPayable: { type: Number, required: true },
