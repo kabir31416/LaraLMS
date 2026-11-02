@@ -12,8 +12,8 @@ import { MessPage, useMessScope } from "@/components/mess/MessShell";
 import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
 import {
-  ADVANCE_RULE_LABELS, effectiveProration, errMsg, MEMBERSHIP_STATUS_LABELS, PRORATION_MODE_LABELS, SMS_EVENT_LABELS, SMS_PLACEHOLDERS, SMS_STATUS_LABELS,
-  type AdvanceRule, type MessSettings, type MessSmsEvent, type ProrationMode,
+  effectiveProration, errMsg, MEMBERSHIP_STATUS_LABELS, PRORATION_MODE_LABELS, SMS_EVENT_LABELS, SMS_PLACEHOLDERS, SMS_STATUS_LABELS,
+  type MessSettings, type MessSmsEvent, type ProrationMode,
 } from "@/lib/mess";
 
 const SMS_TOGGLE: Record<MessSmsEvent, "paymentSmsEnabled" | "billSmsEnabled" | "dueReminderSmsEnabled" | "admissionSmsEnabled" | "checkoutSmsEnabled"> = {
@@ -62,10 +62,10 @@ export default function MessSettingsPage() {
       const body = {
         defaultMessId: f.defaultMessId || undefined,
         billingDay: Number(f.billingDay), dueDay: Number(f.dueDay), gracePeriodDays: Number(f.gracePeriodDays),
-        defaultRent: Number(f.defaultRent), defaultDeposit: Number(f.defaultDeposit),
+        defaultRent: Number(f.defaultRent), defaultDeposit: Number(f.defaultDeposit), defaultDiningCharge: Number(f.defaultDiningCharge ?? 0),
         receiptPrefix: f.receiptPrefix, billPrefix: f.billPrefix,
         lateFeeEnabled: f.lateFeeEnabled, lateFeeAmount: Number(f.lateFeeAmount),
-        prorationMode: f.prorationMode, advanceAdjustmentRule: f.advanceAdjustmentRule, autoBillingEnabled: f.autoBillingEnabled,
+        prorationMode: f.prorationMode, autoBillingEnabled: f.autoBillingEnabled,
         billSmsEnabled: f.billSmsEnabled, dueReminderSmsEnabled: f.dueReminderSmsEnabled, admissionSmsEnabled: f.admissionSmsEnabled, checkoutSmsEnabled: f.checkoutSmsEnabled,
         smsTemplates: f.smsTemplates,
         discountApprovalRequired: f.discountApprovalRequired, refundApprovalRequired: f.refundApprovalRequired, expenseApprovalRequired: f.expenseApprovalRequired,
@@ -113,8 +113,9 @@ export default function MessSettingsPage() {
             <div className="space-y-1.5"><Label>বিল ইস্যুর দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={f.billingDay} onChange={(e) => set("billingDay", Number(e.target.value))} /></div>
             <div className="space-y-1.5"><Label>পরিশোধের শেষ দিন (১-২৮)</Label><Input type="number" min={1} max={28} value={f.dueDay} onChange={(e) => set("dueDay", Number(e.target.value))} /></div>
             <div className="space-y-1.5"><Label>গ্রেস পিরিয়ড (দিন)</Label><Input type="number" min={0} value={f.gracePeriodDays} onChange={(e) => set("gracePeriodDays", Number(e.target.value))} /></div>
-            <div className="space-y-1.5"><Label>ডিফল্ট মাসিক ডাইনিং চার্জ (৳)</Label><Input type="number" min={0} value={f.defaultRent} onChange={(e) => set("defaultRent", Number(e.target.value))} /></div>
-            <div className="space-y-1.5"><Label>ডিফল্ট এক মাসের অগ্রিম / জামানত (৳)</Label><Input type="number" min={0} value={f.defaultDeposit} onChange={(e) => set("defaultDeposit", Number(e.target.value))} /></div>
+            <div className="space-y-1.5"><Label>ডিফল্ট মাসিক সিট ভাড়া (৳)</Label><Input type="number" min={0} value={f.defaultRent} onChange={(e) => set("defaultRent", Number(e.target.value))} /></div>
+            <div className="space-y-1.5"><Label>ডিফল্ট ডাইনিং চার্জ — একবার (৳)</Label><Input type="number" min={0} value={f.defaultDiningCharge ?? 0} onChange={(e) => set("defaultDiningCharge", Number(e.target.value))} /></div>
+            <div className="space-y-1.5"><Label>ডিফল্ট এক মাসের অগ্রিম (৳)</Label><Input type="number" min={0} value={f.defaultDeposit} onChange={(e) => set("defaultDeposit", Number(e.target.value))} /><p className="text-[11px] text-muted-foreground">০ = সিটের এক মাসের ভাড়া</p></div>
             <div className="space-y-1.5"><Label>রসিদ প্রিফিক্স</Label><Input value={f.receiptPrefix} onChange={(e) => set("receiptPrefix", e.target.value)} /></div>
             <div className="space-y-1.5"><Label>বিল প্রিফিক্স</Label><Input value={f.billPrefix} onChange={(e) => set("billPrefix", e.target.value)} /></div>
             <div className="col-span-2">
@@ -129,27 +130,20 @@ export default function MessSettingsPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">আর্থিক নিয়ম</CardTitle><CardDescription>বিলম্ব ফি ও আংশিক মাসের চার্জ ডিফল্টভাবে বন্ধ</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">আর্থিক নিয়ম</CardTitle><CardDescription>বিলম্ব ফি ডিফল্টভাবে বন্ধ</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             <Toggle label="বিলম্ব ফি চালু" hint="গ্রেস পিরিয়ড পেরোনো অপরিশোধিত বিল থাকলে পরবর্তী বিলে নির্দিষ্ট ফি যুক্ত হবে" checked={f.lateFeeEnabled} onChange={(v) => set("lateFeeEnabled", v)} />
             {f.lateFeeEnabled && <div className="space-y-1.5"><Label>বিলম্ব ফি (৳)</Label><Input type="number" min={0} value={f.lateFeeAmount} onChange={(e) => set("lateFeeAmount", Number(e.target.value))} /></div>}
             <div className="space-y-1.5">
-              <Label>মাসের মাঝখানে যোগদান করলে যোগদানের মাসের চার্জ</Label>
+              <Label>মাসের মাঝখানে যোগদান করলে যোগদানের মাসের ভাড়া</Label>
               <Select value={f.prorationMode ?? "full"} onValueChange={(v) => set("prorationMode", v as ProrationMode)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{(Object.keys(PRORATION_MODE_LABELS) as ProrationMode[]).map((k) => <SelectItem key={k} value={k}>{PRORATION_MODE_LABELS[k]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 border-b pb-3">
-              <Label>এক মাসের অগ্রিম / জামানত কখন সমন্বয় হবে</Label>
-              <Select value={f.advanceAdjustmentRule ?? "on_checkout"} onValueChange={(v) => set("advanceAdjustmentRule", v as AdvanceRule)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{(Object.keys(ADVANCE_RULE_LABELS) as AdvanceRule[]).map((k) => <SelectItem key={k} value={k}>{ADVANCE_RULE_LABELS[k]}</SelectItem>)}</SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">কোন মাসে সমন্বয় হয়েছে তা সদস্যের অগ্রিম/জামানত লেনদেনে লেখা থাকে। অগ্রিম কখনো আয় হিসেবে গণ্য হয় না।</p>
-            </div>
+            <p className="border-b pb-3 text-xs text-muted-foreground">মাসিক বিলে শুধু সিট ভাড়া থাকে। ডাইনিং চার্জ ভর্তির সময় একবার নেওয়া হয়; এক মাসের অগ্রিম জমা থাকে এবং চেক-আউটের চূড়ান্ত হিসাবে বকেয়া কেটে বাকিটা ফেরত দেওয়া হয়।</p>
             <Toggle label="ছাড়/সমন্বয়ে অনুমোদন প্রয়োজন" hint="চালু থাকলে শুধু আর্থিক অনুমোদনকারী ছাড় বা বিল সমন্বয় দিতে পারবেন" checked={f.discountApprovalRequired} onChange={(v) => set("discountApprovalRequired", v)} />
-            <Toggle label="জামানত ফেরতে অনুমোদন প্রয়োজন" checked={f.refundApprovalRequired} onChange={(v) => set("refundApprovalRequired", v)} />
+            <Toggle label="অগ্রিম ফেরতে অনুমোদন প্রয়োজন" checked={f.refundApprovalRequired} onChange={(v) => set("refundApprovalRequired", v)} />
             <Toggle label="খরচে অনুমোদন প্রয়োজন" checked={f.expenseApprovalRequired} onChange={(v) => set("expenseApprovalRequired", v)} />
             <div className="space-y-1.5">
               <Label>মেসে ব্যবহারযোগ্য পেমেন্ট পদ্ধতি (কিছু না বাছলে সব সক্রিয় পদ্ধতি)</Label>

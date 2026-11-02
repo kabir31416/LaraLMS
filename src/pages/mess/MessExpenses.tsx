@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { AttachmentInput, MethodSelect, Pager, ReasonDialog, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import { errMsg, EXPENSE_STATUS_LABELS, qs, refName, tk, todayISO, usePagedList, type Expense } from "@/lib/mess";
@@ -92,6 +93,7 @@ export default function MessExpenses() {
                       </>}
                       {(e.status === "pending" || (e.status === "approved" && isApprover)) && can(MESS_EXPENSES_MANAGE) && <Button size="sm" variant="outline" className="mr-1" onClick={() => setForm({ open: true, editing: e })}><Edit className="h-3.5 w-3.5" /></Button>}
                       {(e.status === "pending" || (e.status === "approved" && isApprover)) && <Button size="sm" variant="outline" onClick={() => setCancelling(e)} title="বাতিল"><Ban className="h-3.5 w-3.5" /></Button>}
+                      <SuperDeleteButton entity="expense" id={e._id} what={`খরচ ${e.expenseNo} — ${e.category} (${tk(e.amount)})`} onDeleted={list.reload} className="ml-1" />
                     </TableCell>
                   </TableRow>
                 ))}

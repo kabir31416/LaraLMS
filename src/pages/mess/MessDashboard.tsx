@@ -183,10 +183,10 @@ export default function MessDashboard() {
               <SectionHeader title={`আর্থিক — ${data.period}`} icon={Wallet} description="মেসের হিসাব — কোর্স ফি থেকে সম্পূর্ণ আলাদা" action={<PanelLink to="/mess/reports?tab=income">আয় বনাম খরচ</PanelLink>} />
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 <StatCard title="এ মাসের বিল" value={tk(data.monthBilled)} icon={Receipt} variant="primary" description={`${data.monthBillCount}টি বিল • এ মাসের বকেয়া ${tk(data.monthBillDue)}`} onClick={() => navigate("/mess/billing")} />
-                <StatCard title="এ মাসের আদায়" value={tk(data.monthCollected ?? data.monthRentCollected)} icon={Coins} variant="success" description={`ডাইনিং ${tk(data.monthRentCollected)} • অগ্রিম/জামানত ${tk(data.monthDepositCollected)}`} onClick={() => navigate("/mess/payments")} />
+                <StatCard title="এ মাসের আদায়" value={tk(data.monthCollected ?? data.monthRentCollected)} icon={Coins} variant="success" description={`ভাড়া/ডাইনিং ${tk(data.monthRentCollected)} • অগ্রিম ${tk(data.monthDepositCollected)}`} onClick={() => navigate("/mess/payments")} />
                 <StatCard title="পূর্বের বকেয়া" value={tk(data.previousDue)} icon={History} variant={(data.previousDue ?? 0) > 0 ? "danger" : "success"} description={`${data.previousDueMembers ?? 0} জন — আগের মাসগুলোর`} onClick={() => navigate("/mess/reports?tab=previous-due")} />
                 <StatCard title="মোট মেস বকেয়া" value={tk(data.totalDue)} icon={AlertCircle} variant={(data.totalDue ?? 0) > 0 ? "danger" : "success"} description={`অতিরিক্ত পরিশোধ জমা ${tk(data.totalAdvance)}`} onClick={() => navigate("/mess/reports?tab=dues")} />
-                <StatCard title="জমা অগ্রিম / জামানত" value={tk(data.depositsHeld)} icon={PiggyBank} variant="info" description="শিক্ষার্থীর পক্ষে জমা — আয় নয়" onClick={() => navigate("/mess/deposits")} />
+                <StatCard title="জমা অগ্রিম" value={tk(data.depositsHeld)} icon={PiggyBank} variant="info" description="শিক্ষার্থীর পক্ষে জমা — আয় নয়" onClick={() => navigate("/mess/deposits")} />
                 <StatCard title="এ মাসের খরচ" value={tk(data.monthExpenses)} icon={HandCoins} variant="warning" onClick={() => navigate("/mess/expenses")} />
               </div>
             </section>

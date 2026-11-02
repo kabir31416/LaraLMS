@@ -17,7 +17,11 @@ export interface MessDoc extends Document {
   notes?: string;
   status: MessStatus;
   /** Per-Mess defaults — when unset, Mess Settings' global values apply. Changing them affects future admissions/bills only. */
+  /** Monthly seat rent used when a seat has no rent of its own. */
+  defaultRent?: number;
+  /** One-time dining charge taken at admission (never billed monthly). */
   defaultDiningCharge?: number;
+  /** One-Month Advance taken at admission (held until check-out). */
   defaultDeposit?: number;
   billingDay?: number;
   dueDay?: number;
@@ -51,6 +55,7 @@ const messSchema = new Schema<MessDoc>(
     openingDate: { type: String },
     notes: { type: String, trim: true },
     status: { type: String, enum: MESS_STATUS, default: "active" },
+    defaultRent: { type: Number, min: 0 },
     defaultDiningCharge: { type: Number, min: 0 },
     defaultDeposit: { type: Number, min: 0 },
     billingDay: { type: Number, min: 1, max: 28 },

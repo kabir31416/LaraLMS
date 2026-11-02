@@ -12,14 +12,16 @@ import { logger } from "../../../logger/logger";
  * drift the moment one write is lost or retried). Every figure is recomputed
  * from the source documents themselves:
  *
- *   charges  = Σ live bills' currentCharges + Σ completed settlements' damageCharges
- *   credits  = Σ dining share of active payments + Σ deposit applied to dues − Σ advance refunded
+ *   charges  = one-time dining charge + Σ live rent bills' currentCharges + Σ completed settlements' damageCharges
+ *   credits  = Σ ledger share of active payments + Σ deposit applied to dues − Σ advance refunded
  *   due      = max(0, charges − credits)      advance = max(0, credits − charges)
  *
  *   deposit balance = Σ advance/deposit share of active payments − applied − deducted − refunded
  *
- * A refundable security deposit is tracked entirely apart from rent dues and
- * is never counted as income.
+ * The one-time dining charge (set at admission) is the member's oldest
+ * charge, so credits settle it before any monthly rent bill. It never
+ * appears inside a bill. The One-Month Advance is tracked entirely apart
+ * from rent dues (until check-out) and is never counted as income.
  */
 export interface LedgerBalances extends MembershipBalance {
   charges: number;
@@ -29,6 +31,16 @@ export interface LedgerBalances extends MembershipBalance {
   depositRefunded: number;
   advanceRefunded: number;
   settlementCharges: number;
+  /** One-time dining charge (0 while the membership is only an application or was cancelled), how much of it is paid, and what is left. */
+  diningCharge: number;
+  diningPaid: number;
+  diningDue: number;
+}
+
+/** The dining charge only counts once the member is admitted (not for a pending application or a cancelled one). */
+export function effectiveDiningCharge(m: { diningCharge?: number | null; status?: string } | null | undefined): number {
+  if (!m || m.status === "pending" || m.status === "cancelled") return 0;
+  return money(Math.max(0, m.diningCharge ?? 0));
 }
 
 type SumRow = { _id: string | null; total: number };
@@ -57,7 +69,7 @@ async function sumBy(model: Model<any>, match: Record<string, unknown>, field: s
 
 export async function computeBalances(membershipId: Types.ObjectId): Promise<LedgerBalances> {
   const [membership, billRows, settlementRows, paymentRows, depositTxRows, pendingRefundRows] = await Promise.all([
-    MessMembership.findById(membershipId).select("securityDeposit").lean(),
+    MessMembership.findById(membershipId).select("securityDeposit diningCharge status").lean(),
     sumBy(MessBill, { membershipId, status: { $ne: "cancelled" } }, "currentCharges"),
     MessSettlement.aggregate<{ _id: null; damage: number; advanceRefund: number }>([
       { $match: { membershipId, status: "completed" } },
@@ -92,8 +104,10 @@ export async function computeBalances(membershipId: Types.ObjectId): Promise<Led
   const depositRefunded = money(depositTxRows.find((r) => r._id === "refund")?.total ?? 0);
   const depositPendingRefund = money(pendingRefundRows[0]?.total ?? 0);
 
-  const charges = money(billCharges + settlementCharges);
+  const diningCharge = effectiveDiningCharge(membership);
+  const charges = money(diningCharge + billCharges + settlementCharges);
   const credits = money(rentPaid + depositApplied - advanceRefunded);
+  const diningPaid = money(Math.min(diningCharge, Math.max(0, credits)));
   return {
     charges,
     credits,
@@ -110,6 +124,9 @@ export async function computeBalances(membershipId: Types.ObjectId): Promise<Led
     depositBalance: money(depositCollected - depositApplied - depositDeducted - depositRefunded),
     advanceRefunded,
     settlementCharges,
+    diningCharge,
+    diningPaid,
+    diningDue: money(diningCharge - diningPaid),
   };
 }
 
@@ -152,12 +169,12 @@ export async function recomputeLedger(membershipId: Types.ObjectId | string): Pr
 
   const balances = await computeBalances(id);
 
-  // FIFO: credits pay off the oldest live bill first.
+  // FIFO: credits settle the one-time dining charge first, then the oldest live rent bill.
   const bills = await MessBill.find({ membershipId: id, status: { $ne: "cancelled" } })
     .sort({ period: 1, createdAt: 1 })
     .select("currentCharges paidAmount dueAmount status")
     .lean();
-  const billOps = allocateFifo(bills, balances.credits).map((a) => ({
+  const billOps = allocateFifo(bills, money(balances.credits - balances.diningPaid)).map((a) => ({
     updateOne: {
       filter: { _id: a._id, ledgerSeqApplied: { $lt: seq } },
       update: { $set: { paidAmount: a.paidAmount, dueAmount: a.dueAmount, status: a.status, ledgerSeqApplied: seq } },
@@ -177,6 +194,7 @@ export async function recomputeLedger(membershipId: Types.ObjectId | string): Pr
           depositCollected: balances.depositCollected,
           depositBalance: balances.depositBalance,
           depositPendingRefund: balances.depositPendingRefund,
+          diningDue: balances.diningDue,
           updatedAt: new Date(),
         },
       },

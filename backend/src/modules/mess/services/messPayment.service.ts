@@ -184,9 +184,9 @@ export async function receivePayment(req: Request, input: ReceivePaymentInput): 
 }
 
 /**
- * Pure split of an admission payment: dining due first, then the advance/
- * deposit still owed; anything beyond both stays on the dining side as an
- * advance credit. rent + deposit always equals the amount — never more.
+ * Pure split of an admission payment: the one-time dining charge first, then
+ * the one-month advance still owed; anything beyond both is a credit
+ * against rent. rent + deposit always equals the amount — never more.
  */
 export function splitInitialPayment(amount: number, diningDue: number, depositRemaining: number): { rent: number; deposit: number } {
   const a = money(Math.max(0, amount));
@@ -196,10 +196,10 @@ export function splitInitialPayment(amount: number, diningDue: number, depositRe
 }
 
 /**
- * The single admission receipt: Amount Paid is applied to the Initial Dining
- * Charge first, then to the One-Month Advance / Security Deposit (the same
- * money — never asked for twice). Anything beyond both is kept as a dining
- * advance credit. Partial payment is allowed; whatever is unpaid stays as due.
+ * The single admission receipt: Amount Paid is applied to the one-time
+ * dining charge first, then to the one-month advance. Anything beyond both
+ * is a credit against rent. Partial payment is allowed; whatever is unpaid
+ * stays as due.
  */
 export async function recordInitialPayment(
   req: Request,
@@ -212,7 +212,8 @@ export async function recordInitialPayment(
   if (amount <= 0) throw ApiError.badRequest("পরিমাণ শূন্যের বেশি হতে হবে");
   const balances = await computeBalances(membershipId);
   const depositRemaining = money(Math.max(0, balances.depositRequired - balances.depositCollected));
-  const allocation = splitInitialPayment(amount, balances.due, depositRemaining);
+  // The admission receipt covers the one-time dining charge and the one-month advance; rent is paid with normal payments.
+  const allocation = splitInitialPayment(amount, balances.diningDue, depositRemaining);
   const { doc, due } = await insertPayment(req, {
     studentId: m.studentId,
     messId: m.messId,
@@ -222,10 +223,9 @@ export async function recordInitialPayment(
     allocation,
     method: input.method,
     date: input.date,
-    billingMonth: m.joiningDate.slice(0, 7),
     dueBefore: balances.due,
     reference: input.reference,
-    note: input.note || "ভর্তির প্রারম্ভিক পেমেন্ট (ডাইনিং চার্জ + অগ্রিম/জামানত)",
+    note: input.note || "ভর্তির পেমেন্ট (একবারের ডাইনিং চার্জ + এক মাসের অগ্রিম)",
     idempotencyKey: input.idempotencyKey,
   });
   return { payment: doc, allocation, due, depositRemaining: money(depositRemaining - allocation.deposit) };

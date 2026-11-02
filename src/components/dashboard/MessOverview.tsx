@@ -107,7 +107,7 @@ export function MessOverview() {
               <Metric label="সক্রিয় সদস্য" value={String(d.activeMembers)} />
               <Metric label="দখলকৃত সিট" value={`${d.seatCounts.occupied}`} hint={`দখলের হার ${d.occupancyRate}%`} />
               <Metric label="খালি সিট" value={String(d.seatCounts.available)} tone={d.seatCounts.available > 0 ? "success" : undefined} />
-              {d.canSeeFinance && <Metric label="এ মাসের ডাইনিং চার্জ আদায়" value={taka(d.monthRentCollected)} />}
+              {d.canSeeFinance && <Metric label="এ মাসের ভাড়া ও ডাইনিং আদায়" value={taka(d.monthRentCollected)} />}
               {d.canSeeFinance && <Metric label="মোট মেস বকেয়া" value={taka(d.totalDue)} tone={(d.totalDue ?? 0) > 0 ? "danger" : undefined} />}
               {d.canSeeFinance && <Metric label="এ মাসের খরচ" value={taka(d.monthExpenses)} hint="অনুমোদিত" />}
             </dl>

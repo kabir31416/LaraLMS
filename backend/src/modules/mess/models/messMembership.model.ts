@@ -39,6 +39,8 @@ export interface MembershipBalance {
   depositCollected: number;
   depositBalance: number;
   depositPendingRefund: number;
+  /** Unpaid part of the one-time dining charge (included in `due`). */
+  diningDue?: number;
   updatedAt?: Date;
 }
 
@@ -72,8 +74,13 @@ export interface MessMembershipDoc extends Document {
   cancelReason?: string;
   seatHistory: SeatHistoryEntry[];
   statusHistory: StatusHistoryEntry[];
-  /** Admission: dining charge billed for the joining month (the first bill), and the receipt that paid for it. */
-  initialDiningCharge?: number;
+  /**
+   * One-time dining charge taken at admission. It is a charge on the
+   * member's ledger (paid first, before any rent bill) but never part of a
+   * monthly bill. Unset = no dining charge set yet (older members).
+   */
+  diningCharge?: number;
+  /** The admission receipt (dining charge + one-month advance). */
   initialPaymentId?: Types.ObjectId;
   dateHistory: DateChangeEntry[];
   settlementId?: Types.ObjectId;
@@ -120,6 +127,7 @@ const balanceSchema = new Schema<MembershipBalance>(
     depositCollected: { type: Number, default: 0 },
     depositBalance: { type: Number, default: 0 },
     depositPendingRefund: { type: Number, default: 0 },
+    diningDue: { type: Number, default: 0 },
     updatedAt: { type: Date },
   },
   { _id: false },
@@ -156,7 +164,7 @@ const messMembershipSchema = new Schema<MessMembershipDoc>(
     cancelReason: { type: String, trim: true },
     seatHistory: { type: [seatHistorySchema], default: [] },
     statusHistory: { type: [statusHistorySchema], default: [] },
-    initialDiningCharge: { type: Number, min: 0 },
+    diningCharge: { type: Number, min: 0 },
     initialPaymentId: { type: Schema.Types.ObjectId, ref: "MessPayment" },
     dateHistory: {
       type: [

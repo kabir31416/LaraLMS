@@ -12,7 +12,6 @@ import { MessSettlement } from "../models/messSettlement.model";
 import { assertMessAccess, hasPerm, messScopeFilter } from "../mess.scope";
 import { BILLABLE_STATUS, ProrationMode } from "../mess.constants";
 import { Mess } from "../models/mess.model";
-import { MessDepositTransaction } from "../models/messDepositTransaction.model";
 import { actorId, addDaysISO, daysInPeriod, isDuplicateKeyError, money, periodDate, todayISO, toObjectId } from "../mess.utils";
 import { getMessSettings } from "./messSettings.service";
 import { computeBalances, recomputeLedger } from "./messLedger.service";
@@ -58,10 +57,11 @@ export function effectiveProrationMode(settings: Pick<Settings, "prorationMode" 
 }
 
 /**
- * Pure: the dining charge for `period` for a member whose billing starts on
- * `startDate`. Returns null when the rule says the month is not billed.
+ * Pure: the monthly SEAT RENT for `period` for a member whose billing starts
+ * on `startDate`. Returns null when the rule says the month is not billed.
+ * (The one-time dining charge and the one-month advance are never billed.)
  */
-export function diningChargeForPeriod(
+export function rentForPeriod(
   monthlyRent: number,
   startDate: string,
   period: string,
@@ -70,18 +70,18 @@ export function diningChargeForPeriod(
   const days = daysInPeriod(period);
   const startsThisPeriod = startDate.slice(0, 7) === period;
   const startDay = Number(startDate.slice(8, 10));
-  if (!startsThisPeriod || startDay <= 1) return { amount: money(monthlyRent), label: "মাসিক ডাইনিং চার্জ" };
+  if (!startsThisPeriod || startDay <= 1) return { amount: money(monthlyRent), label: "মাসিক সিট ভাড়া" };
   if (mode === "next_month") return null;
   if (mode === "prorate") {
     const chargedDays = days - startDay + 1;
-    return { amount: money((monthlyRent * chargedDays) / days), label: `মাসিক ডাইনিং চার্জ (আংশিক: ${chargedDays}/${days} দিন)` };
+    return { amount: money((monthlyRent * chargedDays) / days), label: `মাসিক সিট ভাড়া (আংশিক: ${chargedDays}/${days} দিন)` };
   }
-  return { amount: money(monthlyRent), label: "মাসিক ডাইনিং চার্জ" };
+  return { amount: money(monthlyRent), label: "মাসিক সিট ভাড়া" };
 }
 
-/** Pure: Total Payable = Current Charge (incl. other charges/fine, less discount) + Previous Due − Advance Adjustment. */
-export function billTotalPayable(currentCharges: number, previousDue: number, advanceAdjusted: number): number {
-  return money(currentCharges + previousDue - advanceAdjusted);
+/** Pure: Total Payable = Current Charge (rent + other charges/fine − discount) + Previous Due. */
+export function billTotalPayable(currentCharges: number, previousDue: number): number {
+  return money(currentCharges + previousDue);
 }
 
 async function assertApprovalForCredit(req: Request | undefined, amount: number | undefined) {
@@ -122,7 +122,7 @@ export async function previewGeneration(req: Request, period: string, messId?: s
   const existing = await MessBill.countDocuments({ membershipId: { $in: members.map((m) => m._id) }, periodKey: period });
   const settings = await getMessSettings();
   const mode = effectiveProrationMode(settings);
-  const notBilledByRule = mode === "next_month" ? members.filter((m) => !diningChargeForPeriod(m.monthlyRent, m.billingStartDate, period, mode)).length : 0;
+  const notBilledByRule = mode === "next_month" ? members.filter((m) => !rentForPeriod(m.monthlyRent, m.billingStartDate, period, mode)).length : 0;
   return {
     period,
     eligible: members.length,
@@ -130,24 +130,19 @@ export async function previewGeneration(req: Request, period: string, messId?: s
     notBilledByRule,
     toCreate: Math.max(0, members.length - existing - notBilledByRule),
     prorationMode: mode,
-    advanceAdjustmentRule: settings.advanceAdjustmentRule,
     autoBillingEnabled: settings.autoBillingEnabled,
   };
 }
 
 export type BuildOutcome = { kind: "created"; billId: Types.ObjectId } | { kind: "exists" } | { kind: "skipped"; reason: string } | { kind: "failed"; reason: string };
 
-/**
- * Creates one member's bill for one month. `diningOverride` replaces the
- * rule-based dining charge — used for the admission's Initial Dining Charge.
- */
+/** Creates one member's monthly rent bill for one month. */
 export async function buildBillForMember(
   ctx: BillingCtx,
   m: MessMembershipDoc,
   input: GenerateBillsInput,
   settings: Settings,
   cfg: MessBillingCfg,
-  diningOverride?: { amount: number; label: string },
 ): Promise<BuildOutcome> {
   if (await MessBill.exists({ membershipId: m._id, periodKey: input.period })) return { kind: "exists" };
   // A member whose leaving settlement is already approved is settled on the
@@ -157,9 +152,9 @@ export async function buildBillForMember(
   }
 
   const items: MessBillItem[] = [];
-  const dining = diningOverride ?? diningChargeForPeriod(m.monthlyRent, m.billingStartDate, input.period, effectiveProrationMode(settings));
-  if (!dining) return { kind: "skipped", reason: "যোগদানের মাস — নিয়ম অনুযায়ী বিলিং পরের মাস থেকে" };
-  if (dining.amount > 0) items.push({ kind: "rent", label: dining.label, amount: money(dining.amount) });
+  const rent = rentForPeriod(m.monthlyRent, m.billingStartDate, input.period, effectiveProrationMode(settings));
+  if (!rent) return { kind: "skipped", reason: "যোগদানের মাস — নিয়ম অনুযায়ী ভাড়া পরের মাস থেকে" };
+  if (rent.amount > 0) items.push({ kind: "rent", label: rent.label, amount: money(rent.amount) });
   const includesSetup = m.setupCharge > 0 && !m.setupChargeBilled;
   if (includesSetup) items.push({ kind: "setup", label: "ভর্তি / সেটআপ চার্জ", amount: money(m.setupCharge) });
   for (const c of input.additionalCharges ?? []) {
@@ -168,7 +163,9 @@ export async function buildBillForMember(
 
   const issueDate = periodDate(input.period, cfg.billingDay);
   const before = await computeBalances(m._id as Types.ObjectId);
-  if (settings.lateFeeEnabled && settings.lateFeeAmount > 0 && before.due > 0) {
+  // "Previous due" on a rent bill is earlier rent/fines only — the one-time dining charge is its own charge, not part of any bill.
+  const priorDue = money(before.due - before.diningDue);
+  if (settings.lateFeeEnabled && settings.lateFeeAmount > 0 && priorDue > 0) {
     const graceCutoff = addDaysISO(issueDate, -settings.gracePeriodDays);
     const overdue = await MessBill.exists({ membershipId: m._id, status: { $in: ["unpaid", "partial"] }, dueDate: { $lt: graceCutoff } });
     if (overdue) items.push({ kind: "late_fee", label: "বিলম্ব ফি", amount: money(settings.lateFeeAmount) });
@@ -177,7 +174,7 @@ export async function buildBillForMember(
   const gross = money(items.reduce((s, i) => s + i.amount, 0));
   const discount = money(Math.min(gross, m.discount + (input.extraDiscount ?? 0)));
   const currentCharges = money(gross - discount);
-  const previousDue = money(before.due - before.advance);
+  const previousDue = money(priorDue - before.advance);
   const billId = new Types.ObjectId();
   const bill = {
     _id: billId,
@@ -195,9 +192,8 @@ export async function buildBillForMember(
     discount,
     adjustment: 0,
     previousDue,
-    advanceAdjusted: 0,
     currentCharges,
-    totalPayable: billTotalPayable(currentCharges, previousDue, 0),
+    totalPayable: billTotalPayable(currentCharges, previousDue),
     paidAmount: 0,
     dueAmount: currentCharges,
     status: currentCharges > 0 ? "unpaid" : "paid",
@@ -215,64 +211,7 @@ export async function buildBillForMember(
   }
   if (includesSetup) await MessMembership.updateOne({ _id: m._id, setupChargeBilled: false }, { $set: { setupChargeBilled: true } });
   await recomputeLedger(m._id as Types.ObjectId);
-  if (settings.advanceAdjustmentRule === "next_bill" && ctx.source !== "admission" && input.period > m.joiningDate.slice(0, 7)) {
-    await applyAdvanceToBill(ctx, m, billId, input.period, currentCharges, previousDue);
-  }
   return { kind: "created", billId };
-}
-
-/**
- * Advance-adjustment rule "next_bill": the One-Month Advance / Security
- * Deposit is used ONCE, against the first monthly bill after the joining
- * month. Posted as an apply_to_due deposit transaction that records the
- * month (period) and bill — the unique advanceKey makes a retry or a second
- * concurrent bill unable to use the advance twice.
- */
-async function applyAdvanceToBill(ctx: BillingCtx, m: MessMembershipDoc, billId: Types.ObjectId, period: string, currentCharges: number, previousDue: number): Promise<number> {
-  const mid = m._id as Types.ObjectId;
-  if (await MessDepositTransaction.exists({ advanceKey: String(mid) })) return 0;
-  const balances = await computeBalances(mid);
-  const earmarked = await MessDepositTransaction.aggregate<{ _id: null; total: number }>([
-    { $match: { membershipId: mid, $or: [{ status: "pending" }, { type: "refund", status: "approved" }] } },
-    { $group: { _id: null, total: { $sum: "$amount" } } },
-  ]);
-  const available = money(balances.depositBalance - (earmarked[0]?.total ?? 0));
-  const amount = money(Math.min(available, currentCharges, balances.due));
-  if (amount <= 0) return 0;
-  try {
-    await MessDepositTransaction.create({
-      txNo: await generateSequenceCode("mess_deposit_tx", "MDT", 5, true),
-      membershipId: mid,
-      studentId: m.studentId,
-      messId: m.messId,
-      type: "apply_to_due",
-      amount,
-      reason: `এক মাসের অগ্রিম সমন্বয় (নিয়ম অনুযায়ী) — ${period}`,
-      date: todayISO(),
-      status: "approved",
-      period,
-      billId,
-      source: "advance_rule",
-      advanceKey: String(mid),
-      requestedBy: ctx.req ? actorId(ctx.req) : undefined,
-      approvedBy: ctx.req ? actorId(ctx.req) : undefined,
-      approvedAt: new Date(),
-    });
-  } catch (err) {
-    if (isDuplicateKeyError(err)) return 0;
-    throw err;
-  }
-  await MessBill.updateOne({ _id: billId }, { $set: { advanceAdjusted: amount, totalPayable: billTotalPayable(currentCharges, previousDue, amount) } });
-  await recomputeLedger(mid);
-  await recordAudit({
-    req: ctx.req,
-    action: "mess.advance.adjust",
-    module: "mess",
-    targetCollection: "messdeposittransactions",
-    targetId: String(mid),
-    after: { membershipId: String(mid), billId: String(billId), period, amount, rule: "next_bill", by: ctx.req ? "user" : "system" },
-  });
-  return amount;
 }
 
 /** Bill-generated SMS for a batch of new bills, at the shared bulk concurrency — never one burst per member. */
@@ -445,20 +384,8 @@ export async function cancelBillDoc(req: Request, bill: MessBillDoc, reason: str
   if (bill.items.some((i) => i.kind === "setup")) {
     await MessMembership.updateOne({ _id: bill.membershipId }, { $set: { setupChargeBilled: false } });
   }
-  // The automatic advance adjustment made on this bill goes back into the deposit (and may be used again by the corrected bill).
-  let advanceReversed = 0;
-  if (bill.advanceAdjusted > 0) {
-    const tx = await MessDepositTransaction.findOne({ billId: bill._id, source: "advance_rule", status: { $in: ["approved", "completed"] } });
-    if (tx) {
-      await MessDepositTransaction.updateOne(
-        { _id: tx._id },
-        { $set: { status: "cancelled", rejectedReason: `বিল ${bill.billNo} বাতিল: ${reason}`, advanceKey: `${tx.advanceKey}#cancelled#${String(tx._id)}` } },
-      );
-      advanceReversed = tx.amount;
-    }
-  }
   await recomputeLedger(bill.membershipId);
-  await recordAudit({ req, action: "mess.bill.cancel", module: "mess", targetCollection: "messbills", targetId: id, before: bill.toObject(), after: { status: "cancelled", reason, advanceReversed } });
+  await recordAudit({ req, action: "mess.bill.cancel", module: "mess", targetCollection: "messbills", targetId: id, before: bill.toObject(), after: { status: "cancelled", reason } });
   return updated;
 }
 
@@ -475,7 +402,7 @@ export async function adjustBill(req: Request, id: string, body: { adjustment: n
   bill.adjustmentReason = body.reason;
   bill.adjustmentApprovedBy = actorId(req);
   bill.currentCharges = currentCharges;
-  bill.totalPayable = billTotalPayable(currentCharges, bill.previousDue, bill.advanceAdjusted ?? 0);
+  bill.totalPayable = billTotalPayable(currentCharges, bill.previousDue);
   await bill.save();
   await recomputeLedger(bill.membershipId);
   await recordAudit({ req, action: "mess.bill.adjust", module: "mess", targetCollection: "messbills", targetId: id, before, after: bill.toObject() });

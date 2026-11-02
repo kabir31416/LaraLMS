@@ -75,7 +75,8 @@ async function getActiveMessOrThrow(messId: string | Types.ObjectId): Promise<Me
   return mess;
 }
 
-type MessPatch = Partial<Omit<MessDoc, "defaultDiningCharge" | "defaultDeposit" | "billingDay" | "dueDay">> & {
+type MessPatch = Partial<Omit<MessDoc, "defaultRent" | "defaultDiningCharge" | "defaultDeposit" | "billingDay" | "dueDay">> & {
+  defaultRent?: number | null;
   defaultDiningCharge?: number | null;
   defaultDeposit?: number | null;
   billingDay?: number | null;
@@ -92,6 +93,7 @@ export async function createMess(req: Request, data: MessPatch): Promise<MessDoc
     openingDate: data.openingDate,
     notes: data.notes,
     status: data.status ?? "active",
+    defaultRent: data.defaultRent ?? undefined,
     defaultDiningCharge: data.defaultDiningCharge ?? undefined,
     defaultDeposit: data.defaultDeposit ?? undefined,
     billingDay: data.billingDay ?? undefined,
@@ -111,7 +113,7 @@ export async function updateMess(req: Request, id: string, patch: MessPatch): Pr
     if (patch[key] !== undefined) (doc as unknown as Record<string, unknown>)[key] = patch[key];
   }
   // Per-Mess billing defaults: a number overrides Mess Settings for this Mess, null removes the override. Future admissions/bills only.
-  for (const key of ["defaultDiningCharge", "defaultDeposit", "billingDay", "dueDay"] as const) {
+  for (const key of ["defaultRent", "defaultDiningCharge", "defaultDeposit", "billingDay", "dueDay"] as const) {
     if (patch[key] === null) doc.set(key, undefined);
     else if (patch[key] !== undefined) doc.set(key, patch[key]);
   }

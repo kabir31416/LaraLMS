@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { Pager } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import { errMsg, NOTICE_TYPE_LABELS, qs, refName, todayISO, usePagedList, type Membership, type MessNotice, type NoticeType } from "@/lib/mess";
@@ -41,7 +42,7 @@ export default function MessNotices() {
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <CardTitle className="text-base">{n.title}</CardTitle>
-                  <Badge variant="outline">{NOTICE_TYPE_LABELS[n.type]}</Badge>
+                  <span className="flex shrink-0 items-center gap-1"><Badge variant="outline">{NOTICE_TYPE_LABELS[n.type]}</Badge><SuperDeleteButton entity="notice" id={n._id} what={`নোটিশ: ${n.title}`} onDeleted={list.reload} /></span>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span>{refName(n.messId)}</span>

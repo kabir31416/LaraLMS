@@ -10,9 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { Pager, ReasonDialog, SearchInput, StatusBadge, TableState } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
-import { ADVANCE_RULE_LABELS, BILL_STATUS_LABELS, currentPeriod, errMsg, periodName, PRORATION_MODE_LABELS, qs, refName, tk, usePagedList, type AdvanceRule, type Bill, type ProrationMode } from "@/lib/mess";
+import { BILL_STATUS_LABELS, currentPeriod, errMsg, periodName, PRORATION_MODE_LABELS, qs, refName, tk, usePagedList, type Bill, type ProrationMode } from "@/lib/mess";
 import { MESS_BILLING_MANAGE, MESS_PAYMENTS_COLLECT } from "@/lib/permissions";
 import { exportExcel } from "@/lib/exporters";
 
@@ -47,14 +48,14 @@ export default function MessBilling() {
   const exportRows = () => exportExcel({
     filename: `mess-bills-${period || "all"}`,
     title: "Mess Bills",
-    headers: ["Bill No", "Period", "Student", "Reg ID", "Mess", "Room", "Seat", "Charges", "Previous Due", "Advance Adjusted", "Total Payable", "Paid", "Due", "Status"],
-    rows: list.items.map((b) => [b.billNo, b.period, b.studentId?.name ?? "", b.studentId?.registrationId ?? "", refName(b.messId), refName(b.roomId), refName(b.seatId, "seatNumber"), b.currentCharges, b.previousDue, b.advanceAdjusted ?? 0, b.totalPayable, b.paidAmount, b.dueAmount, BILL_STATUS_LABELS[b.status]]),
+    headers: ["Bill No", "Period", "Student", "Reg ID", "Mess", "Room", "Seat", "Rent & Charges", "Previous Due", "Total Payable", "Paid", "Due", "Status"],
+    rows: list.items.map((b) => [b.billNo, b.period, b.studentId?.name ?? "", b.studentId?.registrationId ?? "", refName(b.messId), refName(b.roomId), refName(b.seatId, "seatNumber"), b.currentCharges, b.previousDue, b.totalPayable, b.paidAmount, b.dueAmount, BILL_STATUS_LABELS[b.status]]),
   });
 
   return (
     <MessPage
       title="মাসিক বিলিং"
-      subtitle="মোট প্রদেয় = মাসিক ডাইনিং চার্জ + অন্যান্য চার্জ/জরিমানা − ছাড় + পূর্বের বকেয়া − অগ্রিম সমন্বয় (মিল ব্যবস্থাপনা এই সংস্করণে নেই)"
+      subtitle="মাসিক বিল শুধু সিট ভাড়ার: মোট প্রদেয় = মাসিক ভাড়া + অন্যান্য চার্জ/জরিমানা − ছাড় + পূর্বের বকেয়া। একবারের ডাইনিং চার্জ ও এক মাসের অগ্রিম বিলে আসে না।"
       actions={
         <>
           {(can(MESS_PAYMENTS_COLLECT) || canManage) && <Button variant="outline" onClick={sendReminders} disabled={reminding}><BellRing className="h-4 w-4 mr-1" />{reminding ? "পাঠানো হচ্ছে..." : "বকেয়া রিমাইন্ডার SMS"}</Button>}
@@ -72,7 +73,7 @@ export default function MessBilling() {
           <Zap className="h-4 w-4 shrink-0 text-primary" aria-hidden />
           <span>
             {settings.autoBillingEnabled ? `স্বয়ংক্রিয় বিল চালু — প্রতি মাসের ${settings.billingDay} তারিখে সার্ভার নিজেই সব সক্রিয় সদস্যের বিল তৈরি করে।` : "স্বয়ংক্রিয় বিল বন্ধ — মেস সেটিংস থেকে চালু করুন।"}{" "}
-            এখানকার "বিল তৈরি" একই নিয়মে চলে, তাই আগে তৈরি বিল আবার হয় না। যোগদানের মাস: {PRORATION_MODE_LABELS[(settings.prorationMode ?? (settings.prorationEnabled ? "prorate" : "full")) as ProrationMode]} • অগ্রিম: {ADVANCE_RULE_LABELS[(settings.advanceAdjustmentRule ?? "on_checkout") as AdvanceRule]}
+            এখানকার "বিল তৈরি" একই নিয়মে চলে, তাই আগে তৈরি বিল আবার হয় না। যোগদানের মাসের ভাড়া: {PRORATION_MODE_LABELS[(settings.prorationMode ?? (settings.prorationEnabled ? "prorate" : "full")) as ProrationMode]}
           </span>
         </p>
       )}
@@ -92,11 +93,11 @@ export default function MessBilling() {
           <Table>
             <TableHeader><TableRow>
               <TableHead>বিল নং</TableHead><TableHead>মাস</TableHead><TableHead>সদস্য</TableHead><TableHead>মেস / রুম / সিট</TableHead>
-              <TableHead className="text-right">চার্জ</TableHead><TableHead className="text-right">পূর্বের বকেয়া</TableHead><TableHead className="text-right">অগ্রিম সমন্বয়</TableHead><TableHead className="text-right">মোট প্রদেয়</TableHead>
+              <TableHead className="text-right">ভাড়া ও চার্জ</TableHead><TableHead className="text-right">পূর্বের বকেয়া</TableHead><TableHead className="text-right">মোট প্রদেয়</TableHead>
               <TableHead className="text-right">পরিশোধ</TableHead><TableHead className="text-right">বাকি</TableHead><TableHead>অবস্থা</TableHead><TableHead className="text-right">কাজ</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              <TableState colSpan={12} loading={list.loading} error={list.error} empty={list.items.length === 0} emptyText="এই মাসের কোনো বিল নেই" />
+              <TableState colSpan={11} loading={list.loading} error={list.error} empty={list.items.length === 0} emptyText="এই মাসের কোনো বিল নেই" />
               {!list.loading && list.items.map((b) => (
                 <TableRow key={b._id} className={b.status === "cancelled" ? "opacity-60" : ""}>
                   <TableCell className="font-mono text-xs">{b.billNo}</TableCell>
@@ -105,7 +106,6 @@ export default function MessBilling() {
                   <TableCell className="text-sm">{refName(b.messId)}<p className="text-xs text-muted-foreground">{refName(b.roomId)} / {refName(b.seatId, "seatNumber")}</p></TableCell>
                   <TableCell className="text-right">{tk(b.currentCharges)}{b.adjustment > 0 && <p className="text-xs text-success">সমন্বয় −{tk(b.adjustment)}</p>}</TableCell>
                   <TableCell className="text-right">{tk(b.previousDue)}</TableCell>
-                  <TableCell className="text-right">{b.advanceAdjusted ? tk(b.advanceAdjusted) : "—"}</TableCell>
                   <TableCell className="text-right">{tk(b.totalPayable)}</TableCell>
                   <TableCell className="text-right">{tk(b.paidAmount)}</TableCell>
                   <TableCell className="text-right">{tk(b.dueAmount)}</TableCell>
@@ -114,6 +114,7 @@ export default function MessBilling() {
                     <Button size="sm" variant="outline" className="mr-1" onClick={() => navigate(`/mess/bills/${b._id}/invoice`)} title="ইনভয়েস"><Printer className="h-3.5 w-3.5" /></Button>
                     {canManage && b.status !== "cancelled" && <Button size="sm" variant="outline" className="mr-1" onClick={() => setAdjusting(b)} title="সমন্বয়"><SlidersHorizontal className="h-3.5 w-3.5" /></Button>}
                     {canManage && b.status !== "cancelled" && <Button size="sm" variant="outline" onClick={() => setCancelling(b)} title="বাতিল"><Ban className="h-3.5 w-3.5" /></Button>}
+                    <SuperDeleteButton entity="bill" id={b._id} what={`বিল ${b.billNo} — ${b.studentId?.name ?? ""} (${b.period})`} onDeleted={list.reload} className="ml-1" />
                   </TableCell>
                 </TableRow>
               ))}

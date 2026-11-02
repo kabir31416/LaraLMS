@@ -14,12 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessPage, MessSelect, useMessScope } from "@/components/mess/MessShell";
+import { SuperDeleteButton } from "@/components/mess/SuperDelete";
 import { AttachmentInput, InitialChargesFields, Pager, ReasonDialog, ReceivePaymentDialog, SearchInput, SeatPicker, StatusBadge, StudentPicker, TableState, type InitialChargesValue, type PickedStudent } from "@/components/mess/MessCommon";
 import { api } from "@/lib/apiClient";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import {
-  effectiveProration, errMsg, MEMBERSHIP_STATUS_LABELS, newIdempotencyKey, previewJoiningCharge, PRORATION_MODE_LABELS, qs, refName, RESERVATION_STATUS_LABELS, tk, todayISO, usePagedList,
+  effectiveProration, errMsg, MEMBERSHIP_STATUS_LABELS, newIdempotencyKey, previewJoiningRent, PRORATION_MODE_LABELS, qs, refName, RESERVATION_STATUS_LABELS, tk, todayISO, usePagedList,
   type InitialChargesSummary, type Membership, type MembershipStatus, type Reservation, type Seat,
 } from "@/lib/mess";
 import { MESS_BILLING_MANAGE, MESS_MEMBERS_APPROVE, MESS_MEMBERS_EDIT_DATES, MESS_MEMBERS_MANAGE, MESS_PAYMENTS_COLLECT } from "@/lib/permissions";
@@ -124,7 +125,7 @@ function MembersTab({ pendingOnly, onChanged }: { pendingOnly?: boolean; onChang
         <Table>
           <TableHeader><TableRow>
             <TableHead>শিক্ষার্থী</TableHead><TableHead>কোর্স / ব্যাচ</TableHead><TableHead>মেস / রুম / সিট</TableHead><TableHead>যোগদান</TableHead>
-            <TableHead className="text-right">মাসিক চার্জ</TableHead><TableHead className="text-right">বকেয়া</TableHead><TableHead className="text-right">অগ্রিম/জামানত</TableHead><TableHead>অবস্থা</TableHead><TableHead className="text-right">কাজ</TableHead>
+            <TableHead className="text-right">মাসিক চার্জ</TableHead><TableHead className="text-right">বকেয়া</TableHead><TableHead className="text-right">অগ্রিম</TableHead><TableHead>অবস্থা</TableHead><TableHead className="text-right">কাজ</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             <TableState colSpan={9} loading={list.loading} error={list.error} empty={list.items.length === 0} emptyText={pendingOnly ? "কোনো অপেক্ষমাণ আবেদন নেই" : "কোনো সদস্য নেই"} />
@@ -153,6 +154,7 @@ function MembersTab({ pendingOnly, onChanged }: { pendingOnly?: boolean; onChang
                     <Button size="sm" variant="outline" className="mr-1" onClick={() => setPayFor(m)} title="পেমেন্ট"><Coins className="h-3.5 w-3.5" /></Button>
                   )}
                   <Button size="sm" variant="outline" className="mr-1" onClick={() => navigate(`/mess/members/${m._id}`)} title="প্রোফাইল"><Eye className="h-3.5 w-3.5" /></Button>
+                  <SuperDeleteButton entity="membership" id={m._id} what={`সদস্যপদ ${m.membershipNo} — ${m.studentId?.name ?? ""}`} warning="এই সদস্যপদের সব বিল, পেমেন্ট, অগ্রিম লেনদেন ও নিষ্পত্তি মুছে যাবে এবং সিট খালি হবে। শিক্ষার্থীর মূল প্রোফাইল (কোর্স, ফি ইত্যাদি) অপরিবর্তিত থাকবে।" onDeleted={list.reload} className="mr-1" />
                   {["approved", "active", "on_leave", "notice_given"].includes(m.status) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label="আরও কাজ"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
@@ -252,6 +254,7 @@ function ReservationsTab({ onConvert, onChanged }: { onConvert: (r: Reservation)
                   {r.status === "active" && can(MESS_MEMBERS_MANAGE) && <Button size="sm" className="mr-1" onClick={() => onConvert(r)}>ভর্তি করুন</Button>}
                   {r.status === "active" && can(MESS_MEMBERS_MANAGE) && <Button size="sm" variant="outline" onClick={() => setCancelling(r)}>বাতিল</Button>}
                   {r.status === "converted" && r.membershipId && <Button size="sm" variant="outline" onClick={() => navigate(`/mess/members/${r.membershipId}`)}>সদস্যপদ দেখুন</Button>}
+                  <SuperDeleteButton entity="reservation" id={r._id} what={`রিজার্ভেশন ${r.reservationNo} — ${r.studentId?.name ?? ""}`} warning="সক্রিয় থাকলে সিট খালি হবে; ভর্তি না হওয়া রিজার্ভেশনের অগ্রিম পেমেন্টও মুছে যাবে।" onDeleted={() => { void list.reload(); onChanged(); }} className="ml-1" />
                 </TableCell>
               </TableRow>
             ))}
@@ -289,8 +292,8 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
   const [messId, setMessId] = useState("");
   const [seatId, setSeatId] = useState("");
   const [form, setForm] = useState({ joiningDate: todayISO(), expectedLeavingDate: "", monthlyRent: "", discount: "0", ecName: "", ecPhone: "", ecRelation: "", notes: "" });
-  const [charges, setCharges] = useState<InitialChargesValue>({ initialDiningCharge: "", advanceDeposit: "", amountPaid: "", method: "", reference: "" });
-  const [diningTouched, setDiningTouched] = useState(false);
+  const [charges, setCharges] = useState<InitialChargesValue>({ diningCharge: "", advance: "", amountPaid: "", method: "", reference: "" });
+  const [advanceTouched, setAdvanceTouched] = useState(false);
   const [doc, setDoc] = useState<{ url: string; publicId?: string } | null>(null);
   const [initialStatus, setInitialStatus] = useState<"pending" | "approved" | "active">("pending");
   const [busy, setBusy] = useState(false);
@@ -307,30 +310,34 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
     setMessId(mid);
     setSeatId(r ? (r.seatId?._id ?? "") : "");
     setForm({ joiningDate: todayISO(), expectedLeavingDate: "", monthlyRent: r?.seatId?.monthlyRent ? String(r.seatId.monthlyRent) : md?.defaultDiningCharge != null ? String(md.defaultDiningCharge) : "", discount: "0", ecName: "", ecPhone: "", ecRelation: "", notes: "" });
-    setCharges({ initialDiningCharge: "", advanceDeposit: String(md?.defaultDeposit ?? settings?.defaultDeposit ?? 0), amountPaid: "", method: "", reference: "" });
-    setDiningTouched(false);
+    setCharges({ diningCharge: String(md?.defaultDiningCharge ?? settings?.defaultDiningCharge ?? 0), advance: md?.defaultDeposit != null ? String(md.defaultDeposit) : settings?.defaultDeposit ? String(settings.defaultDeposit) : "", amountPaid: "", method: "", reference: "" });
+    setAdvanceTouched(md?.defaultDeposit != null || !!settings?.defaultDeposit);
     setDoc(null);
     setInitialStatus(can(MESS_MEMBERS_APPROVE) ? "active" : "pending");
     keyRef.current = newIdempotencyKey();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, fromReservation, scopeMess, settings, can, messes]);
 
-  // The joining month's charge follows the proration rule until the operator types their own figure.
+  // Monthly rent is billed separately (joining month by the rule shown below); the one-month advance defaults to one month's rent unless a default is configured or typed.
   const rent = Number(form.monthlyRent) || 0;
-  const ruleCharge = previewJoiningCharge(rent, form.joiningDate, mode);
+  const joiningRent = previewJoiningRent(rent, form.joiningDate, mode);
   useEffect(() => {
-    if (!diningTouched) setCharges((c) => ({ ...c, initialDiningCharge: String(ruleCharge) }));
-  }, [ruleCharge, diningTouched]);
+    if (!advanceTouched) setCharges((c) => ({ ...c, advance: form.monthlyRent }));
+  }, [form.monthlyRent, advanceTouched]);
 
   const onSeat = (id: string, seat?: Seat) => {
     setSeatId(id);
-    if (seat) setForm((f) => ({ ...f, monthlyRent: String(seat.monthlyRent || messDefaults(messId)?.defaultDiningCharge || settings?.defaultRent || 0) }));
+    if (seat) setForm((f) => ({ ...f, monthlyRent: String(seat.monthlyRent || messDefaults(messId)?.defaultRent || settings?.defaultRent || 0) }));
   };
   const onMess = (id: string) => {
     setMessId(id);
     setSeatId("");
     const md = messDefaults(id);
-    if (md?.defaultDeposit != null) setCharges((c) => ({ ...c, advanceDeposit: String(md.defaultDeposit) }));
+    if (md?.defaultDiningCharge != null) setCharges((c) => ({ ...c, diningCharge: String(md.defaultDiningCharge) }));
+    if (md?.defaultDeposit != null) {
+      setAdvanceTouched(true);
+      setCharges((c) => ({ ...c, advance: String(md.defaultDeposit) }));
+    }
   };
 
   const submit = async () => {
@@ -348,18 +355,16 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
         joiningDate: form.joiningDate,
         expectedLeavingDate: form.expectedLeavingDate || undefined,
         monthlyRent: form.monthlyRent !== "" ? Number(form.monthlyRent) : undefined,
-        securityDeposit: charges.advanceDeposit !== "" ? Number(charges.advanceDeposit) : undefined,
+        securityDeposit: charges.advance !== "" ? Number(charges.advance) : undefined,
+        diningCharge: charges.diningCharge !== "" ? Number(charges.diningCharge) : undefined,
         discount: Number(form.discount) || 0,
         emergencyContact: form.ecName || form.ecPhone ? { name: form.ecName || undefined, phone: form.ecPhone || undefined, relation: form.ecRelation || undefined } : undefined,
         notes: form.notes || undefined,
         documents: doc ? [{ label: "সংযুক্ত ডকুমেন্ট", url: doc.url, publicId: doc.publicId }] : undefined,
         initialStatus,
         reservationId: fromReservation?._id,
-        ...(initialStatus === "active"
-          ? {
-              initialDiningCharge: Number(charges.initialDiningCharge) || 0,
-              initialPayment: paid > 0 ? { amount: paid, method: charges.method, reference: charges.reference || undefined, idempotencyKey: keyRef.current } : undefined,
-            }
+        ...(initialStatus === "active" && paid > 0
+          ? { initialPayment: { amount: paid, method: charges.method, reference: charges.reference || undefined, idempotencyKey: keyRef.current } }
           : {}),
       });
       if (m.initialError) toast.warning(`সদস্যপদ ${m.membershipNo} তৈরি হয়েছে, কিন্তু প্রারম্ভিক চার্জ/পেমেন্ট সম্পন্ন হয়নি: ${m.initialError} — প্রোফাইল থেকে সম্পন্ন করুন।`, { duration: 10000 });
@@ -375,14 +380,14 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
     }
   };
 
-  const ruleHint = `নিয়ম: ${PRORATION_MODE_LABELS[mode]} — হিসাব অনুযায়ী ${tk(ruleCharge)}${diningTouched ? " (আপনি পরিবর্তন করেছেন)" : ""}`;
+  const rentNote = `মাসিক ভাড়া ${tk(rent)} এই পেমেন্টের অংশ নয় — মাসিক বিলে আসবে। যোগদানের মাসের ভাড়া (${PRORATION_MODE_LABELS[mode]}): ${tk(joiningRent)}।`;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{fromReservation ? `রিজার্ভেশন থেকে ভর্তি — ${fromReservation.reservationNo}` : "মেসে নতুন ভর্তি"}</DialogTitle>
-          <DialogDescription>শিক্ষার্থী → মেস → রুম/সিট → মাসিক চার্জ → প্রারম্ভিক চার্জ ও পেমেন্ট → রসিদ</DialogDescription>
+          <DialogDescription>শিক্ষার্থী → মেস → রুম/সিট → মাসিক ভাড়া → ডাইনিং চার্জ (একবার) + এক মাসের অগ্রিম → রসিদ</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <section className="space-y-2">
@@ -396,10 +401,10 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
             <div className="space-y-1.5"><Label>৩. রুম / সিট *</Label>{fromReservation ? <Input disabled value={`রুম ${refName(fromReservation.roomId)} • সিট ${refName(fromReservation.seatId, "seatNumber")}`} /> : <SeatPicker messId={messId} value={seatId} onChange={onSeat} />}</div>
           </section>
           <section className="space-y-2">
-            <Label className="text-sm font-semibold">৪. যোগদান ও মাসিক চার্জ</Label>
+            <Label className="text-sm font-semibold">৪. যোগদান ও মাসিক ভাড়া</Label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="space-y-1.5"><Label>যোগদানের তারিখ *</Label><Input type="date" value={form.joiningDate} onChange={(e) => setForm({ ...form, joiningDate: e.target.value })} /></div>
-              <div className="space-y-1.5"><Label>মাসিক ডাইনিং চার্জ (৳)</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} placeholder="সিটের চার্জ" /></div>
+              <div className="space-y-1.5"><Label>মাসিক ভাড়া (৳)</Label><Input type="number" min={0} value={form.monthlyRent} onChange={(e) => setForm({ ...form, monthlyRent: e.target.value })} placeholder="সিটের ভাড়া" /></div>
               <div className="space-y-1.5"><Label>মাসিক ছাড় (৳)</Label><Input type="number" min={0} value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} /></div>
               <div className="space-y-1.5"><Label>সম্ভাব্য ছাড়ার তারিখ</Label><Input type="date" value={form.expectedLeavingDate} onChange={(e) => setForm({ ...form, expectedLeavingDate: e.target.value })} /></div>
             </div>
@@ -411,25 +416,26 @@ function AdmissionDialog({ open, onOpenChange, fromReservation, onSaved }: { ope
               <SelectContent>
                 <SelectItem value="pending">অপেক্ষমাণ আবেদন (পরে পর্যালোচনা)</SelectItem>
                 {can(MESS_MEMBERS_APPROVE) && <SelectItem value="approved">অনুমোদিত (সিট সংরক্ষিত, এখনো ওঠেননি)</SelectItem>}
-                {can(MESS_MEMBERS_APPROVE) && <SelectItem value="active">সরাসরি সক্রিয় সদস্য (প্রারম্ভিক পেমেন্টসহ)</SelectItem>}
+                {can(MESS_MEMBERS_APPROVE) && <SelectItem value="active">সরাসরি সক্রিয় সদস্য (ভর্তির পেমেন্টসহ)</SelectItem>}
               </SelectContent>
             </Select>
           </section>
           <section className="space-y-2">
-            <Label className="text-sm font-semibold">৬. প্রারম্ভিক চার্জ ও পেমেন্ট</Label>
+            <Label className="text-sm font-semibold">৬. ভর্তির চার্জ — ডাইনিং চার্জ (একবার) ও এক মাসের অগ্রিম</Label>
             {initialStatus === "active" ? (
               <InitialChargesFields
                 value={charges}
-                onChange={(v) => { if (v.initialDiningCharge !== charges.initialDiningCharge) setDiningTouched(true); setCharges(v); }}
-                ruleHint={ruleHint}
+                onChange={(v) => { if (v.advance !== charges.advance) setAdvanceTouched(true); setCharges(v); }}
                 allowPayment={can(MESS_PAYMENTS_COLLECT)}
+                note={rentNote}
               />
             ) : (
               <div className="space-y-1.5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><Label>এক মাসের অগ্রিম / জামানত (৳)</Label><Input type="number" min={0} value={charges.advanceDeposit} onChange={(e) => setCharges({ ...charges, advanceDeposit: e.target.value })} /></div>
+                  <div className="space-y-1.5"><Label>ডাইনিং চার্জ — একবারই (৳)</Label><Input type="number" min={0} value={charges.diningCharge} onChange={(e) => setCharges({ ...charges, diningCharge: e.target.value })} /></div>
+                  <div className="space-y-1.5"><Label>এক মাসের অগ্রিম (৳)</Label><Input type="number" min={0} value={charges.advance} onChange={(e) => { setAdvanceTouched(true); setCharges({ ...charges, advance: e.target.value }); }} /></div>
                 </div>
-                <p className="text-xs text-muted-foreground">প্রারম্ভিক ডাইনিং চার্জ ও পেমেন্ট সক্রিয় করার সময় নেওয়া হবে।</p>
+                <p className="text-xs text-muted-foreground">পেমেন্ট সক্রিয় করার সময় নেওয়া হবে।</p>
               </div>
             )}
           </section>

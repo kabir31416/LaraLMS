@@ -1,7 +1,5 @@
 import { Schema, model, Document, Types } from "mongoose";
 import {
-  ADVANCE_ADJUSTMENT_RULES,
-  AdvanceAdjustmentRule,
   DEFAULT_MESS_SMS_TEMPLATES,
   MessSmsEvent,
   PRORATION_MODES,
@@ -33,9 +31,10 @@ export interface MessSettingsDoc extends Document {
   lateFeeEnabled: boolean;
   lateFeeAmount: number;
   prorationEnabled: boolean;
-  /** Supersedes prorationEnabled when set (prorationEnabled=true ⇔ "prorate"). */
+  /** Joining-month seat rent rule. Supersedes prorationEnabled when set (prorationEnabled=true ⇔ "prorate"). */
   prorationMode?: ProrationMode;
-  advanceAdjustmentRule: AdvanceAdjustmentRule;
+  /** One-time dining charge taken at admission (never part of a monthly bill). */
+  defaultDiningCharge: number;
   /** Backend scheduler generates every active member's monthly bill on the billing day (Asia/Dhaka). On by default — monthly bills are mandatory. */
   autoBillingEnabled: boolean;
   /** Per-event Mess SMS toggles (payment SMS keeps its original paymentSmsEnabled flag). */
@@ -73,7 +72,7 @@ const messSettingsSchema = new Schema<MessSettingsDoc>(
     lateFeeAmount: { type: Number, default: 0, min: 0 },
     prorationEnabled: { type: Boolean, default: false },
     prorationMode: { type: String, enum: PRORATION_MODES },
-    advanceAdjustmentRule: { type: String, enum: ADVANCE_ADJUSTMENT_RULES, default: "on_checkout" },
+    defaultDiningCharge: { type: Number, default: 0, min: 0 },
     autoBillingEnabled: { type: Boolean, default: true },
     billSmsEnabled: { type: Boolean, default: false },
     dueReminderSmsEnabled: { type: Boolean, default: false },
