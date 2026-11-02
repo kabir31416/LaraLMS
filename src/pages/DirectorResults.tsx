@@ -302,7 +302,7 @@ const DirectorResults = () => {
 
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  if (!user || (user.role !== "Batch Director" && user.role !== "Admin")) return <Navigate to="/login" replace />;
+  if (!user || (user.role !== "Batch Director" && user.role !== "Admin")) return <Navigate to="/" replace />;
 
   return (
     <DashboardLayout>

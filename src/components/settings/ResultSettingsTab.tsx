@@ -17,14 +17,36 @@ import { ApiClientError } from "@/contexts/AuthContext";
  * views both read the same Settings.gradeScale rather than each keeping
  * their own copy.
  */
+import { useUnsavedChanges } from "./unsavedChanges";
+
 export function ResultSettingsTab() {
   const { settings, updateSettings } = useAcademic();
   const [passingPercentage, setPassingPercentage] = useState(settings.passingPercentage);
   const [defaultExamDuration, setDefaultExamDuration] = useState(settings.defaultExamDuration);
   const [gradeScale, setGradeScale] = useState<GradeBand[]>(settings.gradeScale.length ? settings.gradeScale : [{ minPercent: 0, grade: "F" }]);
   const [saving, setSaving] = useState(false);
+  const initialScale = settings.gradeScale.length ? settings.gradeScale : [{ minPercent: 0, grade: "F" }];
+  const dirty =
+    passingPercentage !== settings.passingPercentage ||
+    defaultExamDuration !== settings.defaultExamDuration ||
+    JSON.stringify(gradeScale) !== JSON.stringify(initialScale);
+  useUnsavedChanges("result", dirty);
+  const reset = () => {
+    setPassingPercentage(settings.passingPercentage);
+    setDefaultExamDuration(settings.defaultExamDuration);
+    setGradeScale(initialScale);
+  };
+  const validationError = (() => {
+    if (passingPercentage < 0 || passingPercentage > 100) return "পাসিং পার্সেন্টেজ ০–১০০ এর মধ্যে হতে হবে";
+    if (defaultExamDuration <= 0) return "এক্সামের সময়কাল ০ এর বেশি হতে হবে";
+    if (gradeScale.some((b) => !b.grade.trim())) return "প্রতিটি গ্রেডের নাম দিন";
+    if (gradeScale.some((b) => b.minPercent < 0 || b.minPercent > 100)) return "গ্রেডের ন্যূনতম % ০–১০০ এর মধ্যে হতে হবে";
+    if (new Set(gradeScale.map((b) => b.minPercent)).size !== gradeScale.length) return "দুটি গ্রেডের ন্যূনতম % একই হতে পারবে না";
+    return null;
+  })();
 
   const save = async (extra?: Partial<typeof settings>) => {
+    if (!extra && validationError) { toast.error(validationError); return; }
     setSaving(true);
     try {
       await updateSettings({
@@ -93,7 +115,9 @@ export function ResultSettingsTab() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={() => save()} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+        {dirty && validationError && <span className="mr-auto text-sm text-destructive">{validationError}</span>}
+        <Button variant="outline" onClick={reset} disabled={!dirty || saving}>বাতিল</Button>
+        <Button onClick={() => save()} disabled={saving || !dirty || !!validationError}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
       </div>
     </div>
   );

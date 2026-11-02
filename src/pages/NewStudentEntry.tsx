@@ -258,7 +258,7 @@ export default function NewStudentEntry() {
         </Card>
 
         <div className="text-center">
-          <Link to="/login" className="text-sm text-primary hover:underline">লগইন পেইজে ফিরে যান</Link>
+          <Link to="/" className="text-sm text-primary hover:underline">লগইন পোর্টালে ফিরে যান</Link>
         </div>
       </div>
     </main>

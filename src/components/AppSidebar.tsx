@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Role-aware, grouped navigation (catalog + visibility rules live in
- * lib/navigation.ts). Light surface, charcoal text, a thin orange bar on the
+ * lib/navigation.ts). Light surface, navy text, a thin blue bar on the
  * active item. Collapses to icons on desktop (with tooltips) and becomes an
  * off-canvas drawer on mobile that closes itself after navigation.
  */

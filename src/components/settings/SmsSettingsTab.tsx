@@ -70,6 +70,8 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback;
 }
 
+import { useUnsavedChanges } from "./unsavedChanges";
+
 export function SmsSettingsTab() {
   const { getResultSmsTemplate, updateResultSmsTemplate } = useAttendance();
   const [settings, setSettings] = useState<SmsSettingsApi | null>(null);
@@ -122,6 +124,15 @@ export function SmsSettingsTab() {
   const [testMessage, setTestMessage] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; errorMessage?: string; providerRequestId?: string } | null>(null);
+
+  // Unsaved provider credentials (API keys are write-only: typed here, never read back from the server).
+  const smsDirty =
+    !!settings &&
+    (bulkApiKey !== "" || alphaApiKey !== "" ||
+      bulkSenderId !== (settings.bulksmsbd.senderId || "") ||
+      alphaSenderId !== (settings.alpha.senderId || "") ||
+      alphaContentId !== (settings.alpha.contentId || ""));
+  useUnsavedChanges("sms-credentials", smsDirty);
 
   if (loading || !settings) {
     return <p className="text-sm text-muted-foreground py-6 text-center">লোড হচ্ছে...</p>;

@@ -29,12 +29,12 @@ export function SectionHeader({ title, description, action, icon: Icon }: { titl
 }
 
 /** A titled panel (chart, list, table). Header is a hairline row, not a second card. */
-export function Panel({ title, description, action, children, className, bodyClassName }: { title: string; description?: string; action?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string }) {
+export function Panel({ title, description, action, children, className, bodyClassName, icon: Icon }: { title: string; description?: string; action?: ReactNode; children: ReactNode; className?: string; bodyClassName?: string; icon?: LucideIcon }) {
   return (
     <Card className={cn("flex flex-col min-w-0", className)}>
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 sm:px-5">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold leading-tight">{title}</h3>
+          <h3 className="flex items-center gap-2 text-sm font-semibold leading-tight">{Icon && <Icon className="h-4 w-4 text-primary" aria-hidden />}{title}</h3>
           {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}

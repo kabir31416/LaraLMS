@@ -33,7 +33,7 @@ export default function StudentResults() {
     return () => { cancelled = true; };
   }, [student, listExams, getResultsByStudent]);
 
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
   type ResultRow = { exam: OfflineExam; result: OfflineResult; subject?: string; lecture?: string };

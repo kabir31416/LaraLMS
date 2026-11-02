@@ -1,13 +1,25 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  ArrowLeft, ArrowRight, Award, BedDouble, BookOpen, Building2, ChevronRight, ClipboardList, Globe, History, MessageSquare, Package, Search, ShieldCheck,
+  UserRound, Users, Wallet, type LucideIcon,
+} from "lucide-react";
+import { toast } from "sonner";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { EmptyState } from "@/components/dashboard/DashboardKit";
 import { cn } from "@/lib/utils";
 import { useAcademic } from "@/contexts/AcademicContext";
-import { toast } from "sonner";
-import { ApiClientError } from "@/contexts/AuthContext";
+import { ApiClientError, hasPermission, useAuth } from "@/contexts/AuthContext";
+import {
+  MESS_SETTINGS_MANAGE, PAYMENT_METHODS_MANAGE, PUBLIC_INFO_MANAGE, PUBLIC_RESULTS_MANAGE, SETTINGS_MANAGE, SMS_MANAGE, STAFF_MANAGE,
+} from "@/lib/permissions";
+import { UnsavedChangesContext } from "@/components/settings/unsavedChanges";
 import { SessionsTab } from "@/components/settings/SessionsTab";
 import { CoursesTab } from "@/components/settings/CoursesTab";
 import { SubjectsTab } from "@/components/settings/SubjectsTab";
@@ -24,25 +36,60 @@ import { AuditLogTab } from "@/components/settings/AuditLogTab";
 import { SmsSettingsTab } from "@/components/settings/SmsSettingsTab";
 
 /**
- * Settings — the ERP's central configuration/master-data hub. Grouped into
- * Master Data (একাডেমিক/ফিন্যান্স's payment methods) and System Configuration
- * (প্রতিষ্ঠান/শিক্ষার্থী/ফলাফল/পাবলিক/অডিট) sections behind a left-hand
- * category nav, per the "don't make one giant settings page" requirement.
+ * Smart Settings — the same settings tabs/APIs as before, organised into
+ * searchable, permission-aware categories with URL state (?section=) and an
+ * unsaved-changes guard. Categories only list settings that actually exist.
+ * Visibility here is convenience: every save is still authorised by the
+ * backend (requirePermission on each settings route).
  */
 type Section = "institution" | "academic" | "student" | "result" | "finance" | "materials" | "classExams" | "public" | "sms" | "audit";
 
-const SECTIONS: { key: Section; label: string }[] = [
-  { key: "institution", label: "প্রতিষ্ঠান" },
-  { key: "academic", label: "একাডেমিক" },
-  { key: "student", label: "শিক্ষার্থী" },
-  { key: "result", label: "ফলাফল" },
-  { key: "finance", label: "ফিন্যান্স" },
-  { key: "materials", label: "ম্যাটেরিয়াল" },
-  { key: "classExams", label: "ক্লাস / এক্সাম" },
-  { key: "public", label: "পাবলিক" },
-  { key: "sms", label: "SMS" },
-  { key: "audit", label: "অডিট লগ" },
+// Backend permission keys that have no frontend constant yet (backend/src/modules/rbac/permissions.ts).
+const SESSIONS_MANAGE = "sessions:manage";
+const COURSES_MANAGE = "courses:manage";
+const SUBJECTS_MANAGE = "subjects:manage";
+const LECTURES_MANAGE = "lectures:manage";
+const MATERIAL_TYPES_MANAGE = "material-types:manage";
+const AUDIT_READ = "audit:read";
+
+interface SectionDef {
+  key: Section;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  group: "core" | "academic" | "operations" | "system";
+  /** Any one of these lets the user open the category (the API re-checks on every save). */
+  perms: string[];
+  keywords: string;
+}
+
+const GROUPS: { key: SectionDef["group"]; label: string }[] = [
+  { key: "core", label: "প্রতিষ্ঠান ও শিক্ষার্থী" },
+  { key: "academic", label: "একাডেমিক ও ফলাফল" },
+  { key: "operations", label: "ফিন্যান্স ও অপারেশন" },
+  { key: "system", label: "যোগাযোগ, পাবলিক ও নিরাপত্তা" },
 ];
+
+const SECTIONS: SectionDef[] = [
+  { key: "institution", label: "প্রতিষ্ঠান", description: "নাম, লোগো, যোগাযোগ, রসিদ ও প্রিন্ট সেটিংস", icon: Building2, group: "core", perms: [SETTINGS_MANAGE], keywords: "institution name logo address phone email website receipt print branding timezone currency ঠিকানা লোগো রসিদ প্রিন্ট" },
+  { key: "student", label: "শিক্ষার্থী", description: "সিস্টেম আইডি প্রিফিক্স ও রোল নম্বরের নিয়ম", icon: UserRound, group: "core", perms: [SETTINGS_MANAGE], keywords: "student id prefix roll রোল আইডি প্রিফিক্স" },
+  { key: "academic", label: "একাডেমিক", description: "ডিফল্ট সেশন, সেশন, কোর্স, সাবজেক্ট ও লেকচার", icon: BookOpen, group: "academic", perms: [SETTINGS_MANAGE, SESSIONS_MANAGE, COURSES_MANAGE, SUBJECTS_MANAGE, LECTURES_MANAGE], keywords: "session course subject lecture default সেশন কোর্স সাবজেক্ট লেকচার" },
+  { key: "result", label: "ফলাফল", description: "পাসিং পার্সেন্টেজ, গ্রেড স্কেল ও এক্সামের সময়কাল", icon: Award, group: "academic", perms: [SETTINGS_MANAGE], keywords: "result grade pass percentage exam duration গ্রেড পাস" },
+  { key: "classExams", label: "ক্লাস / এক্সাম", description: "ক্লাস ও এক্সামের তালিকা", icon: ClipboardList, group: "academic", perms: [SETTINGS_MANAGE], keywords: "class exam ক্লাস এক্সাম" },
+  { key: "finance", label: "ফিন্যান্স", description: "ভর্তি ফি ও পেমেন্ট মাধ্যম", icon: Wallet, group: "operations", perms: [SETTINGS_MANAGE, PAYMENT_METHODS_MANAGE], keywords: "finance admission fee payment method bkash nagad cash ভর্তি ফি পেমেন্ট" },
+  { key: "materials", label: "ম্যাটেরিয়াল", description: "ম্যাটেরিয়াল টাইপ, ডুপ্লিকেট বিতরণ নিয়ম ও মিনিমাম স্টক", icon: Package, group: "operations", perms: [SETTINGS_MANAGE, MATERIAL_TYPES_MANAGE], keywords: "material type stock distribution ম্যাটেরিয়াল স্টক বিতরণ" },
+  { key: "sms", label: "SMS", description: "প্রোভাইডার, সেন্ডার আইডি, ইভেন্ট ও টেমপ্লেট", icon: MessageSquare, group: "system", perms: [SMS_MANAGE], keywords: "sms provider sender api key template balance এসএমএস টেমপ্লেট" },
+  { key: "public", label: "পাবলিক", description: "পাবলিক তথ্য অনুসন্ধান ও পাবলিক মার্কশিট", icon: Globe, group: "system", perms: [SETTINGS_MANAGE, PUBLIC_INFO_MANAGE, PUBLIC_RESULTS_MANAGE], keywords: "public info marksheet পাবলিক মার্কশিট তথ্য" },
+  { key: "audit", label: "অডিট লগ", description: "কে কখন কী পরিবর্তন করেছে — শুধু দেখার জন্য", icon: History, group: "system", perms: [SETTINGS_MANAGE, AUDIT_READ], keywords: "audit log history change অডিট ইতিহাস" },
+];
+
+/** Settings that live on their own pages — linked, not duplicated. */
+const RELATED: { to: string; label: string; description: string; icon: LucideIcon; perms: string[]; keywords: string }[] = [
+  { to: "/mess/settings", label: "মেস সেটিংস", description: "বিল তৈরির দিন, ডাইনিং চার্জ, জরিমানা ও মেস SMS", icon: BedDouble, perms: [MESS_SETTINGS_MANAGE], keywords: "mess hostel dining rent মেস হোস্টেল" },
+  { to: "/staff", label: "স্টাফ ও অ্যাক্সেস", description: "স্টাফ, রোল ও এডমিনের মডিউল অ্যাক্সেস", icon: Users, perms: [STAFF_MANAGE], keywords: "staff role permission access স্টাফ রোল অ্যাক্সেস" },
+];
+
+const SECTION_KEYS = new Set<string>(SECTIONS.map((s) => s.key));
 
 function DefaultSessionPicker() {
   const { sessions, settings, updateSettings } = useAcademic();
@@ -55,7 +102,7 @@ function DefaultSessionPicker() {
     }
   };
   return (
-    <Card className="border-none shadow-sm max-w-md">
+    <Card className="max-w-md">
       <CardContent className="pt-6">
         <Label>ডিফল্ট সেশন</Label>
         <Select value={settings.defaultSessionId || ""} onValueChange={save}>
@@ -68,77 +115,202 @@ function DefaultSessionPicker() {
 }
 
 export default function Settings() {
-  const [section, setSection] = useState<Section>("institution");
+  const { user } = useAuth();
+  const can = useCallback((perms: string[]) => perms.some((p) => hasPermission(user, p)), [user]);
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState("");
   const [academicTab, setAcademicTab] = useState("sessions");
-  const [publicTab, setPublicTab] = useState("info");
-  /** Jumps to the global Subject catalog tab — used by CoursesTab's "নতুন গ্লোবাল সাবজেক্ট তৈরি" when the Subject an admin wants to assign doesn't exist yet. Assigning an EXISTING Subject to a Course happens inline in CoursesTab itself, not here. */
-  const openSubjectsForCourse = () => setAcademicTab("subjects");
+  const [publicTab, setPublicTab] = useState(() => (can([SETTINGS_MANAGE, PUBLIC_INFO_MANAGE]) ? "info" : "marksheet"));
+
+  const allowed = useMemo(() => SECTIONS.filter((s) => can(s.perms)), [can]);
+  const related = useMemo(() => RELATED.filter((r) => can(r.perms)), [can]);
+  const raw = params.get("section");
+  const section = raw && SECTION_KEYS.has(raw) && allowed.some((s) => s.key === raw) ? (raw as Section) : null;
+  const current = section ? SECTIONS.find((s) => s.key === section)! : null;
+
+  // ---- unsaved-changes guard ----
+  const [dirty, setDirtyMap] = useState<Record<string, boolean>>({});
+  const reportDirty = useCallback((key: string, isDirty: boolean) => {
+    setDirtyMap((m) => (Boolean(m[key]) === isDirty ? m : { ...m, [key]: isDirty }));
+  }, []);
+  const hasUnsaved = Object.values(dirty).some(Boolean);
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsaved]);
+  const [pending, setPending] = useState<Section | "overview" | null>(null);
+  const go = (next: Section | "overview") => {
+    if (next === (section ?? "overview")) return;
+    if (hasUnsaved) { setPending(next); return; }
+    apply(next);
+  };
+  const apply = (next: Section | "overview") => {
+    setDirtyMap({});
+    setParams(next === "overview" ? {} : { section: next });
+    window.scrollTo({ top: 0 });
+  };
+
+  const q = query.trim().toLowerCase();
+  const matches = (text: string) => !q || text.toLowerCase().includes(q);
+  const visibleSections = allowed.filter((s) => matches(`${s.label} ${s.description} ${s.keywords}`));
+  const visibleRelated = related.filter((r) => matches(`${r.label} ${r.description} ${r.keywords}`));
+
+  const searchBox = (
+    <div className="relative w-full sm:max-w-xs">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="সেটিং খুঁজুন (যেমন: লোগো, গ্রেড, SMS)" className="pl-9" aria-label="সেটিং খুঁজুন" />
+    </div>
+  );
 
   return (
     <DashboardLayout>
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">সেটিংস</h1>
-          <p className="text-sm text-muted-foreground">প্রতিষ্ঠানের সকল রিইউজেবল মাস্টার ডেটা ও গ্লোবাল কনফিগারেশনের কেন্দ্রীয় স্থান</p>
-        </div>
+      <UnsavedChangesContext.Provider value={reportDirty}>
+        <div className="space-y-5">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              {current ? (
+                <button type="button" onClick={() => go("overview")} className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
+                  <ArrowLeft className="h-4 w-4" aria-hidden />সব সেটিংস
+                </button>
+              ) : null}
+              <h1 className="text-2xl font-bold sm:text-3xl">{current ? current.label : "সেটিংস"}</h1>
+              <p className="text-sm text-muted-foreground">{current ? current.description : "প্রতিষ্ঠানের মাস্টার ডেটা ও কনফিগারেশন — বিভাগ বেছে নিন বা খুঁজুন"}</p>
+            </div>
+            {!current && searchBox}
+          </header>
 
-        <div className="flex flex-col md:flex-row gap-4">
-          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible md:w-[200px] shrink-0">
-            {SECTIONS.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setSection(s.key)}
-                className={cn(
-                  "text-left px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
-                  section === s.key ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground hover:text-foreground",
+          {allowed.length === 0 && related.length === 0 ? (
+            <Card><EmptyState icon={ShieldCheck} title="কোনো সেটিং দেখার অনুমতি নেই" description="প্রয়োজনে সুপার অ্যাডমিনের কাছে অ্যাক্সেস চান।" /></Card>
+          ) : !current ? (
+            <Overview groups={GROUPS} sections={visibleSections} related={visibleRelated} onOpen={go} query={q} />
+          ) : (
+            <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <nav aria-label="সেটিংস বিভাগ" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
+                {allowed.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => go(s.key)}
+                    aria-current={s.key === section ? "page" : undefined}
+                    className={cn(
+                      "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      s.key === section ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <s.icon className="h-4 w-4 shrink-0" aria-hidden />{s.label}
+                  </button>
+                ))}
+                {related.length > 0 && <div className="hidden px-3 pb-1 pt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground lg:block">অন্য পেজে</div>}
+                {related.map((r) => (
+                  <Link key={r.to} to={r.to} className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground lg:flex">
+                    <r.icon className="h-4 w-4" aria-hidden />{r.label}<ArrowRight className="ml-auto h-3.5 w-3.5" aria-hidden />
+                  </Link>
+                ))}
+              </nav>
+
+              <div className="min-w-0">
+                {section === "institution" && <InstitutionTab />}
+                {section === "student" && <StudentSettingsTab />}
+                {section === "result" && <ResultSettingsTab />}
+                {section === "finance" && <FinanceTab />}
+                {section === "materials" && <MaterialsTab />}
+                {section === "classExams" && <ClassExamsTab />}
+                {section === "sms" && <SmsSettingsTab />}
+                {section === "audit" && <AuditLogTab />}
+
+                {section === "academic" && (
+                  <div className="space-y-4">
+                    {can([SETTINGS_MANAGE]) && <DefaultSessionPicker />}
+                    <Tabs value={academicTab} onValueChange={setAcademicTab}>
+                      <TabsList className="flex h-auto flex-wrap justify-start">
+                        <TabsTrigger value="sessions">সেশন</TabsTrigger>
+                        <TabsTrigger value="courses">কোর্স</TabsTrigger>
+                        <TabsTrigger value="subjects">সাবজেক্ট</TabsTrigger>
+                        <TabsTrigger value="lectures">লেকচার</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="sessions" className="mt-4"><SessionsTab /></TabsContent>
+                      <TabsContent value="courses" className="mt-4"><CoursesTab onManageSubjects={() => setAcademicTab("subjects")} /></TabsContent>
+                      <TabsContent value="subjects" className="mt-4"><SubjectsTab /></TabsContent>
+                      <TabsContent value="lectures" className="mt-4"><LecturesTab /></TabsContent>
+                    </Tabs>
+                  </div>
                 )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </nav>
 
-          <div className="flex-1 min-w-0">
-            {section === "institution" && <InstitutionTab />}
-            {section === "student" && <StudentSettingsTab />}
-            {section === "result" && <ResultSettingsTab />}
-            {section === "finance" && <FinanceTab />}
-            {section === "materials" && <MaterialsTab />}
-            {section === "classExams" && <ClassExamsTab />}
-            {section === "sms" && <SmsSettingsTab />}
-            {section === "audit" && <AuditLogTab />}
-
-            {section === "academic" && (
-              <div className="space-y-4">
-              <DefaultSessionPicker />
-              <Tabs value={academicTab} onValueChange={setAcademicTab}>
-                <TabsList className="flex flex-wrap h-auto">
-                  <TabsTrigger value="sessions">সেশন</TabsTrigger>
-                  <TabsTrigger value="courses">কোর্স</TabsTrigger>
-                  <TabsTrigger value="subjects">সাবজেক্ট</TabsTrigger>
-                  <TabsTrigger value="lectures">লেকচার</TabsTrigger>
-                </TabsList>
-                <TabsContent value="sessions" className="mt-4"><SessionsTab /></TabsContent>
-                <TabsContent value="courses" className="mt-4"><CoursesTab onManageSubjects={openSubjectsForCourse} /></TabsContent>
-                <TabsContent value="subjects" className="mt-4"><SubjectsTab /></TabsContent>
-                <TabsContent value="lectures" className="mt-4"><LecturesTab /></TabsContent>
-              </Tabs>
+                {section === "public" && (
+                  <Tabs value={publicTab} onValueChange={setPublicTab}>
+                    <TabsList>
+                      {can([SETTINGS_MANAGE, PUBLIC_INFO_MANAGE]) && <TabsTrigger value="info">পাবলিক তথ্য</TabsTrigger>}
+                      {can([SETTINGS_MANAGE, PUBLIC_RESULTS_MANAGE]) && <TabsTrigger value="marksheet">পাবলিক মার্কশিট</TabsTrigger>}
+                    </TabsList>
+                    {can([SETTINGS_MANAGE, PUBLIC_INFO_MANAGE]) && <TabsContent value="info" className="mt-4"><PublicInfoTab /></TabsContent>}
+                    {can([SETTINGS_MANAGE, PUBLIC_RESULTS_MANAGE]) && <TabsContent value="marksheet" className="mt-4"><PublicMarksheetTab /></TabsContent>}
+                  </Tabs>
+                )}
               </div>
-            )}
-
-            {section === "public" && (
-              <Tabs value={publicTab} onValueChange={setPublicTab}>
-                <TabsList>
-                  <TabsTrigger value="info">পাবলিক তথ্য</TabsTrigger>
-                  <TabsTrigger value="marksheet">পাবলিক মার্কশিট</TabsTrigger>
-                </TabsList>
-                <TabsContent value="info" className="mt-4"><PublicInfoTab /></TabsContent>
-                <TabsContent value="marksheet" className="mt-4"><PublicMarksheetTab /></TabsContent>
-              </Tabs>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+
+        <AlertDialog open={!!pending} onOpenChange={(v) => !v && setPending(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>পরিবর্তন সংরক্ষণ করা হয়নি</AlertDialogTitle>
+              <AlertDialogDescription>এই পেজে সংরক্ষণ না করা পরিবর্তন আছে। ছেড়ে গেলে সেগুলো হারিয়ে যাবে।</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>থাকুন</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { const next = pending!; setPending(null); apply(next); }}>সংরক্ষণ ছাড়াই যান</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </UnsavedChangesContext.Provider>
     </DashboardLayout>
+  );
+}
+
+function Overview({ groups, sections, related, onOpen, query }: {
+  groups: typeof GROUPS; sections: SectionDef[]; related: typeof RELATED; onOpen: (s: Section) => void; query: string;
+}) {
+  if (sections.length === 0 && related.length === 0) {
+    return <Card><EmptyState icon={Search} title={`"${query}" — কোনো সেটিং পাওয়া যায়নি`} description="অন্য শব্দ দিয়ে খুঁজে দেখুন (বাংলা বা ইংরেজি)।" /></Card>;
+  }
+  const tile = "group flex h-full items-start gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  return (
+    <div className="space-y-6">
+      {groups.map((g) => {
+        const items = sections.filter((s) => s.group === g.key);
+        if (!items.length) return null;
+        return (
+          <section key={g.key} aria-labelledby={`grp-${g.key}`}>
+            <h2 id={`grp-${g.key}`} className="mb-2 text-sm font-semibold text-muted-foreground">{g.label}</h2>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {items.map((s) => (
+                <button key={s.key} type="button" onClick={() => onOpen(s.key)} className={tile}>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><s.icon className="h-5 w-5" aria-hidden /></span>
+                  <span className="min-w-0 flex-1"><span className="block font-semibold">{s.label}</span><span className="block text-sm text-muted-foreground">{s.description}</span></span>
+                  <ChevronRight className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      {related.length > 0 && (
+        <section aria-labelledby="grp-related">
+          <h2 id="grp-related" className="mb-2 text-sm font-semibold text-muted-foreground">অন্য পেজের সেটিংস</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {related.map((r) => (
+              <Link key={r.to} to={r.to} className={tile}>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground"><r.icon className="h-5 w-5" aria-hidden /></span>
+                <span className="min-w-0 flex-1"><span className="block font-semibold">{r.label}</span><span className="block text-sm text-muted-foreground">{r.description}</span></span>
+                <ArrowRight className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }

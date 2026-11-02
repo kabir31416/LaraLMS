@@ -42,7 +42,7 @@ export default function StudentAttendance() {
     return Array.from(m.entries()).map(([k, v]) => ({ month: k, pct: Math.round((v.p / v.total) * 100), p: v.p, total: v.total }));
   }, [list]);
 
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
   return (

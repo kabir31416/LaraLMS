@@ -146,7 +146,7 @@ const ResultManagement = () => {
   const isDirector = user?.role === "Batch Director";
 
   if (!user || (user.role !== "Admin" && user.role !== "Batch Director")) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return (

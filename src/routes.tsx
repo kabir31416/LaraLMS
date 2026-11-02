@@ -1,9 +1,10 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { homeRouteFor, ProtectedRoute } from "@/components/ProtectedRoute";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
 import { ADMISSION_RESULTS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ } from "@/lib/permissions";
 import { MessScopeProvider } from "@/components/mess/MessShell";
-import Login from "./pages/Login";
+import Home from "./pages/Home";
+import { AdminLoginPage, StaffLoginPage, StudentLoginPage } from "./pages/PortalLogin";
 import PublicInfo from "./pages/PublicInfo";
 import PublicStudentSearch from "./pages/PublicStudentSearch";
 import Marksheet from "./pages/Marksheet";
@@ -68,6 +69,28 @@ import MessReports from "./pages/mess/MessReports";
 import MessSettingsPage from "./pages/mess/MessSettingsPage";
 import { MessInvoicePage, MessReceiptPage, MessSettlementPrintPage } from "./pages/mess/MessPrint";
 
+/**
+ * "/" — the public homepage (login portal chooser) for a signed-out
+ * visitor, the Admin dashboard for an Admin (same guard as before), and the
+ * user's own home for every other role. Existing "/" links keep working.
+ */
+function HomeGate() {
+  const { user, initializing } = useAuth();
+  if (initializing) return null;
+  if (!user) return <Home />;
+  if (user.role !== "Admin") return <Navigate to={homeRouteFor(user.role)} replace />;
+  return <ProtectedRoute roles={["Admin"]}><Index /></ProtectedRoute>;
+}
+
+/** The old single /login page → the homepage chooser (or straight to the portal an old link asked for). */
+function LegacyLogin() {
+  const { user } = useAuth();
+  if (user) return <Navigate to={homeRouteFor(user.role)} replace />;
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  const target = tab === "student" ? "/studentLogin" : tab === "staff" ? "/staffLogin" : tab === "admin" ? "/adminLogin" : "/";
+  return <Navigate to={target} replace />;
+}
+
 /** Passes when the user holds ANY of the keys (ProtectedRoute's `permission` checks just one). */
 function AnyPermission({ perms, children }: { perms: string[]; children: React.ReactNode }) {
   const { user } = useAuth();
@@ -78,7 +101,11 @@ function AnyPermission({ perms, children }: { perms: string[]; children: React.R
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path="/" element={<HomeGate />} />
+      <Route path="/studentLogin" element={<StudentLoginPage />} />
+      <Route path="/staffLogin" element={<StaffLoginPage />} />
+      <Route path="/adminLogin" element={<AdminLoginPage />} />
+      <Route path="/login" element={<LegacyLogin />} />
       <Route path="/info" element={<PublicInfo />} />
       <Route path="/info/search" element={<PublicStudentSearch />} />
       <Route path="/marksheet" element={<Marksheet />} />
@@ -87,7 +114,6 @@ export function AppRoutes() {
 
       {/* Admin */}
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>
-        <Route path="/" element={<Index />} />
         <Route path="/students" element={<Students />} />
         <Route path="/admission" element={<Admission />} />
         <Route path="/admission/import" element={<StudentImportUpload />} />

@@ -45,7 +45,7 @@ const DirectorDashboard = () => {
   const batchName = useMemo(() => new Map((q.data?.batches ?? []).map((b) => [b.id, b.name])), [q.data]);
   const fallbackName = (id: string) => batchName.get(id) ?? batches.find((b) => b.id === id)?.name ?? "—";
 
-  if (!user || !isDirector) return <Navigate to="/login" replace />;
+  if (!user || !isDirector) return <Navigate to="/staffLogin" replace />;
   const d = q.data;
   const loading = q.isLoading;
 

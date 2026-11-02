@@ -72,7 +72,7 @@ export default function StudentImportUpload() {
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
   if (!user || user.role !== "Admin") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/adminLogin" replace />;
   }
 
   const handleDownloadTemplate = async () => {

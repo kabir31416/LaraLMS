@@ -70,7 +70,7 @@ export default function ChanceResults() {
   useEffect(() => { loadStats(); }, [loadStats, refreshKey]);
 
   if (!user || (user.role !== "Admin" && user.role !== "Batch Director")) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const refreshAll = () => setRefreshKey((k) => k + 1);

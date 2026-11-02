@@ -82,7 +82,7 @@ const DirectorStudents = () => {
   useEffect(() => { setPage(1); }, [debouncedSearch, batchFilter, birthdayOnly]);
 
   if (!user || user.role !== "Batch Director") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/staffLogin" replace />;
   }
 
   const batchOf = (batchId?: string) => myBatches.find((b) => b.id === batchId);

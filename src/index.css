@@ -5,67 +5,68 @@
 @layer base {
   :root {
     /*
-     * LaraLMS design tokens — white / soft neutral gray / charcoal / silver,
-     * with deep orange as the single accent. Colour carries meaning only:
-     * orange = primary action/highlight, green = success/paid, red = due/
-     * error, amber = warning/pending, gray = secondary information.
+     * LaraLMS design tokens — premium blue SaaS theme: white surfaces on a
+     * very light blue-gray background, dark navy text, soft gray-blue
+     * borders, and one royal blue as the primary accent. Colour carries
+     * meaning: blue = primary action/highlight, green = success/paid,
+     * red = due/error, amber = warning/pending, slate = secondary info.
      */
-    --background: 30 8% 97.5%;
-    --foreground: 24 10% 11%;
+    --background: 220 33% 98%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 24 10% 11%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 24 10% 11%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 21 90% 48%;
+    --primary: 224 76% 46%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 30 7% 94%;
-    --secondary-foreground: 24 10% 15%;
+    --secondary: 220 45% 95%;
+    --secondary-foreground: 224 60% 22%;
 
-    --muted: 30 7% 95%;
-    --muted-foreground: 25 5% 40%;
+    --muted: 220 30% 96%;
+    --muted-foreground: 220 13% 42%;
 
-    --accent: 30 9% 93%;
-    --accent-foreground: 24 10% 11%;
+    --accent: 220 50% 95%;
+    --accent-foreground: 224 60% 22%;
 
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 30 7% 89%;
-    --input: 30 6% 85%;
-    --ring: 21 90% 48%;
+    --border: 220 20% 90%;
+    --input: 220 18% 85%;
+    --ring: 224 76% 46%;
 
     --radius: 0.5rem;
 
-    /* Light sidebar: charcoal text, orange active state, hairline divider. */
+    /* Light sidebar: navy text, blue active state, hairline divider. */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 24 8% 28%;
-    --sidebar-primary: 21 90% 48%;
+    --sidebar-foreground: 222 25% 28%;
+    --sidebar-primary: 224 76% 46%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 24 80% 96%;
-    --sidebar-accent-foreground: 21 85% 36%;
-    --sidebar-border: 30 7% 90%;
-    --sidebar-ring: 21 90% 48%;
-    --sidebar-muted: 25 5% 52%;
+    --sidebar-accent: 224 85% 96%;
+    --sidebar-accent-foreground: 224 70% 36%;
+    --sidebar-border: 220 20% 91%;
+    --sidebar-ring: 224 76% 46%;
+    --sidebar-muted: 220 12% 52%;
 
-    --success: 145 63% 34%;
+    --success: 145 63% 32%;
     --success-foreground: 0 0% 100%;
-    --warning: 36 92% 42%;
+    --warning: 36 92% 40%;
     --warning-foreground: 0 0% 100%;
-    /* "info" is deliberately a neutral charcoal-gray, not blue/cyan. */
-    --info: 25 6% 36%;
+    /* "info" is a muted slate so it never competes with the primary blue. */
+    --info: 215 20% 38%;
     --info-foreground: 0 0% 100%;
 
-    /* Chart palette — orange, charcoal, silver, amber, green, light orange. */
-    --chart-1: 21 90% 48%;
-    --chart-2: 24 10% 24%;
-    --chart-3: 30 5% 66%;
+    /* Chart palette — royal blue, navy, slate, amber, green, light blue. */
+    --chart-1: 224 76% 46%;
+    --chart-2: 222 47% 22%;
+    --chart-3: 218 14% 66%;
     --chart-4: 38 92% 50%;
     --chart-5: 145 55% 38%;
-    --chart-6: 24 90% 72%;
+    --chart-6: 214 90% 74%;
 
     --font-sans: 'Hind Siliguri', sans-serif;
   }

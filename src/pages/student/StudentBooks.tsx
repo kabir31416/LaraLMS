@@ -21,7 +21,7 @@ export default function StudentBooks() {
       .finally(() => setLoading(false));
   }, [student]);
 
-  if (!user || user.role !== "Student") return <Navigate to="/login" replace />;
+  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
   if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
 
   return (

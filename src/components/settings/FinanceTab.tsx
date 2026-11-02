@@ -18,16 +18,21 @@ import { ApiClientError } from "@/contexts/AuthContext";
  * reusable Payment Method list, both consumed by Admission/Fee
  * Management/Receipt instead of the old hard-coded "200" and method array.
  */
+import { useUnsavedChanges } from "./unsavedChanges";
+
 export function FinanceTab() {
   const { settings, updateSettings, paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod } = useAcademic();
   const [admissionFee, setAdmissionFee] = useState(settings.admissionFeeBdt);
   const [savingFee, setSavingFee] = useState(false);
+  const feeDirty = admissionFee !== settings.admissionFeeBdt;
+  useUnsavedChanges("admission-fee", feeDirty);
 
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<PaymentMethod | null>(null);
   const [form, setForm] = useState<{ name: string; status: MasterDataStatus; displayOrder: number }>({ name: "", status: "সক্রিয়", displayOrder: 0 });
 
   const saveAdmissionFee = async () => {
+    if (admissionFee < 0) { toast.error("ভর্তি ফি ঋণাত্মক হতে পারবে না"); return; }
     setSavingFee(true);
     try {
       await updateSettings({ admissionFeeBdt: Number(admissionFee) || 0 });
@@ -78,9 +83,10 @@ export function FinanceTab() {
           <div className="flex items-end gap-3">
             <div className="flex-1 max-w-[200px]">
               <Label>নির্দিষ্ট ভর্তি ফি (৳)</Label>
-              <Input type="number" value={admissionFee} onChange={(e) => setAdmissionFee(Number(e.target.value) || 0)} />
+              <Input type="number" min={0} value={admissionFee} onChange={(e) => setAdmissionFee(Number(e.target.value) || 0)} />
             </div>
-            <Button onClick={saveAdmissionFee} disabled={savingFee}>{savingFee ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+            <Button onClick={saveAdmissionFee} disabled={savingFee || !feeDirty}>{savingFee ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
+            {feeDirty && <Button variant="outline" disabled={savingFee} onClick={() => setAdmissionFee(settings.admissionFeeBdt)}>বাতিল</Button>}
           </div>
           <p className="text-xs text-muted-foreground">
             কোর্স ফি থেকে আলাদা — এই পরিবর্তন শুধু ভবিষ্যতের ভর্তিতে প্রযোজ্য হবে। ইতিমধ্যে ভর্তি হওয়া শিক্ষার্থীদের ভর্তি ফি অপরিবর্তিত থাকবে।

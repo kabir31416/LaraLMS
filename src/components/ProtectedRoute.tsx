@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { hasPermission, useAuth, type Role } from "@/contexts/AuthContext";
 import { ChangePasswordGate } from "@/components/ChangePasswordGate";
 
@@ -17,10 +17,21 @@ export function homeRouteFor(role: Role): string {
   return "/";
 }
 
+/** The login portal that owns a protected path — a signed-out visitor is sent to the right one, with `next` so they return afterwards. */
+export function loginRouteFor(pathname: string): string {
+  if (pathname.startsWith("/student")) return "/studentLogin";
+  if (pathname.startsWith("/director") || pathname.startsWith("/mess")) return "/staffLogin";
+  return "/adminLogin";
+}
+
 export function ProtectedRoute({ children, roles, permission }: Props) {
   const { user, initializing } = useAuth();
-  if (initializing) return null; // avoid a flash-redirect to /login while the session cookie is being checked
-  if (!user) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (initializing) return null; // avoid a flash-redirect to a login page while the session cookie is being checked
+  if (!user) {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`${loginRouteFor(location.pathname)}?next=${encodeURIComponent(next)}`} replace />;
+  }
   // A forced password change (backend's User.mustChangePassword — set for
   // the seeded root Super Admin, and for any login created/reset without an
   // explicit password) blocks every protected page until resolved, ahead of
