@@ -1,72 +1,71 @@
 import { useMemo, useState } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
+import { ExternalLink, PlayCircle, Search, Video } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState } from "@/components/dashboard/DashboardKit";
+import { StudentPage } from "@/components/student/StudentPortalKit";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useStudentSelf } from "./useStudentSelf";
-import { Navigate } from "react-router-dom";
 
+/** Class videos for the student's course (existing data and filtering; hooks now run unconditionally). */
 export default function StudentVideos() {
-  const { user, student } = useStudentSelf();
+  const { student } = useStudentSelf();
   const { videos, subjects, lectures, courses, getSubjectsByCourse, getCourseSubjectsForCourse, getCourseSubject } = useAcademic();
   const [subject, setSubject] = useState("all");
+  const [q, setQ] = useState("");
 
-  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
-  if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
-
-  const myCourse = courses.find((c) => c.name === student.course);
+  const myCourse = courses.find((c) => c.name === student?.course);
   const mySubjects = myCourse ? getSubjectsByCourse(myCourse.id) : subjects;
-  const myCourseSubjectIds = new Set((myCourse ? getCourseSubjectsForCourse(myCourse.id) : []).map((cs) => cs.id));
-  const lectureIds = new Set(lectures.filter((l) => !myCourse || myCourseSubjectIds.has(l.courseSubjectId)).map((l) => l.id));
-
-  const filtered = useMemo(() => videos.filter((v) => {
-    if (!lectureIds.has(v.lectureId)) return false;
-    if (subject !== "all") {
-      const lec = lectures.find((l) => l.id === v.lectureId);
-      const lecSubjectId = lec ? getCourseSubject(lec.courseSubjectId)?.subjectId : undefined;
-      if (lecSubjectId !== subject) return false;
-    }
-    return true;
-  }), [videos, lectureIds, subject, lectures, getCourseSubject]);
+  const list = useMemo(() => {
+    const csIds = new Set((myCourse ? getCourseSubjectsForCourse(myCourse.id) : []).map((cs) => cs.id));
+    const lectureById = new Map(lectures.map((l) => [l.id, l]));
+    return videos
+      .map((v) => {
+        const lec = lectureById.get(v.lectureId);
+        const subjectId = lec ? getCourseSubject(lec.courseSubjectId)?.subjectId : undefined;
+        return { v, lec, subjectId, subjectName: subjects.find((s) => s.id === subjectId)?.name };
+      })
+      .filter(({ lec, subjectId, v }) =>
+        !!lec && (!myCourse || csIds.has(lec.courseSubjectId)) &&
+        (subject === "all" || subjectId === subject) &&
+        (!q.trim() || `${v.title} ${lec.title}`.toLowerCase().includes(q.trim().toLowerCase())));
+  }, [videos, lectures, subjects, myCourse, subject, q, getCourseSubjectsForCourse, getCourseSubject]);
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold">ভিডিও ক্লাস</h1>
-        <div className="max-w-xs"><Label className="text-xs">সাবজেক্ট ফিল্টার</Label>
-          <Select value={subject} onValueChange={setSubject}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="all">সব</SelectItem>{mySubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        {filtered.length === 0 ? (
-          <Card><CardContent className="py-10 text-center text-muted-foreground">কোনো ভিডিও নেই</CardContent></Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filtered.map((v) => {
-              const lec = lectures.find((l) => l.id === v.lectureId);
-              const subjectId = lec ? getCourseSubject(lec.courseSubjectId)?.subjectId : undefined;
-              const sub = subjects.find((s) => s.id === subjectId);
-              return <Card key={v.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">{v.title}</CardTitle>
-                  <div className="flex gap-2 text-xs">
-                    {sub && <Badge variant="secondary">{sub.name}</Badge>}
+    <StudentPage icon={Video} title="ভিডিও ক্লাস" description="আপনার কোর্সের লেকচার ভিডিও">
+      <Card className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:p-4">
+        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ভিডিও বা লেকচার খুঁজুন" className="pl-9" aria-label="ভিডিও খুঁজুন" /></div>
+        <Select value={subject} onValueChange={setSubject}>
+          <SelectTrigger className="sm:w-56" aria-label="বিষয়"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">সব বিষয়</SelectItem>{mySubjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </Card>
+      {list.length === 0 ? (
+        <Card><EmptyState icon={PlayCircle} title="কোনো ভিডিও নেই" description={q || subject !== "all" ? "ফিল্টার বদলে দেখুন।" : "নতুন ভিডিও যোগ হলে এখানে দেখা যাবে।"} /></Card>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {list.map(({ v, lec, subjectName }) => (
+            <Card key={v.id} className="flex flex-col p-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><PlayCircle className="h-5 w-5" aria-hidden /></span>
+                <div className="min-w-0">
+                  <p className="font-semibold leading-snug">{v.title}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {subjectName && <Badge variant="secondary">{subjectName}</Badge>}
                     {lec && <Badge variant="outline">{lec.title}</Badge>}
                     {v.duration && <Badge variant="outline">{v.duration}</Badge>}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <a href={v.youtubeLink} target="_blank" rel="noreferrer" className="text-primary text-sm underline">YouTube এ দেখুন</a>
-                  {v.description && <p className="text-sm text-muted-foreground mt-2">{v.description}</p>}
-                </CardContent>
-              </Card>;
-            })}
-          </div>
-        )}
-      </div>
-    </DashboardLayout>
+                </div>
+              </div>
+              {v.description && <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{v.description}</p>}
+              <Button asChild variant="outline" size="sm" className="mt-3 self-start"><a href={v.youtubeLink} target="_blank" rel="noreferrer noopener"><ExternalLink className="h-4 w-4" />YouTube এ দেখুন</a></Button>
+            </Card>
+          ))}
+        </div>
+      )}
+    </StudentPage>
   );
 }

@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { invalidatePerformanceCache } from "../analytics/performance.cache";
 import { OfflineExam, OfflineExamDoc } from "./exam.model";
 import { OfflineResult } from "./result.model";
 import { Batch } from "../batches/batch.model";
@@ -794,6 +795,7 @@ export async function deleteResultRecordsBulk(req: Request, filter: ResultRecord
   }
 
   const { deletedCount } = await OfflineResult.deleteMany(resultFilter);
+  invalidatePerformanceCache();
 
   await recordAudit({
     req,
@@ -825,6 +827,7 @@ export async function deleteOneResult(req: Request, resultId: string): Promise<{
   await assertCanActOnBatch(req, String(exam.batchId));
 
   await OfflineResult.deleteOne({ _id: result._id });
+  invalidatePerformanceCache();
 
   await recordAudit({
     req,
@@ -890,6 +893,7 @@ export async function deleteSelectedResults(req: Request, resultIds: string[]): 
   let deletedCount = 0;
   if (toDelete.length > 0) {
     const res = await OfflineResult.deleteMany({ _id: { $in: toDelete } });
+    invalidatePerformanceCache();
     deletedCount = res.deletedCount ?? 0;
   }
 

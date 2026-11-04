@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,12 @@ const StudentProfile = () => {
   const { getSubject, getLecture, settings } = useAcademic();
   const [editOpen, setEditOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("basic");
+  const [searchParams] = useSearchParams();
+  // ?tab= deep link (e.g. from Performance Analytics → results / attendance); unknown values fall back to "basic".
+  const [activeTab, setActiveTab] = useState(() => {
+    const t = searchParams.get("tab");
+    return t && ["basic", "fees", "attendance", "results", "admission", "materials", "payments"].includes(t) ? t : "basic";
+  });
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [exams, setExams] = useState<OfflineExam[]>([]);
   const [results, setResults] = useState<OfflineResult[]>([]);

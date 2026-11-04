@@ -6,6 +6,50 @@ export interface GradeBand {
   grade: string;
 }
 
+/**
+ * Student Performance Analytics thresholds (analytics/performance.rules.ts).
+ * Decision-support only — nothing here changes a mark, an attendance entry
+ * or a student's batch. Edited from Settings → ফলাফল by SETTINGS_MANAGE.
+ */
+export interface PerformanceRules {
+  /** Overall % (sum obtained ÷ sum full marks) at or above → "Excellent". */
+  excellentMin: number;
+  goodMin: number;
+  /** Below this → "Needs improvement". */
+  averageMin: number;
+  /** Fewer exams sat than this → "Not enough data" (no band, no trend). */
+  minExams: number;
+  /** Attendance % below this is "low" (needs at least minAttendanceEntries days). */
+  lowAttendancePct: number;
+  minAttendanceEntries: number;
+  /** Trend compares the average of the last N exams with the N before. */
+  trendWindow: number;
+  /** Percentage-point change that counts as improving/declining. */
+  trendDelta: number;
+  /** At-risk: a decline of at least this many points. */
+  riskDeclineDelta: number;
+  /** At-risk: this many failed exams (below passingPercentage) among the last riskLookback exams sat. */
+  riskFailCount: number;
+  /** At-risk: recorded absent in this many of the last riskLookback result entries. */
+  riskAbsentCount: number;
+  riskLookback: number;
+}
+
+export const DEFAULT_PERFORMANCE_RULES: PerformanceRules = {
+  excellentMin: 80,
+  goodMin: 60,
+  averageMin: 40,
+  minExams: 2,
+  lowAttendancePct: 75,
+  minAttendanceEntries: 5,
+  trendWindow: 3,
+  trendDelta: 5,
+  riskDeclineDelta: 10,
+  riskFailCount: 2,
+  riskAbsentCount: 2,
+  riskLookback: 5,
+};
+
 export interface SettingsDoc extends Document {
   defaultSessionId?: Types.ObjectId;
   defaultExamDuration: number; // minutes
@@ -44,6 +88,7 @@ export interface SettingsDoc extends Document {
    * a linked staff record (Settings §2 "extend, don't duplicate config").
    */
   resultSmsTemplate: string;
+  performanceRules?: Partial<PerformanceRules>;
 }
 
 const gradeBandSchema = new Schema<GradeBand>(
@@ -74,6 +119,8 @@ const settingsSchema = new Schema<SettingsDoc>(
     admissionFeeBdt: { type: Number, default: 200, min: 0 },
     studentIdPrefix: { type: String, trim: true, default: "LMS" },
     resultSmsTemplate: { type: String, trim: true, default: DEFAULT_RESULT_SMS_TEMPLATE },
+    // Stored as a plain object; readers always merge it over DEFAULT_PERFORMANCE_RULES.
+    performanceRules: { type: Schema.Types.Mixed },
   },
   { timestamps: true },
 );

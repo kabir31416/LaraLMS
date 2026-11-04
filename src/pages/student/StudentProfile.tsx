@@ -1,99 +1,100 @@
-import { useEffect, useState } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Camera, GraduationCap, Home, Layers, Pencil, Phone, ShieldCheck, User, Users } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
-import { RELATIONS, HSC_SSC_GROUPS } from "@/types/student";
-import { useStudentSelf } from "./useStudentSelf";
-import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
-import { Navigate } from "react-router-dom";
-import { toast } from "sonner";
-import { ApiClientError } from "@/contexts/AuthContext";
 import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
-import { Camera } from "lucide-react";
+import { COMPLETION_LABELS, StudentPage } from "@/components/student/StudentPortalKit";
+import { RELATIONS, HSC_SSC_GROUPS } from "@/types/student";
+import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
+import { ApiClientError } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
+import { useStudentSelf } from "./useStudentSelf";
 
-function Field({ label, value }: { label: string; value?: string | number }) {
-  return <div><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value || "—"}</p></div>;
+/**
+ * My Profile. Read-only (admin-set) details and the student-editable form
+ * are the same fields and the same backend allow-list as before
+ * (PATCH /students/:id/self); this adds grouping, an unsaved-changes guard
+ * and cancel. Profile completion is the server's own figure.
+ */
+const EDITABLE_KEYS: (keyof SelfEditableFields)[] = [
+  "presentAddress", "permanentAddress", "guardianName", "guardianRelation",
+  "hscInstitution", "hscBoard", "hscPassingYear", "hscGroup", "hscGpa", "hscRoll", "hscRegistrationNumber",
+  "sscInstitution", "sscBoard", "sscPassingYear", "sscGroup", "sscGpa", "sscRoll", "sscRegistrationNumber",
+];
+
+/** Every HSC/SSC field except GPA/registration is required (HSC/SSC required-fields audit §6/§7) — unchanged. */
+const REQUIRED_FIELDS: { key: keyof SelfEditableFields; label: string }[] = [
+  { key: "hscInstitution", label: "HSC প্রতিষ্ঠান" },
+  { key: "hscBoard", label: "HSC বোর্ড" },
+  { key: "hscPassingYear", label: "HSC পাসের সাল" },
+  { key: "hscGroup", label: "HSC বিভাগ" },
+  { key: "hscRoll", label: "HSC রোল নম্বর" },
+  { key: "sscInstitution", label: "SSC প্রতিষ্ঠান" },
+  { key: "sscBoard", label: "SSC বোর্ড" },
+  { key: "sscPassingYear", label: "SSC পাসের সাল" },
+  { key: "sscGroup", label: "SSC বিভাগ" },
+  { key: "sscRoll", label: "SSC রোল নম্বর" },
+];
+
+function Info({ label, value }: { label: string; value?: string | number | null }) {
+  return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="truncate text-sm font-medium">{value || "—"}</dd></div>;
 }
 
-/** Admin-set — always shown read-only, never as an editable input, so a student never mistakes these for something they can change (Phase 4 §9). */
-function ReadOnlyField({ label, value }: { label: string; value?: string | number }) {
+function Section({ icon: Icon, title, note, children }: { icon: typeof User; title: string; note?: string; children: ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-muted-foreground">{label}</Label>
-      <Input value={value ?? ""} readOnly disabled className="bg-muted/50" />
-    </div>
+    <Card>
+      <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Icon className="h-4 w-4 text-primary" aria-hidden />{title}{note && <span className="text-xs font-normal text-muted-foreground">{note}</span>}</CardTitle></CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
+function Field({ id, label, required, children }: { id: string; label: string; required?: boolean; children: ReactNode }) {
+  return <div className="space-y-1.5"><Label htmlFor={id}>{label}{required && <span className="text-destructive"> *</span>}</Label>{children}</div>;
+}
+
 export default function StudentProfile() {
-  const { user, student, batch, directors, updateProfile, uploadPhoto, removePhoto } = useStudentSelf();
-  const [form, setForm] = useState<SelfEditableFields>(() => initForm());
+  return (
+    <StudentPage icon={User} title="আমার প্রোফাইল" description="ব্যক্তিগত, ব্যাচ ও শিক্ষাগত তথ্য — চিহ্নিত অংশগুলো আপনি নিজে হালনাগাদ করতে পারবেন">
+      <ProfileBody />
+    </StudentPage>
+  );
+}
+
+function ProfileBody() {
+  const { student, batch, directors, updateProfile, uploadPhoto, removePhoto } = useStudentSelf();
+  const initial = useMemo<SelfEditableFields>(
+    () => Object.fromEntries(EDITABLE_KEYS.map((k) => [k, (student?.[k as keyof typeof student] as string | undefined) || ""])) as unknown as SelfEditableFields,
+    [student],
+  );
+  const [form, setForm] = useState<SelfEditableFields>(initial);
   const [saving, setSaving] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
-
-  function initForm(): SelfEditableFields {
-    return {
-      presentAddress: student?.presentAddress || "",
-      permanentAddress: student?.permanentAddress || "",
-      guardianName: student?.guardianName || "",
-      guardianRelation: student?.guardianRelation || "",
-      hscInstitution: student?.hscInstitution || "",
-      hscBoard: student?.hscBoard || "",
-      hscPassingYear: student?.hscPassingYear || "",
-      hscGroup: student?.hscGroup || "",
-      hscGpa: student?.hscGpa || "",
-      hscRoll: student?.hscRoll || "",
-      hscRegistrationNumber: student?.hscRegistrationNumber || "",
-      sscInstitution: student?.sscInstitution || "",
-      sscBoard: student?.sscBoard || "",
-      sscPassingYear: student?.sscPassingYear || "",
-      sscGroup: student?.sscGroup || "",
-      sscGpa: student?.sscGpa || "",
-      sscRoll: student?.sscRoll || "",
-      sscRegistrationNumber: student?.sscRegistrationNumber || "",
-    };
-  }
-
-  /** Every HSC/SSC field except GPA is required (HSC/SSC required-fields audit §6/§7). */
-  const REQUIRED_FIELDS: { key: keyof SelfEditableFields; label: string }[] = [
-    { key: "hscInstitution", label: "HSC প্রতিষ্ঠান" },
-    { key: "hscBoard", label: "HSC বোর্ড" },
-    { key: "hscPassingYear", label: "HSC পাসের সাল" },
-    { key: "hscGroup", label: "HSC বিভাগ" },
-    { key: "hscRoll", label: "HSC রোল নম্বর" },
-    { key: "sscInstitution", label: "SSC প্রতিষ্ঠান" },
-    { key: "sscBoard", label: "SSC বোর্ড" },
-    { key: "sscPassingYear", label: "SSC পাসের সাল" },
-    { key: "sscGroup", label: "SSC বিভাগ" },
-    { key: "sscRoll", label: "SSC রোল নম্বর" },
-  ];
-
-  // student loads asynchronously (GET /students/me) — the lazy useState
-  // initializer above only runs once, on mount, before that data can
-  // possibly have arrived, so the form is re-seeded here the moment it does.
+  const [tab, setTab] = useState("info");
+  // student loads asynchronously (GET /students/me) and is replaced after each save — re-seed then.
+  useEffect(() => setForm(initial), [initial]);
+  const dirty = EDITABLE_KEYS.some((k) => (form[k] ?? "") !== (initial[k] ?? ""));
   useEffect(() => {
-    if (student) setForm(initForm());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id]);
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
-  if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
-  if (!student) return <DashboardLayout><p className="p-6">শিক্ষার্থী পাওয়া যায়নি</p></DashboardLayout>;
-
+  if (!student) return null;
   const update = (k: keyof SelfEditableFields, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const missingRequired = REQUIRED_FIELDS.filter(({ key }) => !String(form[key] ?? "").trim());
 
   const handleSave = async () => {
-    for (const { key, label } of REQUIRED_FIELDS) {
-      if (!String(form[key] ?? "").trim()) {
-        toast.error(`${label} আবশ্যক`);
-        return;
-      }
-    }
+    if (missingRequired.length) { toast.error(`${missingRequired[0].label} আবশ্যক`); return; }
     setSaving(true);
     try {
       await updateProfile(form);
@@ -105,152 +106,150 @@ export default function StudentProfile() {
     }
   };
 
-  const percent = student.profileCompletion?.percent ?? 0;
+  const completion = student.profileCompletion;
+  const percent = completion?.percent ?? 0;
+  const missing = (completion?.missingFields ?? []).map((f) => COMPLETION_LABELS[f] ?? f);
+  const text = (k: keyof SelfEditableFields, label: string, opts: { required?: boolean; placeholder?: string } = {}) => (
+    <Field id={`f-${k}`} label={label} required={opts.required}>
+      <Input id={`f-${k}`} value={form[k] ?? ""} onChange={(e) => update(k, e.target.value)} placeholder={opts.placeholder} aria-invalid={opts.required && !String(form[k] ?? "").trim() ? true : undefined} />
+    </Field>
+  );
+  const groupSelect = (k: keyof SelfEditableFields) => (
+    <Field id={`f-${k}`} label="বিভাগ" required>
+      <Select value={form[k] ?? ""} onValueChange={(v) => update(k, v)}>
+        <SelectTrigger id={`f-${k}`}><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+        <SelectContent>{HSC_SSC_GROUPS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+      </Select>
+    </Field>
+  );
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold">আমার প্রোফাইল</h1>
-
-        <Card>
-          <CardContent className="pt-6 flex flex-col items-center gap-3">
-            <button type="button" onClick={() => setPhotoOpen(true)} className="relative group" title="ছবি পরিবর্তন করুন">
-              <Avatar className="h-24 w-24 border-4 border-muted">
-                {student.photo && <AvatarImage src={student.photo} alt={student.name} className="object-cover" />}
-                <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">{student.name.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera className="h-6 w-6 text-white" />
-              </span>
-            </button>
-            <Button variant="outline" size="sm" onClick={() => setPhotoOpen(true)}>
-              <Camera className="h-4 w-4 mr-2" /> {student.photo ? "ছবি পরিবর্তন করুন" : "ছবি আপলোড করুন"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium">প্রোফাইল সম্পূর্ণতা</p>
-              <p className="text-sm font-semibold text-primary">{percent}%</p>
+    <>
+      {/* Identity */}
+      <Card className="overflow-hidden">
+        <div className="h-16 bg-[hsl(224_64%_22%)]" aria-hidden />
+        <CardContent className="relative -mt-10 flex flex-col gap-4 pb-5 sm:flex-row sm:items-end">
+          <button type="button" onClick={() => setPhotoOpen(true)} className="group relative w-fit shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={student.photo ? "ছবি পরিবর্তন করুন" : "ছবি আপলোড করুন"}>
+            <Avatar className="h-20 w-20 border-4 border-card shadow-sm">
+              {student.photo && <AvatarImage src={student.photo} alt="" className="object-cover" />}
+              <AvatarFallback className="bg-primary/10 text-2xl font-bold text-primary">{student.name.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <span className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground"><Camera className="h-3.5 w-3.5" aria-hidden /></span>
+          </button>
+          <div className="min-w-0 flex-1 sm:pb-1 sm:pt-12">
+            <h2 className="truncate text-xl font-bold">{student.name}</h2>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+              <Badge variant="outline">রেজি. {student.rollNumber || "—"}</Badge>
+              <Badge variant="outline">আইডি {student.studentId}</Badge>
+              {student.course && <Badge variant="secondary">{student.course}</Badge>}
+              {batch && <Badge variant="secondary">{batch.name}</Badge>}
             </div>
-            <Progress value={percent} />
-            {percent < 100 && (
-              <p className="text-xs text-muted-foreground mt-2">নিচের ফর্ম পূরণ করে আপনার প্রোফাইল সম্পূর্ণ করুন — অভিভাবক, ঠিকানা ও শিক্ষাগত তথ্য যোগ করুন।</p>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          <div className="w-full rounded-lg border bg-card p-3 sm:w-64 sm:shrink-0">
+            <div className="flex items-center justify-between text-xs"><span className="font-medium">প্রোফাইল সম্পূর্ণতা</span><b className={cn("tabular-nums", percent < 100 ? "text-warning" : "text-success")}>{percent}%</b></div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", percent < 100 ? "bg-warning" : "bg-success")} style={{ width: `${percent}%` }} /></div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">{missing.length ? `বাকি: ${missing.join(", ")}` : "সব তথ্য দেওয়া আছে"}</p>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">অ্যাডমিন কর্তৃক নির্ধারিত তথ্য</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <Field label="নাম" value={student.name} />
-            <Field label="Registration ID" value={student.studentId} />
-            <Field label="রোল নম্বর" value={student.rollNumber} />
-            <Field label="মোবাইল" value={student.mobile} />
-            <Field label="জন্ম তারিখ" value={student.dob} />
-            <Field label="রক্তের গ্রুপ" value={student.bloodGroup} />
-            <Field label="অভিভাবকের মোবাইল" value={student.guardianMobile} />
-            <Field label="কোর্স" value={student.course} />
-            <Field label="ভর্তির তারিখ" value={student.admissionDate} />
-          </CardContent>
-        </Card>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="info">তথ্য</TabsTrigger>
+          <TabsTrigger value="edit" className="gap-1.5"><Pencil className="h-3.5 w-3.5" aria-hidden />সম্পাদনা{dirty && <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-label="অসংরক্ষিত পরিবর্তন" />}</TabsTrigger>
+        </TabsList>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">ব্যাচ তথ্য</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <Field label="ব্যাচ" value={batch?.name} />
-            <Field label="সময়" value={batch?.batchTime} />
-            <Field label="রুম" value={batch?.roomNumber} />
-            <Field label="দিন" value={batch?.days.join(", ")} />
-            <Field label="ব্যাচ ডিরেক্টর" value={directors.length ? directors.map((d) => d.name).join(", ") : undefined} />
-          </CardContent>
-        </Card>
+        <TabsContent value="info" className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Section icon={ShieldCheck} title="অ্যাডমিন কর্তৃক নির্ধারিত" note="(পরিবর্তনের জন্য অফিসে যোগাযোগ করুন)">
+            <dl className="grid grid-cols-2 gap-4">
+              <Info label="নাম" value={student.name} />
+              <Info label="সিস্টেম আইডি" value={student.studentId} />
+              <Info label="রেজিস্ট্রেশন / রোল" value={student.rollNumber} />
+              <Info label="ভর্তির তারিখ" value={student.admissionDate} />
+              <Info label="জন্ম তারিখ" value={student.dob} />
+              <Info label="রক্তের গ্রুপ" value={student.bloodGroup} />
+            </dl>
+          </Section>
+          <Section icon={Phone} title="যোগাযোগ">
+            <dl className="grid grid-cols-2 gap-4">
+              <Info label="মোবাইল" value={student.mobile} />
+              <Info label="অভিভাবকের মোবাইল" value={student.guardianMobile} />
+              <Info label="অভিভাবক" value={[student.guardianName, student.guardianRelation].filter(Boolean).join(" · ")} />
+              <Info label="বর্তমান ঠিকানা" value={student.presentAddress} />
+            </dl>
+          </Section>
+          <Section icon={Layers} title="কোর্স ও ব্যাচ">
+            <dl className="grid grid-cols-2 gap-4">
+              <Info label="কোর্স" value={student.course} />
+              <Info label="ব্যাচ" value={batch?.name} />
+              <Info label="সময়" value={batch?.batchTime} />
+              <Info label="রুম" value={batch?.roomNumber} />
+              <Info label="দিন" value={batch?.days.join(", ")} />
+              <Info label="ব্যাচ ডিরেক্টর" value={directors.map((d) => d.name).join(", ")} />
+            </dl>
+          </Section>
+          <Section icon={GraduationCap} title="শিক্ষাগত তথ্য">
+            <dl className="grid grid-cols-2 gap-4">
+              <Info label="HSC প্রতিষ্ঠান" value={student.hscInstitution} />
+              <Info label="HSC সাল · বিভাগ" value={[student.hscPassingYear, student.hscGroup].filter(Boolean).join(" · ")} />
+              <Info label="SSC প্রতিষ্ঠান" value={student.sscInstitution} />
+              <Info label="SSC সাল · বিভাগ" value={[student.sscPassingYear, student.sscGroup].filter(Boolean).join(" · ")} />
+            </dl>
+            <Button variant="link" className="mt-2 h-auto p-0" onClick={() => setTab("edit")}>তথ্য হালনাগাদ করুন →</Button>
+          </Section>
+        </TabsContent>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">অভিভাবকের তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>অভিভাবকের নাম</Label>
-              <Input value={form.guardianName} onChange={(e) => update("guardianName", e.target.value)} placeholder="অভিভাবকের নাম" />
+        <TabsContent value="edit" className="mt-4 space-y-4">
+          <Section icon={Users} title="অভিভাবক">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {text("guardianName", "অভিভাবকের নাম", { placeholder: "অভিভাবকের নাম" })}
+              <Field id="f-guardianRelation" label="সম্পর্ক">
+                <Select value={form.guardianRelation ?? ""} onValueChange={(v) => update("guardianRelation", v)}>
+                  <SelectTrigger id="f-guardianRelation"><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
+                  <SelectContent>{RELATIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+                </Select>
+              </Field>
+              <Field id="f-guardianMobile" label="অভিভাবকের মোবাইল (অ্যাডমিন কর্তৃক)"><Input id="f-guardianMobile" value={student.guardianMobile ?? ""} readOnly disabled className="bg-muted/50" /></Field>
             </div>
-            <div className="space-y-1.5">
-              <Label>সম্পর্ক</Label>
-              <Select value={form.guardianRelation} onValueChange={(v) => update("guardianRelation", v)}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                <SelectContent>{RELATIONS.map((r) => (<SelectItem key={r} value={r}>{r}</SelectItem>))}</SelectContent>
-              </Select>
+          </Section>
+          <Section icon={Home} title="ঠিকানা">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {text("presentAddress", "বর্তমান ঠিকানা", { placeholder: "বর্তমান ঠিকানা" })}
+              {text("permanentAddress", "স্থায়ী ঠিকানা", { placeholder: "স্থায়ী ঠিকানা" })}
             </div>
-            <ReadOnlyField label="অভিভাবকের মোবাইল (অ্যাডমিন কর্তৃক নির্ধারিত)" value={student.guardianMobile} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-base">ঠিকানা (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>বর্তমান ঠিকানা</Label>
-              <Input value={form.presentAddress} onChange={(e) => update("presentAddress", e.target.value)} placeholder="বর্তমান ঠিকানা" />
+          </Section>
+          <Section icon={GraduationCap} title="HSC তথ্য">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <Field id="f-hscInstitution" label="প্রতিষ্ঠান" required><HscInstitutionCombobox value={form.hscInstitution || ""} onChange={(v) => update("hscInstitution", v)} /></Field>
+              {text("hscBoard", "বোর্ড", { required: true })}
+              {text("hscPassingYear", "পাসের সাল", { required: true, placeholder: "২০২৪" })}
+              {groupSelect("hscGroup")}
+              {text("hscRoll", "রোল নম্বর", { required: true })}
+              {text("hscRegistrationNumber", "রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)")}
+              {text("hscGpa", "জিপিএ", { placeholder: "৫.০০" })}
             </div>
-            <div className="space-y-1.5">
-              <Label>স্থায়ী ঠিকানা</Label>
-              <Input value={form.permanentAddress} onChange={(e) => update("permanentAddress", e.target.value)} placeholder="স্থায়ী ঠিকানা" />
+          </Section>
+          <Section icon={GraduationCap} title="SSC তথ্য">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {text("sscInstitution", "প্রতিষ্ঠান", { required: true })}
+              {text("sscBoard", "বোর্ড", { required: true })}
+              {text("sscPassingYear", "পাসের সাল", { required: true, placeholder: "২০২২" })}
+              {groupSelect("sscGroup")}
+              {text("sscRoll", "রোল নম্বর", { required: true })}
+              {text("sscRegistrationNumber", "রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)")}
+              {text("sscGpa", "জিপিএ", { placeholder: "৫.০০" })}
             </div>
-          </CardContent>
-        </Card>
+          </Section>
+          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-2 border-t bg-background/95 px-1 py-3 backdrop-blur">
+            {dirty && <span className="mr-auto text-sm text-warning">অসংরক্ষিত পরিবর্তন আছে</span>}
+            {!dirty && missingRequired.length > 0 && <span className="mr-auto text-sm text-muted-foreground">{missingRequired.length}টি আবশ্যক তথ্য বাকি</span>}
+            <Button variant="outline" disabled={!dirty || saving} onClick={() => setForm(initial)}>বাতিল</Button>
+            <Button onClick={handleSave} disabled={saving || !dirty}>{saving ? "সংরক্ষণ হচ্ছে..." : "প্রোফাইল সংরক্ষণ করুন"}</Button>
+          </div>
+        </TabsContent>
+      </Tabs>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">HSC তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5"><Label>প্রতিষ্ঠান *</Label><HscInstitutionCombobox value={form.hscInstitution || ""} onChange={(v) => update("hscInstitution", v)} /></div>
-            <div className="space-y-1.5"><Label>বোর্ড *</Label><Input value={form.hscBoard} onChange={(e) => update("hscBoard", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>পাসের সাল *</Label><Input value={form.hscPassingYear} onChange={(e) => update("hscPassingYear", e.target.value)} placeholder="২০২৪" /></div>
-            <div className="space-y-1.5">
-              <Label>বিভাগ *</Label>
-              <Select value={form.hscGroup} onValueChange={(v) => update("hscGroup", v)}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                <SelectContent>{HSC_SSC_GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.hscRoll} onChange={(e) => update("hscRoll", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)</Label><Input value={form.hscRegistrationNumber} onChange={(e) => update("hscRegistrationNumber", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.hscGpa} onChange={(e) => update("hscGpa", e.target.value)} placeholder="৫.০০" /></div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-base">SSC তথ্য (সম্পাদনাযোগ্য)</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-1.5"><Label>প্রতিষ্ঠান *</Label><Input value={form.sscInstitution} onChange={(e) => update("sscInstitution", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>বোর্ড *</Label><Input value={form.sscBoard} onChange={(e) => update("sscBoard", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>পাসের সাল *</Label><Input value={form.sscPassingYear} onChange={(e) => update("sscPassingYear", e.target.value)} placeholder="২০২২" /></div>
-            <div className="space-y-1.5">
-              <Label>বিভাগ *</Label>
-              <Select value={form.sscGroup} onValueChange={(v) => update("sscGroup", v)}>
-                <SelectTrigger><SelectValue placeholder="নির্বাচন করুন" /></SelectTrigger>
-                <SelectContent>{HSC_SSC_GROUPS.map((g) => (<SelectItem key={g} value={g}>{g}</SelectItem>))}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5"><Label>রোল নম্বর *</Label><Input value={form.sscRoll} onChange={(e) => update("sscRoll", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>রেজিস্ট্রেশন নম্বর (ঐচ্ছিক)</Label><Input value={form.sscRegistrationNumber} onChange={(e) => update("sscRegistrationNumber", e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>জিপিএ</Label><Input value={form.sscGpa} onChange={(e) => update("sscGpa", e.target.value)} placeholder="৫.০০" /></div>
-          </CardContent>
-        </Card>
-
-        <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>{saving ? "সংরক্ষণ হচ্ছে..." : "প্রোফাইল সংরক্ষণ করুন"}</Button>
-        </div>
-      </div>
-
-      <StudentPhotoUploader
-        open={photoOpen}
-        onOpenChange={setPhotoOpen}
-        studentName={student.name}
-        currentPhotoUrl={student.photo}
-        onUpload={uploadPhoto}
-        onRemove={removePhoto}
-      />
-    </DashboardLayout>
+      <StudentPhotoUploader open={photoOpen} onOpenChange={setPhotoOpen} studentName={student.name} currentPhotoUrl={student.photo} onUpload={uploadPhoto} onRemove={removePhoto} />
+    </>
   );
 }

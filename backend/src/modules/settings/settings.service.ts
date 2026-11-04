@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { invalidatePerformanceCache } from "../analytics/performance.cache";
 import {
   MaterialSettings,
   MaterialSettingsDoc,
@@ -21,6 +22,7 @@ export async function updateSettings(req: Request, patch: Partial<SettingsDoc>):
   const before = settings.toObject();
   Object.assign(settings, patch);
   await settings.save();
+  invalidatePerformanceCache();
   await recordAudit({ req, action: "settings.update", module: "settings", targetCollection: "settings", targetId: String(settings._id), before, after: settings.toObject() });
   return settings;
 }

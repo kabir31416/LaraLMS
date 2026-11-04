@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import { StudentPageHeader } from "@/components/student/StudentPortalKit";
 import { api } from "@/lib/apiClient";
 import {
   BILL_STATUS_LABELS, COMPLAINT_PRIORITY_LABELS, COMPLAINT_STATUS_LABELS, DEPOSIT_TX_LABELS, DEPOSIT_TX_STATUS_LABELS, errMsg, MEMBERSHIP_STATUS_LABELS,
@@ -56,11 +57,13 @@ export default function StudentMess() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-2xl font-bold">আমার মেস / হোস্টেল</h1>
-          {data?.current && ["approved", "active", "on_leave", "notice_given"].includes(data.current.status) && <Button onClick={() => setComplaintOpen(true)}><Plus className="h-4 w-4 mr-1" />অভিযোগ জানান</Button>}
-        </div>
+      <div className="space-y-5">
+        <StudentPageHeader
+          icon={BedDouble}
+          title="আমার মেস / হোস্টেল"
+          description="সদস্যপদ, রুম ও সিট, বিল, পেমেন্ট ও মেসের নোটিশ"
+          actions={data?.current && ["approved", "active", "on_leave", "notice_given"].includes(data.current.status) ? <Button onClick={() => setComplaintOpen(true)}><Plus className="h-4 w-4" />অভিযোগ জানান</Button> : undefined}
+        />
         {loading && !data ? <Skeleton className="h-48" /> : error ? (
           <Card><CardContent className="py-8 text-center space-y-2"><p className="text-destructive">{error}</p><Button variant="outline" onClick={reload}>আবার চেষ্টা করুন</Button></CardContent></Card>
         ) : !data?.current ? (

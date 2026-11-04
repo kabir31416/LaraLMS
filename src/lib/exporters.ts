@@ -30,10 +30,14 @@ export function exportPDF({ filename, title, headers, rows }: ExportData) {
   doc.save(`${filename}.pdf`);
 }
 
+const esc = (v: string | number) =>
+  String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+
+/** Opens a print-ready table. Every value is HTML-escaped (names and other fields can come from public forms). */
 export function printReport(title: string, headers: string[], rows: (string | number)[][]) {
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) return;
-  const html = `<!doctype html><html><head><title>${title}</title>
+  const html = `<!doctype html><html><head><title>${esc(title)}</title>
     <style>
       body{font-family:'Hind Siliguri',sans-serif;padding:24px;color:#0f172a}
       h1{font-size:20px;margin:0 0 16px}
@@ -41,9 +45,9 @@ export function printReport(title: string, headers: string[], rows: (string | nu
       th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}
       th{background:#f1f5f9}
     </style></head><body>
-    <h1>${title}</h1>
-    <table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <h1>${esc(title)}</h1>
+    <table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>
     <script>window.onload=()=>{window.print();}</script>
     </body></html>`;
   w.document.write(html);

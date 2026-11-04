@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { invalidatePerformanceCache } from "../analytics/performance.cache";
 import { Types } from "mongoose";
 import { ATTENDANCE_SOURCE, ATTENDANCE_STATUS, AttendanceEntry } from "./attendance.model";
 import { Batch } from "../batches/batch.model";
@@ -42,6 +43,7 @@ export async function save(
     },
   }));
   await AttendanceEntry.bulkWrite(ops);
+  invalidatePerformanceCache();
 
   await recordAudit({
     req,

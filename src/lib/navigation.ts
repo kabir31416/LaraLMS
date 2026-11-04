@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, UserPlus, DollarSign, ClipboardCheck, FileText, Award, BookOpen, Calculator, Settings,
   UserCog, Layers, Video, ClipboardList, Bell, BarChart3, User, ListChecks, FileSpreadsheet, BedDouble, Building2,
-  Receipt, Coins, ShieldCheck, HandCoins, Wrench, type LucideIcon,
+  Receipt, Coins, ShieldCheck, HandCoins, Wrench, TrendingUp, type LucideIcon,
 } from "lucide-react";
 import { hasPermission, type AuthUser } from "@/contexts/AuthContext";
 import {
@@ -51,6 +51,7 @@ const ADMIN_GROUPS: NavGroup[] = [
       { title: "এক্সাম", url: "/exams", icon: FileText, keywords: "exam" },
       { title: "রেজাল্ট এন্ট্রি", url: "/result-entry", icon: ClipboardList, keywords: "result entry marks" },
       { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet, keywords: "result management" },
+      { title: "পারফরম্যান্স অ্যানালিটিক্স", url: "/analytics", icon: TrendingUp, keywords: "performance analytics at risk trend progress" },
       { title: "ভিডিও ক্লাস", url: "/videos", icon: Video, keywords: "video class" },
     ],
   },
@@ -82,6 +83,7 @@ const DIRECTOR_GROUPS: NavGroup[] = [
       { title: "আমার শিক্ষার্থী", url: "/director/students", icon: Users, keywords: "students" },
       { title: "রেজাল্ট এন্ট্রি", url: "/director/results", icon: ClipboardList, keywords: "result entry attendance" },
       { title: "ফলাফল ব্যবস্থাপনা", url: "/director/result-management", icon: FileSpreadsheet, keywords: "result management" },
+      { title: "পারফরম্যান্স অ্যানালিটিক্স", url: "/director/analytics", icon: TrendingUp, keywords: "performance analytics at risk trend" },
       { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks, keywords: "admission result" },
     ],
   },
@@ -95,28 +97,23 @@ const DIRECTOR_GROUPS: NavGroup[] = [
 ];
 
 const STUDENT_GROUPS: NavGroup[] = [
+  { label: "ওভারভিউ", items: [{ title: "ড্যাশবোর্ড", url: "/student", icon: LayoutDashboard, keywords: "dashboard home" }] },
   {
-    label: "আমার পোর্টাল",
+    label: "একাডেমিক",
     items: [
-      { title: "ড্যাশবোর্ড", url: "/student", icon: LayoutDashboard, keywords: "dashboard" },
-      { title: "প্রোফাইল", url: "/student/profile", icon: User, keywords: "profile" },
-    ],
-  },
-  {
-    label: "পড়াশোনা",
-    items: [
+      { title: "ফলাফল ও মার্কশিট", url: "/student/results", icon: Award, keywords: "results marksheet grade exam" },
       { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck, keywords: "attendance" },
-      { title: "ফলাফল", url: "/student/results", icon: Award, keywords: "results" },
-      { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video, keywords: "video" },
-      { title: "নোটিশ", url: "/student/notices", icon: Bell, keywords: "notice" },
+      { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video, keywords: "video class lecture" },
+      { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen, keywords: "material book sheet" },
     ],
   },
+  { label: "আর্থিক", items: [{ title: "ফি ও পেমেন্ট", url: "/student/payments", icon: DollarSign, keywords: "payment fee due receipt" }] },
+  { label: "যোগাযোগ", items: [{ title: "নোটিশ", url: "/student/notices", icon: Bell, keywords: "notice announcement" }] },
   {
-    label: "অন্যান্য",
+    label: "আমার তথ্য",
     items: [
-      { title: "পেমেন্ট", url: "/student/payments", icon: DollarSign, keywords: "payment fee" },
-      { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen, keywords: "material" },
-      { title: "মেস / হোস্টেল", url: "/student/mess", icon: BedDouble, keywords: "mess hostel" },
+      { title: "প্রোফাইল", url: "/student/profile", icon: User, keywords: "profile" },
+      { title: "মেস / হোস্টেল", url: "/student/mess", icon: BedDouble, keywords: "mess hostel seat bill" },
     ],
   },
 ];

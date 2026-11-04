@@ -18,6 +18,7 @@ import { ApiClientError } from "@/contexts/AuthContext";
  * their own copy.
  */
 import { useUnsavedChanges } from "./unsavedChanges";
+import { PerformanceRulesCard } from "./PerformanceRulesCard";
 
 export function ResultSettingsTab() {
   const { settings, updateSettings } = useAcademic();
@@ -119,6 +120,8 @@ export function ResultSettingsTab() {
         <Button variant="outline" onClick={reset} disabled={!dirty || saving}>বাতিল</Button>
         <Button onClick={() => save()} disabled={saving || !dirty || !!validationError}>{saving ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}</Button>
       </div>
+
+      <PerformanceRulesCard />
     </div>
   );
 }
