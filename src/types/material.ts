@@ -95,6 +95,9 @@ export interface DashboardStats {
   totalStock: number;
   distributedToday: number;
   distributedThisMonth: number;
+  /** All-time quantity in active (not reversed) distributions — present on newer backends. */
+  distributedTotal?: number;
+  distributionCount?: number;
   lowStockCount: number;
   outOfStockCount: number;
   mostDistributed: { materialId: string; materialName: string; totalQuantity: number }[];
@@ -172,4 +175,25 @@ export interface ListMeta {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+/** Response of POST /materials/distributions/bulk (dryRun or real). */
+export interface BulkDistributionResult {
+  students: number;
+  recipients: number;
+  skipped: { studentId: string; name: string; reason: string }[];
+  materials: { materialId: string; name: string; perStudent: number; recipients: number; needed: number; available: number; enough: boolean; isPaid: boolean; unitPrice: number }[];
+  shortages: { materialId: string; name: string; needed: number; available: number }[];
+  totalQuantity: number;
+  totalPaidAmount: number;
+  duplicateRule: DuplicateDistributionRule;
+  created: number;
+  dryRun: boolean;
+}
+
+/** Stock level of a material relative to its minimum. */
+export function stockLevel(m: Pick<Material, "currentStock" | "minimumStock">): "out" | "low" | "ok" {
+  if (m.currentStock <= 0) return "out";
+  if (m.currentStock <= m.minimumStock) return "low";
+  return "ok";
 }

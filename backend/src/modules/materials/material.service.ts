@@ -41,13 +41,21 @@ async function applyStockMovement(
   req: Request,
   opts: { referenceId?: Types.ObjectId; reason?: string } = {},
 ): Promise<StockMovementDoc> {
-  const previousStock = material.currentStock;
-  const newStock = previousStock + delta;
-  if (newStock < 0) {
-    throw ApiError.badRequest(`"${material.name}" এর স্টক ঋণাত্মক হতে পারে না (বর্তমান: ${previousStock}, পরিবর্তন: ${delta})`);
+  // Atomic: the conditional $inc can never take stock below zero, even when
+  // two requests for the same material arrive together (a read-modify-save
+  // here could let both pass the check and oversell).
+  const updated = await Material.findOneAndUpdate(
+    { _id: material._id, ...(delta < 0 ? { currentStock: { $gte: -delta } } : {}) },
+    { $inc: { currentStock: delta } },
+    { new: true },
+  );
+  if (!updated) {
+    const fresh = await Material.findById(material._id).select("currentStock");
+    throw ApiError.badRequest(`"${material.name}" এর স্টক ঋণাত্মক হতে পারে না (বর্তমান: ${fresh?.currentStock ?? material.currentStock}, পরিবর্তন: ${delta})`);
   }
+  const newStock = updated.currentStock;
+  const previousStock = newStock - delta;
   material.currentStock = newStock;
-  await material.save();
   return StockMovement.create({
     materialId: material._id,
     materialName: material.name,
@@ -59,6 +67,44 @@ async function applyStockMovement(
     reason: opts.reason,
     createdBy: req.user!.id,
   });
+}
+
+interface DeductedLine { material: MaterialDoc; quantity: number; previousStock: number; newStock: number }
+
+/**
+ * Deducts several materials atomically, one conditional $inc each (active and
+ * enough stock). If any line fails, every line already deducted is put back
+ * and the error is rethrown — so stock is either fully taken or untouched.
+ * The caller writes the StockMovement rows (deductStockLines does not) once
+ * the distribution record itself has been saved.
+ */
+async function deductStockLines(lines: { material: MaterialDoc; quantity: number }[]): Promise<DeductedLine[]> {
+  const done: DeductedLine[] = [];
+  try {
+    for (const { material, quantity } of lines) {
+      const updated = await Material.findOneAndUpdate(
+        { _id: material._id, status: "সক্রিয়", currentStock: { $gte: quantity } },
+        { $inc: { currentStock: -quantity } },
+        { new: true },
+      );
+      if (!updated) {
+        const fresh = await Material.findById(material._id).select("currentStock status");
+        if (fresh && fresh.status !== "সক্রিয়") throw ApiError.badRequest(`"${material.name}" নিষ্ক্রিয় — বিতরণ করা যাবে না`);
+        throw ApiError.badRequest(`"${material.name}" এর জন্য পর্যাপ্ত স্টক নেই — উপলব্ধ: ${fresh?.currentStock ?? 0}, প্রয়োজন: ${quantity}`);
+      }
+      done.push({ material, quantity, previousStock: updated.currentStock + quantity, newStock: updated.currentStock });
+    }
+    return done;
+  } catch (err) {
+    await restoreStockLines(done);
+    throw err;
+  }
+}
+
+async function restoreStockLines(lines: { material: MaterialDoc; quantity: number }[]): Promise<void> {
+  for (const { material, quantity } of lines) {
+    await Material.updateOne({ _id: material._id }, { $inc: { currentStock: quantity } });
+  }
 }
 
 async function resolveActorName(req: Request): Promise<string> {
@@ -312,7 +358,15 @@ export async function createDistribution(req: Request, data: DistributionInput):
   const course = student.courseId ? await Course.findById(student.courseId).select("name") : null;
   const distributedByName = await resolveActorName(req);
 
-  const distribution = await MaterialDistribution.create({
+  // Take the stock first (atomic, all-or-nothing), then write the record; if
+  // the record can't be written the stock is put back. Stock and
+  // distributions therefore never disagree, even under concurrent requests.
+  const distributionId = new Types.ObjectId();
+  const deducted = await deductStockLines(items.map((i) => ({ material: materials.get(String(i.materialId))!, quantity: i.quantity })));
+  let distribution: MaterialDistributionDoc;
+  try {
+    distribution = await MaterialDistribution.create({
+    _id: distributionId,
     studentId: student._id,
     registrationId: student.registrationId,
     studentRoll: student.currentRollNumber,
@@ -331,14 +385,24 @@ export async function createDistribution(req: Request, data: DistributionInput):
     createdBy: req.user!.id,
     distributedByName,
   });
-
-  for (const item of items) {
-    const material = materials.get(String(item.materialId))!;
-    await applyStockMovement(material, "DISTRIBUTION", -item.quantity, req, {
-      referenceId: distribution._id as Types.ObjectId,
-      reason: `বিতরণ: ${student.name}`,
-    });
+  } catch (err) {
+    await restoreStockLines(deducted);
+    throw err;
   }
+
+  await StockMovement.insertMany(
+    deducted.map((d) => ({
+      materialId: d.material._id,
+      materialName: d.material.name,
+      movementType: "DISTRIBUTION",
+      quantity: -d.quantity,
+      previousStock: d.previousStock,
+      newStock: d.newStock,
+      referenceId: distributionId,
+      reason: `বিতরণ: ${student.name}`,
+      createdBy: req.user!.id,
+    })),
+  );
 
   if (totalPaidAmount > 0 && data.collectPayment) {
     const materialNames = items.filter((i) => i.isPaid).map((i) => i.materialName).join(", ");
@@ -359,6 +423,187 @@ export async function createDistribution(req: Request, data: DistributionInput):
 
   await recordAudit({ req, action: "material.distribute", module: "materials", targetCollection: "materialdistributions", targetId: String(distribution._id), after: distribution.toObject() });
   return distribution;
+}
+
+export interface BulkDistributionInput {
+  batchId?: string;
+  studentIds?: string[];
+  items: { materialId: string; quantity: number }[];
+  distributionDate?: string;
+  note?: string;
+  /** Skip a material for students who already hold an active distribution of it (default true; always true when the duplicate rule is "block"). */
+  skipAlreadyReceived?: boolean;
+  /** Plan only — nothing is written. */
+  dryRun?: boolean;
+}
+
+const BULK_MAX_STUDENTS = 500;
+
+/**
+ * Batch / multi-student distribution. Reuses the same MaterialDistribution
+ * record (one per student, exactly like a single distribution) and the same
+ * stock rules: every material is validated and the TOTAL quantity is taken
+ * atomically up front (all-or-nothing); then the records are written; then
+ * one StockMovement per material records the total. Paid materials are
+ * recorded with their price, but no payment is collected here — collect it
+ * from Fee Management, same as a single distribution without "collect now".
+ */
+export async function createBulkDistribution(req: Request, data: BulkDistributionInput) {
+  if (!data.batchId && !data.studentIds?.length) throw ApiError.badRequest("ব্যাচ বা শিক্ষার্থী নির্বাচন করুন");
+
+  // Students — current, active members of the batch (pending/rejected applications excluded), or an explicit list.
+  const studentFilter: Record<string, unknown> = data.batchId
+    ? { currentBatchId: new Types.ObjectId(data.batchId), status: "সক্রিয়", admissionStatus: { $nin: ["pending", "rejected"] } }
+    : { _id: { $in: data.studentIds!.map((id) => new Types.ObjectId(id)) } };
+  const students = await Student.find(studentFilter).select("name registrationId currentRollNumber phone currentBatchId courseId").sort({ currentRollNumber: 1 }).limit(BULK_MAX_STUDENTS + 1);
+  if (students.length === 0) throw ApiError.badRequest("এই নির্বাচনে কোনো সক্রিয় শিক্ষার্থী নেই");
+  if (students.length > BULK_MAX_STUDENTS) throw ApiError.badRequest(`একবারে সর্বোচ্চ ${BULK_MAX_STUDENTS} জনকে বিতরণ করা যায়`);
+
+  // Materials — one query, then the same per-line checks as a single distribution.
+  const seen = new Set<string>();
+  for (const item of data.items) {
+    if (seen.has(item.materialId)) throw ApiError.badRequest("একই ম্যাটেরিয়াল একাধিক লাইনে দেওয়া যাবে না — একটি লাইনেই পরিমাণ বাড়ান");
+    seen.add(item.materialId);
+  }
+  const materialDocs = await Material.find({ _id: { $in: data.items.map((i) => new Types.ObjectId(i.materialId)) } });
+  const materials = new Map(materialDocs.map((m) => [String(m._id), m]));
+  for (const item of data.items) {
+    const m = materials.get(item.materialId);
+    if (!m) throw ApiError.notFound("Material not found");
+    if (m.status !== "সক্রিয়") throw ApiError.badRequest(`"${m.name}" নিষ্ক্রিয় — বিতরণ করা যাবে না`);
+  }
+
+  // Who already has which material (one query).
+  const rule = (await settingsService.getMaterialSettings()).duplicateDistributionRule;
+  const skipReceived = rule === "block" ? true : data.skipAlreadyReceived !== false;
+  const prior = await MaterialDistribution.find({
+    studentId: { $in: students.map((s) => s._id) },
+    status: "ACTIVE",
+    "items.materialId": { $in: materialDocs.map((m) => m._id) },
+  }).select("studentId items.materialId");
+  const received = new Map<string, Set<string>>();
+  for (const d of prior) {
+    const set = received.get(String(d.studentId)) ?? new Set<string>();
+    d.items.forEach((i) => set.add(String(i.materialId)));
+    received.set(String(d.studentId), set);
+  }
+
+  const plan: { student: (typeof students)[number]; items: { materialId: string; quantity: number }[] }[] = [];
+  const skipped: { studentId: string; name: string; reason: string }[] = [];
+  for (const st of students) {
+    const has = received.get(String(st._id));
+    const items = skipReceived && has ? data.items.filter((i) => !has.has(i.materialId)) : data.items;
+    if (items.length === 0) { skipped.push({ studentId: String(st._id), name: st.name, reason: "আগেই সব ম্যাটেরিয়াল পেয়েছে" }); continue; }
+    plan.push({ student: st, items });
+  }
+  const needs = new Map<string, number>();
+  plan.forEach((p) => p.items.forEach((i) => needs.set(i.materialId, (needs.get(i.materialId) ?? 0) + i.quantity)));
+  const materialsSummary = data.items.map((i) => {
+    const m = materials.get(i.materialId)!;
+    const needed = needs.get(i.materialId) ?? 0;
+    return { materialId: i.materialId, name: m.name, perStudent: i.quantity, recipients: plan.filter((p) => p.items.some((x) => x.materialId === i.materialId)).length, needed, available: m.currentStock, enough: needed <= m.currentStock, isPaid: m.isPaid, unitPrice: m.isPaid ? m.price : 0 };
+  });
+  const shortages = materialsSummary.filter((m) => !m.enough);
+  const totalPaidAmount = materialsSummary.reduce((s, m) => s + m.unitPrice * m.needed, 0);
+  const summary = {
+    students: students.length,
+    recipients: plan.length,
+    skipped,
+    materials: materialsSummary,
+    shortages: shortages.map((m) => ({ materialId: m.materialId, name: m.name, needed: m.needed, available: m.available })),
+    totalQuantity: [...needs.values()].reduce((a, b) => a + b, 0),
+    totalPaidAmount,
+    duplicateRule: rule,
+  };
+  if (data.dryRun) return { ...summary, created: 0, dryRun: true as const };
+
+  if (plan.length === 0) throw ApiError.badRequest("সবাই আগেই এই ম্যাটেরিয়াল পেয়েছে — বিতরণ করার মতো কেউ নেই");
+  if (shortages.length) throw ApiError.badRequest(`পর্যাপ্ত স্টক নেই — ${shortages.map((m) => `${m.name}: প্রয়োজন ${m.needed}, উপলব্ধ ${m.available}`).join("; ")}`);
+
+  // Names resolved once (no per-student lookups).
+  const batchIds = [...new Set(plan.map((p) => String(p.student.currentBatchId ?? "")).filter(Boolean))];
+  const courseIds = [...new Set(plan.map((p) => String(p.student.courseId ?? "")).filter(Boolean))];
+  const [batchDocs, courseDocs, distributedByName] = await Promise.all([
+    Batch.find({ _id: { $in: batchIds } }).select("name"),
+    Course.find({ _id: { $in: courseIds } }).select("name"),
+    resolveActorName(req),
+  ]);
+  const batchName = new Map(batchDocs.map((b) => [String(b._id), b.name]));
+  const courseName = new Map(courseDocs.map((c) => [String(c._id), c.name]));
+  const date = data.distributionDate || new Date().toISOString().slice(0, 10);
+
+  const deducted = await deductStockLines([...needs.entries()].map(([id, quantity]) => ({ material: materials.get(id)!, quantity })));
+  const docs = plan.map((p) => {
+    const lines: MaterialDistributionItem[] = p.items.map((i) => {
+      const m = materials.get(i.materialId)!;
+      const unitPrice = m.isPaid ? m.price : 0;
+      return { materialId: m._id as Types.ObjectId, materialName: m.name, materialType: m.materialType, isPaid: m.isPaid, unitPrice, quantity: i.quantity, lineTotal: unitPrice * i.quantity };
+    });
+    return {
+      _id: new Types.ObjectId(),
+      studentId: p.student._id,
+      registrationId: p.student.registrationId,
+      studentRoll: p.student.currentRollNumber,
+      studentName: p.student.name,
+      phone: p.student.phone,
+      batchId: p.student.currentBatchId,
+      batchName: p.student.currentBatchId ? batchName.get(String(p.student.currentBatchId)) : undefined,
+      courseId: p.student.courseId,
+      courseName: p.student.courseId ? courseName.get(String(p.student.courseId)) : undefined,
+      items: lines,
+      totalQuantity: lines.reduce((a, l) => a + l.quantity, 0),
+      totalPaidAmount: lines.reduce((a, l) => a + l.lineTotal, 0),
+      distributionDate: date,
+      status: "ACTIVE" as const,
+      note: data.note,
+      createdBy: req.user!.id,
+      distributedByName,
+    };
+  });
+  try {
+    await MaterialDistribution.insertMany(docs, { ordered: true });
+  } catch (err) {
+    // Nothing partial survives: remove any rows that did get in, then return the stock.
+    await MaterialDistribution.deleteMany({ _id: { $in: docs.map((d) => d._id) } });
+    await restoreStockLines(deducted);
+    throw err;
+  }
+  const label = data.batchId ? batchName.get(data.batchId) ?? "ব্যাচ" : "নির্বাচিত শিক্ষার্থী";
+  await StockMovement.insertMany(
+    deducted.map((d) => ({
+      materialId: d.material._id,
+      materialName: d.material.name,
+      movementType: "DISTRIBUTION",
+      quantity: -d.quantity,
+      previousStock: d.previousStock,
+      newStock: d.newStock,
+      reason: `ব্যাচ বিতরণ: ${label} (${plan.length} জন)`,
+      createdBy: req.user!.id,
+    })),
+  );
+  await recordAudit({
+    req,
+    action: "material.distribute-bulk",
+    module: "materials",
+    targetCollection: "materialdistributions",
+    after: { batchId: data.batchId, recipients: plan.length, skipped: skipped.length, items: data.items, distributionIds: docs.map((d) => String(d._id)) },
+  });
+  return { ...summary, created: docs.length, dryRun: false as const };
+}
+
+/**
+ * Permanently removes a material that has NEVER been distributed (its own
+ * stock-in/adjustment records go with it). Anything that was ever handed to a
+ * student — even if later reversed — stays, and can only be deactivated.
+ */
+export async function removeMaterial(req: Request, id: string): Promise<void> {
+  const doc = await getDocOrThrow(id);
+  const used = await MaterialDistribution.exists({ "items.materialId": doc._id });
+  if (used) throw ApiError.conflict("এই ম্যাটেরিয়াল আগে বিতরণ করা হয়েছে — মোছা যাবে না, নিষ্ক্রিয় করুন");
+  const movements = await StockMovement.countDocuments({ materialId: doc._id });
+  await StockMovement.deleteMany({ materialId: doc._id });
+  await Material.deleteOne({ _id: doc._id });
+  await recordAudit({ req, action: "material.delete", module: "materials", targetCollection: "materials", targetId: id, before: { ...doc.toObject(), stockMovements: movements } });
 }
 
 export async function listDistributions(req: Request) {
@@ -449,7 +694,7 @@ export async function getDashboardStats(_req: Request) {
   startOfToday.setHours(0, 0, 0, 0);
   const startOfMonth = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
 
-  const [totalMaterials, stockAgg, distributedToday, distributedThisMonth, lowStockCount, outOfStockCount, mostDistributed, recentDistributions] = await Promise.all([
+  const [totalMaterials, stockAgg, distributedToday, distributedThisMonth, lowStockCount, outOfStockCount, mostDistributed, recentDistributions, distributedTotal] = await Promise.all([
     Material.countDocuments({ status: "সক্রিয়" }),
     Material.aggregate<{ _id: null; totalStock: number }>([{ $match: { status: "সক্রিয়" } }, { $group: { _id: null, totalStock: { $sum: "$currentStock" } } }]),
     MaterialDistribution.aggregate<{ _id: null; qty: number }>([
@@ -470,6 +715,10 @@ export async function getDashboardStats(_req: Request) {
       { $limit: 5 },
     ]),
     MaterialDistribution.find({ status: "ACTIVE" }).sort({ createdAt: -1 }).limit(10),
+    MaterialDistribution.aggregate<{ _id: null; qty: number; count: number }>([
+      { $match: { status: "ACTIVE" } },
+      { $group: { _id: null, qty: { $sum: "$totalQuantity" }, count: { $sum: 1 } } },
+    ]),
   ]);
 
   return {
@@ -477,6 +726,8 @@ export async function getDashboardStats(_req: Request) {
     totalStock: stockAgg[0]?.totalStock || 0,
     distributedToday: distributedToday[0]?.qty || 0,
     distributedThisMonth: distributedThisMonth[0]?.qty || 0,
+    distributedTotal: distributedTotal[0]?.qty || 0,
+    distributionCount: distributedTotal[0]?.count || 0,
     lowStockCount,
     outOfStockCount,
     mostDistributed: mostDistributed.map((m) => ({ materialId: String(m._id), materialName: m.materialName, totalQuantity: m.totalQuantity })),

@@ -330,6 +330,25 @@ async function buildStudentFilter(req: Request): Promise<Record<string, unknown>
     filter.feeType = req.query.feeType;
   }
 
+  // Student status (সক্রিয় / নিষ্ক্রিয়) — the Student.status field itself.
+  if (typeof req.query.status === "string" && req.query.status.trim()) {
+    filter.status = req.query.status.trim();
+  }
+
+  // Admission date range — admissionDate is stored as "yyyy-mm-dd", so a
+  // plain string range compares correctly.
+  const admFrom = typeof req.query.admissionDateFrom === "string" ? req.query.admissionDateFrom : "";
+  const admTo = typeof req.query.admissionDateTo === "string" ? req.query.admissionDateTo : "";
+  if (admFrom || admTo) {
+    filter.admissionDate = { ...(admFrom ? { $gte: admFrom } : {}), ...(admTo ? { $lte: admTo } : {}) };
+  }
+
+  // Birthday in a given month (any year) — same "yyyy-mm-dd" suffix idea as
+  // birthdayToday above; birthdayToday wins if both are sent.
+  if (req.query.birthdayToday !== "true" && typeof req.query.birthMonth === "string" && /^(0?[1-9]|1[0-2])$/.test(req.query.birthMonth)) {
+    filter.dob = new RegExp(`^\\d{4}-${pad2(Number(req.query.birthMonth))}-`);
+  }
+
   // Student Entry Workflow — pending applications now show in the normal
   // Student List too (so Admin can approve/reject them from the same 3-dot
   // menu everyone else uses), but a REJECTED one is a voided application,
@@ -368,7 +387,8 @@ export async function list(req: Request) {
   let total: number;
   if (explicitSort) {
     [docs, total] = await Promise.all([
-      Student.find(filter).sort(sort).skip(skip).limit(limit),
+      // _id tie-break keeps paging stable when many rows share the sort value (e.g. due = 0).
+      Student.find(filter).sort({ ...sort, _id: 1 }).skip(skip).limit(limit),
       Student.countDocuments(filter),
     ]);
   } else {
@@ -401,11 +421,18 @@ export async function exportList(req: Request): Promise<Record<string, unknown>[
   const filter = await buildStudentFilter(req);
   Object.assign(filter, await buildSearchFilterWithGuardian(req.query.search));
 
-  // Roll ascending (numeric-aware), same default as list() — a print/export
-  // must show students in the same order the on-screen list does.
-  const orderedIds = await pageIdsByRoll(Student, filter, 1, 0, EXPORT_MAX_ROWS);
-  const fetched = await Student.find({ _id: { $in: orderedIds } });
-  const docs = reorderByIds(fetched, orderedIds);
+  // Same order as list(): an explicit ?sortBy= when given, otherwise Roll
+  // ascending (numeric-aware) — a print/export must show students in the
+  // same order the on-screen list does.
+  let docs: StudentDoc[];
+  if (typeof req.query.sortBy === "string" && req.query.sortBy.trim()) {
+    const { sort } = parsePagination(req, { createdAt: -1 });
+    docs = await Student.find(filter).sort({ ...sort, _id: 1 }).limit(EXPORT_MAX_ROWS);
+  } else {
+    const orderedIds = await pageIdsByRoll(Student, filter, 1, 0, EXPORT_MAX_ROWS);
+    const fetched = await Student.find({ _id: { $in: orderedIds } });
+    docs = reorderByIds(fetched, orderedIds);
+  }
   const withG = await withGuardians(docs);
 
   const batchIds = [...new Set(docs.map((d) => d.currentBatchId).filter(Boolean).map((id) => String(id)))];

@@ -39,6 +39,16 @@ export const checkDuplicate = asyncHandler(async (req: Request, res: Response) =
 
 export const createDistribution = asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await service.createDistribution(req, req.body), 201));
 
+export const createBulkDistribution = asyncHandler(async (req: Request, res: Response) => {
+  const result = await service.createBulkDistribution(req, req.body);
+  sendSuccess(res, result, result.dryRun ? 200 : 201);
+});
+
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  await service.removeMaterial(req, req.params.id);
+  sendSuccess(res, { deleted: true });
+});
+
 export const listDistributions = asyncHandler(async (req: Request, res: Response) => {
   const { items, meta } = await service.listDistributions(req);
   sendSuccess(res, items, 200, meta);
