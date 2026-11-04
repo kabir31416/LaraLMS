@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { bn } from "date-fns/locale";
 import {
   ArrowRight, Award, BedDouble, Bell, BookOpen, CalendarClock, CalendarDays, CheckCircle2, ClipboardCheck, Clock, FileText, GraduationCap,
-  MapPin, Pin, Receipt, User, Video, Wallet, XCircle, type LucideIcon,
+  MapPin, Pin, Receipt, TrendingUp, User, Video, Wallet, XCircle, type LucideIcon,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,7 +21,8 @@ import { api } from "@/lib/apiClient";
 import { taka } from "@/lib/dashboardFormat";
 import { cn } from "@/lib/utils";
 import type { StudentMaterialHistoryRow } from "@/types/material";
-import type { Student } from "@/types/student";
+import { COMPLETION_LABELS, useMyPerformance } from "@/components/student/StudentPortalKit";
+import { ExamTrendChart, TrendChip, pctText } from "@/components/analytics/PerformanceKit";
 
 /**
  * Student home. Every figure comes from the student's own existing
@@ -54,22 +55,6 @@ function nextClassLabel(days: string[] | undefined): string | null {
   return format(d, "EEEE", { locale: bn });
 }
 
-/** Fields a student can see/fill in on their own profile — used for the profile-completion meter. */
-const PROFILE_FIELDS: { key: keyof Student; label: string }[] = [
-  { key: "photo", label: "ছবি" },
-  { key: "dob", label: "জন্ম তারিখ" },
-  { key: "gender", label: "লিঙ্গ" },
-  { key: "email", label: "ইমেইল" },
-  { key: "bloodGroup", label: "রক্তের গ্রুপ" },
-  { key: "fatherName", label: "পিতার নাম" },
-  { key: "motherName", label: "মাতার নাম" },
-  { key: "guardianName", label: "অভিভাবকের নাম" },
-  { key: "guardianMobile", label: "অভিভাবকের মোবাইল" },
-  { key: "presentAddress", label: "বর্তমান ঠিকানা" },
-  { key: "permanentAddress", label: "স্থায়ী ঠিকানা" },
-  { key: "sscInstitution", label: "এসএসসি তথ্য" },
-];
-
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("");
 }
@@ -99,7 +84,7 @@ function Kpi({ label, value, sub, tone, icon: Icon, to, loading }: { label: stri
 
 export default function StudentDashboard() {
   const { user, student, batch } = useStudentSelf();
-  const { getByStudent, getResultsByStudent, listExams } = useAttendance();
+  const { getByStudent, listExams } = useAttendance();
   const { getPayments } = usePayments();
   const { notices } = useNotices();
   const { courses, getSubject } = useAcademic();
@@ -107,17 +92,8 @@ export default function StudentDashboard() {
   const enabled = !!sid && user?.role === "Student";
 
   const attendance = useQuery({ queryKey: ["student-dash", "attendance", sid], queryFn: () => getByStudent(sid!), enabled, staleTime: 60_000 });
-  const results = useQuery({
-    queryKey: ["student-dash", "results", sid],
-    queryFn: async () => {
-      const rows = await getResultsByStudent(sid!);
-      const exams = rows.length ? await listExams() : [];
-      const byId = new Map(exams.map((e) => [e.id, e]));
-      return rows.map((r) => ({ r, exam: byId.get(r.examId) })).filter((x) => !!x.exam).sort((a, b) => (b.exam!.date || "").localeCompare(a.exam!.date || ""));
-    },
-    enabled,
-    staleTime: 60_000,
-  });
+  // Overall performance, recent results and trend — the same server calculation as the Results page and the marksheet.
+  const perf = useMyPerformance();
   const upcoming = useQuery({
     queryKey: ["student-dash", "upcoming", batch?.id],
     queryFn: async () => {
@@ -146,13 +122,6 @@ export default function StudentDashboard() {
     };
   }, [attendance.data]);
 
-  const resultStats = useMemo(() => {
-    const rows = results.data ?? [];
-    const scored = rows.filter((x) => x.r.marks !== null && x.exam!.fullMarks > 0);
-    const avg = scored.length ? Math.round(scored.reduce((s, x) => s + (x.r.marks! / x.exam!.fullMarks) * 100, 0) / scored.length) : null;
-    return { count: rows.length, avg, recent: rows.slice(0, 5) };
-  }, [results.data]);
-
   if (!user || user.role !== "Student") return <Navigate to="/studentLogin" replace />;
   if (!student) return <DashboardLayout><div className="space-y-4"><Skeleton className="h-36" /><Skeleton className="h-24" /></div></DashboardLayout>;
 
@@ -163,12 +132,10 @@ export default function StudentDashboard() {
     .slice(0, 4);
   const payments = getPayments(student.id).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
   const totalFee = student.paid + student.due;
-  const filled = PROFILE_FIELDS.filter((f) => {
-    const v = student[f.key];
-    return typeof v === "string" ? v.trim() !== "" : v !== undefined && v !== null;
-  });
-  const completion = Math.round((filled.length / PROFILE_FIELDS.length) * 100);
-  const missing = PROFILE_FIELDS.filter((f) => !filled.includes(f)).map((f) => f.label);
+  // Same figure as the Profile page (server-computed profileCompletion).
+  const completion = student.profileCompletion?.percent ?? 0;
+  const missing = (student.profileCompletion?.missingFields ?? []).map((f) => COMPLETION_LABELS[f] ?? f);
+  const p = perf.data;
   const m = mess.data?.current;
   const liveMess = !!m && m.isOpen;
   const nextClass = nextClassLabel(batch?.days);
@@ -198,8 +165,8 @@ export default function StudentDashboard() {
               </dl>
             </div>
             <Link to="/student/profile" className="w-full rounded-lg border bg-card p-3 transition-colors hover:border-primary/40 xl:w-64 xl:shrink-0">
-              <div className="flex items-center justify-between text-xs"><span className="font-medium">প্রোফাইল সম্পূর্ণতা</span><b className={cn("tabular-nums", completion < 60 ? "text-warning" : "text-success")}>{completion}%</b></div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", completion < 60 ? "bg-warning" : "bg-success")} style={{ width: `${completion}%` }} /></div>
+              <div className="flex items-center justify-between text-xs"><span className="font-medium">প্রোফাইল সম্পূর্ণতা</span><b className={cn("tabular-nums", completion < 100 ? "text-warning" : "text-success")}>{completion}%</b></div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", completion < 100 ? "bg-warning" : "bg-success")} style={{ width: `${completion}%` }} /></div>
               <p className="mt-1.5 truncate text-[11px] text-muted-foreground">{missing.length ? `বাকি: ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ` +${missing.length - 3}` : ""}` : "সব তথ্য দেওয়া আছে"}</p>
             </Link>
           </div>
@@ -211,7 +178,7 @@ export default function StudentDashboard() {
           <QuickAction to="/student/results" icon={Award} label="ফলাফল" />
           <QuickAction to="/student/attendance" icon={ClipboardCheck} label="উপস্থিতি" />
           <QuickAction to="/student/payments" icon={Wallet} label="ফি ও পেমেন্ট" />
-          <QuickAction to="/student/results" icon={FileText} label="মার্কশিট" />
+          <QuickAction to="/student/results?view=marksheet" icon={FileText} label="মার্কশিট" />
           <QuickAction to="/student/books" icon={BookOpen} label="ম্যাটেরিয়াল" />
           <QuickAction to="/student/notices" icon={Bell} label="নোটিশ" />
           {liveMess ? <QuickAction to="/student/mess" icon={BedDouble} label="আমার মেস" /> : <QuickAction to="/student/videos" icon={Video} label="ভিডিও ক্লাস" />}
@@ -219,8 +186,8 @@ export default function StudentDashboard() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi label="উপস্থিতি" icon={ClipboardCheck} to="/student/attendance" loading={attendance.isLoading} value={att.pct === null ? "—" : `${att.pct}%`} tone={att.pct === null ? undefined : att.pct < 60 ? "danger" : "success"} sub={att.total ? `${att.present}/${att.total} দিন উপস্থিত` : "এখনো কোনো রেকর্ড নেই"} />
-          <Kpi label="গড় নম্বর" icon={Award} to="/student/results" loading={results.isLoading} value={resultStats.avg === null ? "—" : `${resultStats.avg}%`} tone="primary" sub={resultStats.count ? `${resultStats.count}টি পরীক্ষা` : "এখনো কোনো ফলাফল নেই"} />
+          <Kpi label="উপস্থিতি" icon={ClipboardCheck} to="/student/attendance" loading={perf.isLoading} value={p?.attendance.pct == null ? "—" : `${p.attendance.pct}%`} tone={p?.attendance.pct == null ? undefined : p.attendance.pct < 60 ? "danger" : "success"} sub={p?.attendance.total ? `${p.attendance.present}/${p.attendance.total} দিন উপস্থিত` : "এখনো কোনো রেকর্ড নেই"} />
+          <Kpi label="সামগ্রিক নম্বর" icon={Award} to="/student/results" loading={perf.isLoading} value={pctText(p?.overall.percentage)} tone="primary" sub={p?.overall.examsSat ? `গ্রেড ${p.overall.grade ?? "—"} · ${p.overall.examsSat}টি পরীক্ষা` : "এখনো কোনো ফলাফল নেই"} />
           <Kpi label="পরিশোধিত" icon={Wallet} to="/student/payments" value={taka(student.paid)} tone="success" sub={`মোট ফি ${taka(totalFee)}`} />
           <Kpi label="বকেয়া" icon={Receipt} to="/student/payments" value={taka(student.due)} tone={student.due > 0 ? "danger" : "success"} sub={student.due > 0 ? "অফিসে যোগাযোগ করুন" : "কোনো বকেয়া নেই"} />
         </div>
@@ -256,30 +223,36 @@ export default function StudentDashboard() {
             </div>
           </Panel>
 
-          {/* Recent results */}
-          <Panel title="সাম্প্রতিক ফলাফল" icon={Award} action={<PanelLink to="/student/results">সব ফলাফল</PanelLink>} bodyClassName="px-0 sm:px-0" className="xl:col-span-2">
-            {results.isLoading ? <div className="px-5"><ListSkeleton rows={4} /></div> : results.isError ? <div className="px-5"><ErrorState message="ফলাফল লোড করা যায়নি" onRetry={() => void results.refetch()} /></div> : resultStats.recent.length === 0 ? (
+          {/* My performance (own data only — no rankings, no at-risk labels) */}
+          <Panel title="আমার পারফরম্যান্স" icon={TrendingUp} action={<PanelLink to="/student/results">সব ফলাফল</PanelLink>} className="xl:col-span-2">
+            {perf.isLoading ? <ListSkeleton rows={4} /> : perf.isError || !p ? <ErrorState message="ফলাফল লোড করা যায়নি" onRetry={() => void perf.refetch()} /> : p.exams.length === 0 ? (
               <EmptyState compact icon={Award} title="এখনো কোনো ফলাফল নেই" description="পরীক্ষার ফলাফল প্রকাশ হলে এখানে দেখা যাবে।" />
             ) : (
-              <ul className="divide-y">
-                {resultStats.recent.map(({ r, exam }) => {
-                  const pct = r.marks === null || !exam!.fullMarks ? null : Math.round((r.marks / exam!.fullMarks) * 100);
-                  return (
-                    <li key={r.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{exam!.title}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{getSubject(exam!.subjectId)?.name ?? ""} • {exam!.date}</span>
-                      </span>
-                      <span className="hidden w-28 sm:block" aria-hidden>
-                        <span className="block h-1.5 overflow-hidden rounded-full bg-muted"><span className={cn("block h-full rounded-full", pct === null ? "" : pct < 40 ? "bg-destructive" : pct < 70 ? "bg-warning" : "bg-success")} style={{ width: `${pct ?? 0}%` }} /></span>
-                      </span>
-                      <span className="w-24 shrink-0 text-right">
-                        {r.marks === null ? <Badge variant="outline" className="text-muted-foreground">অনুপস্থিত</Badge> : <><b className="tabular-nums">{r.marks}</b><span className="text-xs text-muted-foreground"> / {exam!.fullMarks}</span></>}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                <div>
+                  <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span>সামগ্রিক <b className="tabular-nums">{pctText(p.overall.percentage)}</b>{p.overall.grade && <span className="text-muted-foreground"> · {p.overall.grade}</span>}</span>
+                    <TrendChip trend={p.trend.direction} change={p.trend.change} />
+                  </div>
+                  <ExamTrendChart height={170} passing={p.passingPercentage} points={[...p.exams].reverse().map((e) => ({ key: e.examId, date: e.date, label: e.title, percentage: e.percentage }))} />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">সাম্প্রতিক পরীক্ষা</p>
+                  <ul className="divide-y">
+                    {p.exams.slice(0, 5).map((e) => (
+                      <li key={e.examId} className="flex items-center gap-3 py-2.5">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{e.title}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{e.subject} • {e.date}</span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          {e.marks === null ? <Badge variant="outline" className="text-muted-foreground">অনুপস্থিত</Badge> : <><b className="tabular-nums">{e.marks}</b><span className="text-xs text-muted-foreground"> / {e.fullMarks}</span><span className={cn("block text-[11px] tabular-nums", e.status === "অনুত্তীর্ণ" ? "text-destructive" : "text-muted-foreground")}>{pctText(e.percentage, 0)}{e.grade ? ` · ${e.grade}` : ""}</span></>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             )}
           </Panel>
         </div>

@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { invalidatePerformanceCache } from "../analytics/performance.cache";
 import { Types } from "mongoose";
 import { OfflineExam, OfflineExamDoc } from "./exam.model";
 import { OfflineResult } from "./result.model";
@@ -163,6 +164,7 @@ export async function saveResults(req: Request, examId: string, items: { student
     },
   }));
   await OfflineResult.bulkWrite(ops);
+  invalidatePerformanceCache();
 
   await recordAudit({
     req,
@@ -397,6 +399,7 @@ async function persistResult(
     },
   }));
   await AttendanceEntry.bulkWrite(attendanceOps);
+  invalidatePerformanceCache();
 
   await recordAudit({
     req,

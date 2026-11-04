@@ -1,7 +1,7 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { homeRouteFor, ProtectedRoute } from "@/components/ProtectedRoute";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import { ADMISSION_RESULTS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ } from "@/lib/permissions";
+import { ADMISSION_RESULTS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ, RESULTS_READ } from "@/lib/permissions";
 import { MessScopeProvider } from "@/components/mess/MessShell";
 import Home from "./pages/Home";
 import { AdminLoginPage, StaffLoginPage, StudentLoginPage } from "./pages/PortalLogin";
@@ -30,6 +30,7 @@ import Reports from "./pages/Reports";
 import AdmissionResult from "./pages/AdmissionResult";
 import ChanceResults from "./pages/ChanceResults";
 import ResultManagement from "./pages/ResultManagement";
+import PerformanceAnalytics from "./pages/PerformanceAnalytics";
 import StudentImportUpload from "./pages/StudentImportUpload";
 import StudentImportPreview from "./pages/StudentImportPreview";
 import PendingStudents from "./pages/PendingStudents";
@@ -130,6 +131,7 @@ export function AppRoutes() {
         {/* Result Entry (marks + attendance together) — Admin can act on any batch, not just their own; the backend already allowed this via EXAMS_MANAGE, DirectorResults.tsx is reused as-is (role-aware). */}
         <Route path="/result-entry" element={<DirectorResults />} />
         <Route path="/result-management" element={<ResultManagement />} />
+        <Route path="/analytics" element={<ProtectedRoute permission={RESULTS_READ}><PerformanceAnalytics /></ProtectedRoute>} />
       </Route>
 
       {/* Admin — Admission Result (upload/preview/confirm/process pipeline + its roll-bookkeeping front page) can be individually disabled per-Admin (User.deniedPermissions), so it's gated by its own dedicated permission on top of the Admin role. */}
@@ -170,7 +172,7 @@ export function AppRoutes() {
       {/* Admin or Director can view a student's full profile */}
       <Route
         path="/students/:id"
-        element={<ProtectedRoute><StudentProfile /></ProtectedRoute>}
+        element={<ProtectedRoute roles={["Admin", "Batch Director"]}><StudentProfile /></ProtectedRoute>}
       />
 
       {/* Shared (any authenticated) */}
@@ -195,6 +197,7 @@ export function AppRoutes() {
         <Route path="/director/students" element={<DirectorStudents />} />
         <Route path="/director/results" element={<DirectorResults />} />
         <Route path="/director/result-management" element={<ResultManagement />} />
+        <Route path="/director/analytics" element={<PerformanceAnalytics />} />
         <Route path="/director/admission-result" element={<AdmissionResult />} />
         <Route path="/director/chance-results" element={<ChanceResults />} />
         {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}

@@ -110,6 +110,8 @@ export interface AcademicSettings {
   admissionFeeBdt: number;
   /** Prefix for newly-generated Student System IDs (e.g. "LMS" -> LMS-01247). Changing it never affects already-issued IDs. */
   studentIdPrefix: string;
+  /** Student Performance Analytics thresholds (stored partial; readers merge over DEFAULT_PERFORMANCE_RULES). */
+  performanceRules?: Partial<import("./analytics").PerformanceRules>;
 }
 
 export interface InstitutionSettings {

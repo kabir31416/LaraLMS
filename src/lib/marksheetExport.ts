@@ -22,15 +22,25 @@ function statusColor(status: string): [number, number, number] {
   return [220, 38, 38];
 }
 
+/** Deep-copies a value with every string HTML-escaped — the print views write into a same-origin window, and names/titles can come from public forms. */
+function escapeDeep<T>(v: T): T {
+  if (typeof v === "string") return v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string) as unknown as T;
+  if (Array.isArray(v)) return v.map(escapeDeep) as unknown as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, escapeDeep(x)])) as T;
+  return v;
+}
+
 function institutionHeaderHtml(institution?: PublicInstitutionInfo): string {
   if (!institution?.name) return "";
   const logo = institution.logoUrl ? `<img src="${institution.logoUrl}" alt="" style="height:36px;object-fit:contain" />` : "";
   return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">${logo}<div style="font-size:16px;font-weight:600">${institution.name}</div></div>`;
 }
 
-export function printIndividualMarksheet(view: IndividualResultView, institution?: PublicInstitutionInfo) {
+export function printIndividualMarksheet(rawView: IndividualResultView, rawInstitution?: PublicInstitutionInfo) {
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) return;
+  const view = escapeDeep(rawView);
+  const institution = rawInstitution && escapeDeep(rawInstitution);
   const { student, dateRange, subjects, overall, details } = view;
 
   const subjectRows = subjects
@@ -159,7 +169,9 @@ function cellText(cell: { value: number | null; status: "present" | "absent" | "
   return String(cell.value);
 }
 
-export function printBatchMasterSheet(view: BatchMasterSheetView, institution?: PublicInstitutionInfo) {
+export function printBatchMasterSheet(rawView: BatchMasterSheetView, rawInstitution?: PublicInstitutionInfo) {
+  const view = escapeDeep(rawView);
+  const institution = rawInstitution && escapeDeep(rawInstitution);
   const w = window.open("", "_blank", "width=1200,height=800");
   if (!w) return;
   const { batch, dateRange, columns, rows } = view;

@@ -13,6 +13,25 @@ export const updateSettingsSchema = z.object({
       rollNumberScope: z.enum(["batch", "course", "global"]).optional(),
       admissionFeeBdt: z.number().min(0).optional(),
       studentIdPrefix: z.string().trim().min(1).max(12).optional(),
+      performanceRules: z
+        .object({
+          excellentMin: z.number().min(0).max(100),
+          goodMin: z.number().min(0).max(100),
+          averageMin: z.number().min(0).max(100),
+          minExams: z.number().int().min(1).max(20),
+          lowAttendancePct: z.number().min(0).max(100),
+          minAttendanceEntries: z.number().int().min(1).max(100),
+          trendWindow: z.number().int().min(2).max(10),
+          trendDelta: z.number().min(0.5).max(50),
+          riskDeclineDelta: z.number().min(1).max(100),
+          riskFailCount: z.number().int().min(2).max(20),
+          riskAbsentCount: z.number().int().min(1).max(20),
+          riskLookback: z.number().int().min(2).max(20),
+        })
+        .strict()
+        .refine((r) => r.excellentMin > r.goodMin && r.goodMin > r.averageMin, { message: "Excellent > Good > Average threshold order required" })
+        .refine((r) => r.riskFailCount <= r.riskLookback && r.riskAbsentCount <= r.riskLookback, { message: "Counts cannot exceed the look-back window" })
+        .optional(),
     })
     .strict(),
 });

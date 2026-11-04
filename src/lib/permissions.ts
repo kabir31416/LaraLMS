@@ -103,7 +103,7 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
   // separately gated by PAYMENTS_DELETE inline in FeeManagement.tsx.
   { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, RECEIPTS_READ], urls: ["/fees"] },
   { key: "attendance", label: "উপস্থিতি", permissions: [ATTENDANCE_MARK, ATTENDANCE_READ], urls: ["/attendance"] },
-  { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry"] },
+  { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry", "/analytics"] },
   { key: "videos", label: "ভিডিও ক্লাস", permissions: [VIDEOS_MANAGE], urls: ["/videos"] },
   { key: "notices", label: "নোটিশ", permissions: [NOTICES_MANAGE], urls: ["/notices"] },
   { key: "reports", label: "রিপোর্ট", permissions: [REPORTS_READ], urls: ["/reports"] },
