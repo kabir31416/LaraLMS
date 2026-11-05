@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowUpDown, Cake, Check, ChevronDown, ChevronsUpDown, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUpDown, Cake, ChevronDown, Loader2, Search, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { SearchSelect } from "@/components/common/SearchSelect";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { useBatches } from "@/contexts/BatchContext";
 import { api } from "@/lib/apiClient";
@@ -94,34 +93,6 @@ function Pick({ value, onChange, placeholder, options, label }: { value: string;
       <SelectTrigger aria-label={label} className={cn(value && "border-primary/40 bg-primary/[0.03]")}><SelectValue placeholder={placeholder} /></SelectTrigger>
       <SelectContent><SelectItem value={ALL}>{placeholder}</SelectItem>{options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
     </Select>
-  );
-}
-
-/** Searchable dropdown (Popover + Command) for long option lists. */
-function SearchPick({ value, onChange, placeholder, options, label }: { value: string; onChange: (v: string) => void; placeholder: string; options: string[]; label: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} aria-label={label} className={cn("w-full justify-between font-normal", !value && "text-muted-foreground", value && "border-primary/40 bg-primary/[0.03]")}>
-          <span className="truncate">{value || placeholder}</span><ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[240px] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="খুঁজুন..." />
-          <CommandList>
-            <CommandEmpty>কিছু পাওয়া যায়নি</CommandEmpty>
-            <CommandGroup>
-              <CommandItem value="__all__" onSelect={() => { onChange(""); setOpen(false); }}><Check className={cn("mr-2 h-4 w-4", value ? "opacity-0" : "opacity-100")} />{placeholder}</CommandItem>
-              {options.map((o) => (
-                <CommandItem key={o} value={o} onSelect={() => { onChange(o); setOpen(false); }}><Check className={cn("mr-2 h-4 w-4", value === o ? "opacity-100" : "opacity-0")} />{o}</CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -213,7 +184,7 @@ export function StudentFilters({ value: f, onChange, onReset, total, loading }: 
               <SelectContent><SelectItem value={ALL}>যেকোনো</SelectItem><SelectItem value="today">আজ জন্মদিন</SelectItem>{MONTHS.map((m, i) => <SelectItem key={m} value={String(i + 1)}>{m} মাসে</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <Field label="HSC প্রতিষ্ঠান"><SearchPick label="HSC প্রতিষ্ঠান" value={f.hscInstitution} onChange={(v) => onChange({ hscInstitution: v })} placeholder="সকল প্রতিষ্ঠান" options={institutions} /></Field>
+          <Field label="HSC প্রতিষ্ঠান"><SearchSelect label="HSC প্রতিষ্ঠান" value={f.hscInstitution} onChange={(v) => onChange({ hscInstitution: v })} placeholder="সকল প্রতিষ্ঠান" allLabel="সকল প্রতিষ্ঠান" options={institutions.map((n) => ({ value: n, label: n }))} /></Field>
           <Field label="লিঙ্গ"><Pick label="লিঙ্গ" value={f.gender} onChange={(v) => onChange({ gender: v })} placeholder="সকল" options={GENDERS.map((g) => ({ value: g, label: g }))} /></Field>
           <Field label="ফি-এর ধরন"><Pick label="ফি-এর ধরন" value={f.feeType} onChange={(v) => onChange({ feeType: v })} placeholder="সকল" options={FEE_TYPES.map((t) => ({ value: t, label: t }))} /></Field>
           <Field label="প্রোফাইল"><Pick label="প্রোফাইল" value={f.profileStatus} onChange={(v) => onChange({ profileStatus: v })} placeholder="সকল" options={[{ value: "complete", label: "সম্পূর্ণ" }, { value: "incomplete", label: "অসম্পূর্ণ" }]} /></Field>

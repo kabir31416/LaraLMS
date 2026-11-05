@@ -1,7 +1,7 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { homeRouteFor, ProtectedRoute } from "@/components/ProtectedRoute";
 import { hasPermission, useAuth } from "@/contexts/AuthContext";
-import { ADMISSION_RESULTS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ, RESULTS_READ } from "@/lib/permissions";
+import { ADMIT_CARDS_MANAGE, ADMISSION_RESULTS_MANAGE, ID_CARDS_MANAGE, MESS_EXPENSES_APPROVE, MESS_EXPENSES_MANAGE, MESS_COMPLAINTS_MANAGE, MESS_NOTICES_MANAGE, MESS_REPORTS_READ, MESS_SETTINGS_MANAGE, MESS_VIEW, REPORTS_READ, RESULTS_READ } from "@/lib/permissions";
 import { MessScopeProvider } from "@/components/mess/MessShell";
 import Home from "./pages/Home";
 import { AdminLoginPage, StaffLoginPage, StudentLoginPage } from "./pages/PortalLogin";
@@ -47,6 +47,12 @@ import DirectorResults from "./pages/DirectorResults";
 // Student portal
 import StudentDashboard from "./pages/student/StudentDashboard";
 import StudentProfileSelf from "./pages/student/StudentProfile";
+import StudentIdCard from "./pages/student/StudentIdCard";
+import StudentAdmitCards from "./pages/student/StudentAdmitCards";
+import IdCards from "./pages/IdCards";
+import AdmitCards from "./pages/AdmitCards";
+import AdmitCardExam from "./pages/AdmitCardExam";
+import VerifyCard from "./pages/VerifyCard";
 import StudentAttendance from "./pages/student/StudentAttendance";
 import StudentResults from "./pages/student/StudentResults";
 import StudentPayments from "./pages/student/StudentPayments";
@@ -112,6 +118,8 @@ export function AppRoutes() {
       <Route path="/marksheet" element={<Marksheet />} />
       <Route path="/studententry" element={<StudentEntry />} />
       <Route path="/newstudententry" element={<NewStudentEntry />} />
+      {/* QR verification for ID / admit cards — public, minimal data, rate-limited on the server. */}
+      <Route path="/verify/:kind/:code" element={<VerifyCard />} />
 
       {/* Admin */}
       <Route element={<ProtectedRoute roles={["Admin"]}><Outlet /></ProtectedRoute>}>
@@ -132,6 +140,9 @@ export function AppRoutes() {
         <Route path="/result-entry" element={<DirectorResults />} />
         <Route path="/result-management" element={<ResultManagement />} />
         <Route path="/analytics" element={<ProtectedRoute permission={RESULTS_READ}><PerformanceAnalytics /></ProtectedRoute>} />
+        <Route path="/id-cards" element={<ProtectedRoute permission={ID_CARDS_MANAGE}><IdCards /></ProtectedRoute>} />
+        <Route path="/admit-cards" element={<ProtectedRoute permission={ADMIT_CARDS_MANAGE}><AdmitCards /></ProtectedRoute>} />
+        <Route path="/admit-cards/:id" element={<ProtectedRoute permission={ADMIT_CARDS_MANAGE}><AdmitCardExam /></ProtectedRoute>} />
       </Route>
 
       {/* Admin — Admission Result (upload/preview/confirm/process pipeline + its roll-bookkeeping front page) can be individually disabled per-Admin (User.deniedPermissions), so it's gated by its own dedicated permission on top of the Admin role. */}
@@ -200,6 +211,10 @@ export function AppRoutes() {
         <Route path="/director/analytics" element={<PerformanceAnalytics />} />
         <Route path="/director/admission-result" element={<AdmissionResult />} />
         <Route path="/director/chance-results" element={<ChanceResults />} />
+        {/* ID / admit cards — read & print only, own batches (server-scoped). */}
+        <Route path="/director/id-cards" element={<IdCards />} />
+        <Route path="/director/admit-cards" element={<AdmitCards />} />
+        <Route path="/director/admit-cards/:id" element={<AdmitCardExam />} />
         {/* Attendance is no longer a separate director workflow — it's entered together with marks on Result Entry (Phase 5). */}
         <Route path="/director/attendance" element={<Navigate to="/director/results" replace />} />
       </Route>
@@ -208,6 +223,8 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute roles={["Student"]}><Outlet /></ProtectedRoute>}>
         <Route path="/student" element={<StudentDashboard />} />
         <Route path="/student/profile" element={<StudentProfileSelf />} />
+        <Route path="/student/id-card" element={<StudentIdCard />} />
+        <Route path="/student/admit-cards" element={<StudentAdmitCards />} />
         <Route path="/student/attendance" element={<StudentAttendance />} />
         <Route path="/student/results" element={<StudentResults />} />
         <Route path="/student/payments" element={<StudentPayments />} />

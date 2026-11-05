@@ -68,6 +68,19 @@ export const PERMISSIONS = {
   NOTICES_MANAGE: "notices:manage",
   NOTICES_READ: "notices:read",
 
+  // Student ID Cards. Directors may preview/print cards of their own batches'
+  // students only; issuing (recording) a card is Admin-only.
+  ID_CARDS_MANAGE: "id-cards:manage",
+  ID_CARDS_READ_OWN_BATCH: "id-cards:read:own-batch",
+  ID_CARDS_READ_OWN: "id-cards:read:own",
+
+  // Scheduled exams, student assignment and admit cards (separate from the
+  // OfflineExam result-entry records above). Directors read/print for their
+  // own batches only; students see only their own published admit cards.
+  ADMIT_CARDS_MANAGE: "admit-cards:manage",
+  ADMIT_CARDS_READ_OWN_BATCH: "admit-cards:read:own-batch",
+  ADMIT_CARDS_READ_OWN: "admit-cards:read:own",
+
   // Coaching Material Inventory & Student Distribution
   MATERIALS_VIEW: "materials:view",
   MATERIALS_CREATE: "materials:create",
@@ -148,6 +161,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<DefaultRoleName, string[]> = {
     PERMISSIONS.RESULTS_READ,
     PERMISSIONS.VIDEOS_READ,
     PERMISSIONS.NOTICES_READ,
+    PERMISSIONS.ID_CARDS_READ_OWN_BATCH,
+    PERMISSIONS.ADMIT_CARDS_READ_OWN_BATCH,
   ],
   student: [
     PERMISSIONS.STUDENTS_UPDATE_SELF,
@@ -160,6 +175,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<DefaultRoleName, string[]> = {
     PERMISSIONS.NOTICES_READ,
     PERMISSIONS.MATERIALS_READ_OWN,
     PERMISSIONS.MESS_READ_OWN,
+    PERMISSIONS.ID_CARDS_READ_OWN,
+    PERMISSIONS.ADMIT_CARDS_READ_OWN,
   ],
   // Mess staff portal roles (phone + Staff ID login, same as Batch Director).
   // None of them holds MESS_ALL_ACCESS, so every one is limited to the Messes

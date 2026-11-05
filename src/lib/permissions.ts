@@ -25,6 +25,10 @@ export const REPORTS_READ = "reports:read";
 export const STAFF_MANAGE = "staff:manage";
 export const BATCHES_MANAGE = "batches:manage";
 export const ENROLLMENTS_MANAGE = "enrollments:manage";
+export const ID_CARDS_MANAGE = "id-cards:manage";
+export const ID_CARDS_READ_OWN_BATCH = "id-cards:read:own-batch";
+export const ADMIT_CARDS_MANAGE = "admit-cards:manage";
+export const ADMIT_CARDS_READ_OWN_BATCH = "admit-cards:read:own-batch";
 export const MATERIALS_VIEW = "materials:view";
 export const MATERIALS_CREATE = "materials:create";
 export const MATERIALS_UPDATE = "materials:update";
@@ -104,6 +108,8 @@ export const SIDEBAR_MODULES: SidebarModule[] = [
   { key: "fees", label: "ফি ম্যানেজমেন্ট", permissions: [PAYMENTS_READ, PAYMENTS_CREATE, RECEIPTS_READ], urls: ["/fees"] },
   { key: "attendance", label: "উপস্থিতি", permissions: [ATTENDANCE_MARK, ATTENDANCE_READ], urls: ["/attendance"] },
   { key: "exams", label: "এক্সাম ও ফলাফল ব্যবস্থাপনা", permissions: [EXAMS_MANAGE, RESULTS_READ], urls: ["/exams", "/result-management", "/result-entry", "/analytics"] },
+  { key: "id-cards", label: "আইডি কার্ড", permissions: [ID_CARDS_MANAGE], urls: ["/id-cards"] },
+  { key: "admit-cards", label: "পরীক্ষা ও অ্যাডমিট কার্ড", permissions: [ADMIT_CARDS_MANAGE], urls: ["/admit-cards"] },
   { key: "videos", label: "ভিডিও ক্লাস", permissions: [VIDEOS_MANAGE], urls: ["/videos"] },
   { key: "notices", label: "নোটিশ", permissions: [NOTICES_MANAGE], urls: ["/notices"] },
   { key: "reports", label: "রিপোর্ট", permissions: [REPORTS_READ], urls: ["/reports"] },

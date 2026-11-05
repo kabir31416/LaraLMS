@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, UserPlus, DollarSign, ClipboardCheck, FileText, Award, BookOpen, Calculator, Settings,
   UserCog, Layers, Video, ClipboardList, Bell, BarChart3, User, ListChecks, FileSpreadsheet, BedDouble, Building2,
-  Receipt, Coins, ShieldCheck, HandCoins, Wrench, TrendingUp, type LucideIcon,
+  Receipt, Coins, ShieldCheck, HandCoins, Wrench, TrendingUp, IdCard, Ticket, FileBadge, type LucideIcon,
 } from "lucide-react";
 import { hasPermission, type AuthUser } from "@/contexts/AuthContext";
 import {
@@ -42,6 +42,7 @@ const ADMIN_GROUPS: NavGroup[] = [
       { title: "ভর্তি", url: "/admission", icon: UserPlus, keywords: "admission new student" },
       { title: "অ্যাডমিশন রেজাল্ট", url: "/admission-result", icon: ListChecks, keywords: "admission result chance" },
       { title: "ব্যাচ", url: "/batches", icon: Layers, keywords: "batch" },
+      { title: "আইডি কার্ড", url: "/id-cards", icon: IdCard, keywords: "id card student identity print qr" },
     ],
   },
   {
@@ -49,6 +50,7 @@ const ADMIN_GROUPS: NavGroup[] = [
     items: [
       { title: "উপস্থিতি", url: "/attendance", icon: ClipboardCheck, keywords: "attendance" },
       { title: "এক্সাম", url: "/exams", icon: FileText, keywords: "exam" },
+      { title: "পরীক্ষা ও অ্যাডমিট কার্ড", url: "/admit-cards", icon: Ticket, keywords: "admit card exam schedule assign hall ticket" },
       { title: "রেজাল্ট এন্ট্রি", url: "/result-entry", icon: ClipboardList, keywords: "result entry marks" },
       { title: "ফলাফল ব্যবস্থাপনা", url: "/result-management", icon: FileSpreadsheet, keywords: "result management" },
       { title: "পারফরম্যান্স অ্যানালিটিক্স", url: "/analytics", icon: TrendingUp, keywords: "performance analytics at risk trend progress" },
@@ -85,6 +87,8 @@ const DIRECTOR_GROUPS: NavGroup[] = [
       { title: "ফলাফল ব্যবস্থাপনা", url: "/director/result-management", icon: FileSpreadsheet, keywords: "result management" },
       { title: "পারফরম্যান্স অ্যানালিটিক্স", url: "/director/analytics", icon: TrendingUp, keywords: "performance analytics at risk trend" },
       { title: "অ্যাডমিশন রেজাল্ট", url: "/director/admission-result", icon: ListChecks, keywords: "admission result" },
+      { title: "আইডি কার্ড", url: "/director/id-cards", icon: IdCard, keywords: "id card print" },
+      { title: "অ্যাডমিট কার্ড", url: "/director/admit-cards", icon: Ticket, keywords: "admit card exam" },
     ],
   },
   {
@@ -105,6 +109,7 @@ const STUDENT_GROUPS: NavGroup[] = [
       { title: "উপস্থিতি", url: "/student/attendance", icon: ClipboardCheck, keywords: "attendance" },
       { title: "ভিডিও ক্লাস", url: "/student/videos", icon: Video, keywords: "video class lecture" },
       { title: "ম্যাটেরিয়াল", url: "/student/books", icon: BookOpen, keywords: "material book sheet" },
+      { title: "অ্যাডমিট কার্ড", url: "/student/admit-cards", icon: FileBadge, keywords: "admit card exam hall ticket" },
     ],
   },
   { label: "আর্থিক", items: [{ title: "ফি ও পেমেন্ট", url: "/student/payments", icon: DollarSign, keywords: "payment fee due receipt" }] },
@@ -113,6 +118,7 @@ const STUDENT_GROUPS: NavGroup[] = [
     label: "আমার তথ্য",
     items: [
       { title: "প্রোফাইল", url: "/student/profile", icon: User, keywords: "profile" },
+      { title: "আইডি কার্ড", url: "/student/id-card", icon: IdCard, keywords: "id card identity" },
       { title: "মেস / হোস্টেল", url: "/student/mess", icon: BedDouble, keywords: "mess hostel seat bill" },
     ],
   },
@@ -189,6 +195,7 @@ const EXTRA_TITLES: [RegExp, string][] = [
   [/^\/mess\/notices/, "নোটিশ"],
   [/^\/mess\/reports/, "রিপোর্ট"],
   [/^\/mess\/settings/, "মেস সেটিংস"],
+  [/^\/(director\/)?admit-cards\/[^/]+$/, "পরীক্ষার বিস্তারিত"],
 ];
 
 /** Breadcrumb trail for the current path: [group label, page title]. */
