@@ -37,6 +37,7 @@ import auditLogRoutes from "../audit/auditLog.routes";
 import admissionResultRoutes from "../modules/admissionResults/admissionResult.routes";
 import smsRoutes from "../modules/sms/sms.routes";
 import messRoutes from "../modules/mess/mess.routes";
+import { cardVerifyRoutes, examScheduleRoutes, idCardRoutes } from "../modules/cards/cards.routes";
 
 /**
  * Every module's router is mounted here under /api/v1/... — Phase 2 §12.
@@ -84,10 +85,13 @@ router.use("/notices", noticeRoutes);
 router.use("/public", publicInfoRoutes);
 router.use("/public/results", publicResultsRoutes);
 router.use("/public/student-entry", publicStudentEntryRoutes);
+router.use("/public/verify", cardVerifyRoutes);
 router.use("/public/new-student-entry", publicNewStudentEntryRoutes);
 router.use("/audit-logs", auditLogRoutes);
 router.use("/admission-results", admissionResultRoutes);
 router.use("/sms", smsRoutes);
 router.use("/mess", messRoutes);
+router.use("/id-cards", idCardRoutes);
+router.use("/exam-schedules", examScheduleRoutes);
 
 export default router;

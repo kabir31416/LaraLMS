@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import { UserPlus, Printer, FileSpreadsheet } from "lucide-react";
 import { useStudents, fromApi, type ApiStudent } from "@/contexts/StudentContext";
 import { useAcademic } from "@/contexts/AcademicContext";
 import { STUDENTS_APPROVE_ENTRY } from "@/lib/permissions";
-import { StudentFilters, type DueStatus } from "@/components/students/StudentFilters";
+import { EMPTY_FILTERS, FILTER_KEYS, StudentFilters, studentFilterQuery, type StudentFilterValues } from "@/components/students/StudentFilters";
 import { StudentTable } from "@/components/students/StudentTable";
 import { AdmissionForm } from "@/components/students/AdmissionForm";
 import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
@@ -71,25 +72,39 @@ function friendlyError(err: unknown, fallback: string): string {
 
 const Students = () => {
   const { deleteStudent, uploadStudentPhoto, deleteStudentPhoto, approveEntry, rejectEntry } = useStudents();
-  const { getCourse } = useAcademic();
+  const { getCourse, loading: academicLoading } = useAcademic();
   const { user } = useAuth();
   const canApproveEntry = hasPermission(user, STUDENTS_APPROVE_ENTRY);
 
-  const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 350);
-  const [courseId, setCourseId] = useState("all");
-  const [batchId, setBatchId] = useState("all");
-  const [hscInstitution, setHscInstitution] = useState("all");
-  const [division, setDivision] = useState("");
-  const debouncedDivision = useDebouncedValue(division, 350);
-  const [district, setDistrict] = useState("");
-  const debouncedDistrict = useDebouncedValue(district, 350);
-  const [guardianMobile, setGuardianMobile] = useState("");
-  const debouncedGuardianMobile = useDebouncedValue(guardianMobile, 350);
-  const [gender, setGender] = useState("all");
-  const [dueStatus, setDueStatus] = useState<DueStatus>("all");
-  const [birthdayToday, setBirthdayToday] = useState(false);
-  const [page, setPage] = useState(1);
+  // Every filter, the sort and the page live in the URL, so they survive
+  // pagination, reloads, back/forward and can be shared as a link.
+  const [params, setParams] = useSearchParams();
+  const filters = useMemo<StudentFilterValues>(() => {
+    const f = { ...EMPTY_FILTERS };
+    for (const k of FILTER_KEYS) f[k] = params.get(k) ?? "";
+    return f;
+  }, [params]);
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const setPage = (p: number) => setParams((prev) => { const n = new URLSearchParams(prev); if (p > 1) n.set("page", String(p)); else n.delete("page"); return n; });
+  // Any filter change (other than page itself) starts back at page 1 — a
+  // stale page number from a previous, larger result set could otherwise
+  // land past the end of a newly-narrowed one.
+  const updateFilters = (patch: Partial<StudentFilterValues>) => setParams((prev) => {
+    const n = new URLSearchParams(prev);
+    for (const [k, v] of Object.entries(patch)) { if (v) n.set(k, v); else n.delete(k); }
+    n.delete("page");
+    return n;
+  }, { replace: true });
+  const resetFilters = () => setParams((prev) => { const n = new URLSearchParams(); if (prev.get("sort")) n.set("sort", prev.get("sort")!); return n; }, { replace: true });
+
+  // Only the free-text fields are debounced (so a keystroke doesn't fire a
+  // request); dropdowns, dates and paging apply immediately.
+  const textKey = JSON.stringify([filters.search, filters.division, filters.district, filters.guardianMobile]);
+  const debouncedTextKey = useDebouncedValue(textKey, 350);
+  const debouncedFilters = useMemo<StudentFilterValues>(() => {
+    const [search, division, district, guardianMobile] = JSON.parse(debouncedTextKey) as string[];
+    return { ...filters, search, division, district, guardianMobile };
+  }, [filters, debouncedTextKey]);
 
   const [students, setStudents] = useState<Student[]>([]);
   const [meta, setMeta] = useState<ListMeta | null>(null);
@@ -103,24 +118,18 @@ const Students = () => {
   const [rejectReason, setRejectReason] = useState("");
   const [entryBusyId, setEntryBusyId] = useState<string | null>(null);
 
-  const courseName = courseId === "all" ? undefined : getCourse(courseId)?.name;
+  const courseName = debouncedFilters.courseId ? getCourse(debouncedFilters.courseId)?.name : undefined;
+  // A course id that no longer resolves (deleted course, stale link) must not
+  // silently widen the list to every course.
+  const courseUnresolved = !!debouncedFilters.courseId && !courseName;
+  const courseMissing = courseUnresolved && !academicLoading;
 
-  const buildFilterParams = useCallback((): URLSearchParams => {
-    const qs = new URLSearchParams();
-    if (debouncedSearch.trim()) qs.set("search", debouncedSearch.trim());
-    if (courseName) qs.set("course", courseName);
-    if (batchId !== "all") qs.set("batchId", batchId);
-    if (hscInstitution !== "all") qs.set("hscInstitution", hscInstitution);
-    if (debouncedDivision.trim()) qs.set("division", debouncedDivision.trim());
-    if (debouncedDistrict.trim()) qs.set("district", debouncedDistrict.trim());
-    if (debouncedGuardianMobile.trim()) qs.set("guardianMobile", debouncedGuardianMobile.trim());
-    if (gender !== "all") qs.set("gender", gender);
-    if (dueStatus !== "all") qs.set("dueStatus", dueStatus);
-    if (birthdayToday) qs.set("birthdayToday", "true");
-    return qs;
-  }, [debouncedSearch, courseName, batchId, hscInstitution, debouncedDivision, debouncedDistrict, debouncedGuardianMobile, gender, dueStatus, birthdayToday]);
+  // One query string shared by the list, Print and Export — they can never disagree.
+  const filterQuery = useMemo(() => studentFilterQuery(debouncedFilters, courseName).toString(), [debouncedFilters, courseName]);
+  const buildFilterParams = useCallback((): URLSearchParams => new URLSearchParams(filterQuery), [filterQuery]);
 
   const load = useCallback(() => {
+    if (courseUnresolved) return;
     setLoading(true);
     const qs = buildFilterParams();
     qs.set("page", String(page));
@@ -133,14 +142,9 @@ const Students = () => {
       })
       .catch((err) => toast.error(friendlyError(err, "শিক্ষার্থী তালিকা লোড করা যায়নি।")))
       .finally(() => setLoading(false));
-  }, [buildFilterParams, page]);
+  }, [buildFilterParams, page, courseUnresolved]);
 
   useEffect(() => { load(); }, [load]);
-
-  // Any filter change (other than page itself) starts back at page 1 — a
-  // stale page number from a previous, larger result set could otherwise
-  // land past the end of a newly-narrowed one.
-  useEffect(() => { setPage(1); }, [debouncedSearch, courseName, batchId, hscInstitution, debouncedDivision, debouncedDistrict, debouncedGuardianMobile, gender, dueStatus, birthdayToday]);
 
   const handleEdit = (student: Student) => {
     setEditStudent(student);
@@ -248,7 +252,7 @@ const Students = () => {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold">শিক্ষার্থী</h1>
-            <p className="text-sm text-muted-foreground">মোট {(meta?.total ?? 0).toLocaleString("bn-BD")} জন শিক্ষার্থী</p>
+            <p className="text-sm text-muted-foreground">ফিল্টার, খোঁজ ও সাজানো — প্রিন্ট ও এক্সপোর্টেও একই ফলাফল</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" onClick={handlePrint} disabled={exporting !== null}>
@@ -263,31 +267,15 @@ const Students = () => {
           </div>
         </div>
 
-        <StudentFilters
-          search={search}
-          onSearchChange={setSearch}
-          courseId={courseId}
-          onCourseIdChange={setCourseId}
-          batchId={batchId}
-          onBatchIdChange={setBatchId}
-          hscInstitution={hscInstitution}
-          onHscInstitutionChange={setHscInstitution}
-          division={division}
-          onDivisionChange={setDivision}
-          district={district}
-          onDistrictChange={setDistrict}
-          guardianMobile={guardianMobile}
-          onGuardianMobileChange={setGuardianMobile}
-          gender={gender}
-          onGenderChange={setGender}
-          dueStatus={dueStatus}
-          onDueStatusChange={setDueStatus}
-          birthdayToday={birthdayToday}
-          onBirthdayTodayChange={setBirthdayToday}
-        />
+        <StudentFilters value={filters} onChange={updateFilters} onReset={resetFilters} total={loading && !meta ? null : meta?.total ?? 0} loading={loading} />
 
         <Card className="border-none shadow-sm">
-          {loading ? (
+          {courseMissing ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              নির্বাচিত কোর্সটি আর পাওয়া যাচ্ছে না।{" "}
+              <Button variant="link" className="h-auto p-0" onClick={() => updateFilters({ courseId: "", batchId: "" })}>কোর্স ফিল্টার মুছুন</Button>
+            </div>
+          ) : loading ? (
             <div className="p-6 space-y-3">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : (
             <StudentTable

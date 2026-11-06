@@ -100,6 +100,20 @@ export const createDistributionSchema = z.object({
   }),
 });
 
+export const createBulkDistributionSchema = z.object({
+  body: z
+    .object({
+      batchId: z.string().length(24).optional(),
+      studentIds: z.array(z.string().length(24)).min(1).max(500).optional(),
+      items: z.array(distributionItemSchema).min(1),
+      distributionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      note: z.string().trim().max(300).optional(),
+      skipAlreadyReceived: z.boolean().optional(),
+      dryRun: z.boolean().optional(),
+    })
+    .refine((b) => !!b.batchId !== !!b.studentIds?.length, { message: "Send either batchId or studentIds" }),
+});
+
 export const listDistributionsQuerySchema = z.object({
   query: z.object({
     page: z.string().optional(),

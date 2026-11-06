@@ -32,6 +32,8 @@ interface Ctx {
   addMaterial: (data: Omit<Material, "id" | "currentStock" | "status"> & { status?: Material["status"] }) => Promise<Material>;
   updateMaterial: (id: string, data: Partial<Material>) => Promise<Material>;
   setMaterialStatus: (id: string, status: Material["status"]) => Promise<Material>;
+  /** Permanent delete — the server refuses a material that was ever distributed. */
+  deleteMaterial: (id: string) => Promise<void>;
   addStock: (materialId: string, quantity: number, reason?: string) => Promise<Material>;
   adjustStock: (materialId: string, quantity: number, reason: string, note?: string) => Promise<Material>;
 
@@ -123,6 +125,11 @@ export function MaterialProvider({ children }: { children: React.ReactNode }) {
     return updated;
   }, []);
 
+  const deleteMaterial = useCallback(async (id: string) => {
+    await api.del(`/materials/${id}`);
+    setMaterials((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
   const deleteMaterialType = useCallback(async (id: string) => {
     await api.del(`/material-types/${id}`);
     setMaterialTypes((prev) => prev.filter((t) => t.id !== id));
@@ -141,13 +148,13 @@ export function MaterialProvider({ children }: { children: React.ReactNode }) {
     () => ({
       materials, materialTypes, activeMaterialTypes, materialSettings, loading,
       addMaterial, updateMaterial, setMaterialStatus, addStock, adjustStock,
-      addMaterialType, updateMaterialType, deleteMaterialType,
+      deleteMaterial, addMaterialType, updateMaterialType, deleteMaterialType,
       updateMaterialSettings: updateMaterialSettingsFn,
       getMaterial, refreshMaterials, refreshMaterialTypes,
     }),
     [materials, materialTypes, activeMaterialTypes, materialSettings, loading,
       addMaterial, updateMaterial, setMaterialStatus, addStock, adjustStock,
-      addMaterialType, updateMaterialType, deleteMaterialType,
+      deleteMaterial, addMaterialType, updateMaterialType, deleteMaterialType,
       updateMaterialSettingsFn, getMaterial, refreshMaterials, refreshMaterialTypes],
   );
 

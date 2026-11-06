@@ -222,6 +222,10 @@ export const listStudentsQuerySchema = z.object({
     profileStatus: z.enum(["incomplete", "complete"]).optional(),
     admissionRollStatus: z.enum(["added", "missing"]).optional(),
     feeType: z.enum(FEE_TYPES).optional(),
+    status: z.enum(STUDENT_STATUS).optional(),
+    admissionDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    admissionDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    birthMonth: z.string().regex(/^(0?[1-9]|1[0-2])$/).optional(),
     /** Student Entry Workflow — omitted means "exclude pending/rejected" (student.service.ts's buildStudentFilter); the Admin Pending page is the one caller that sends this explicitly. */
     admissionStatus: z.enum(ADMISSION_ENTRY_STATUS).optional(),
     sortBy: z.string().optional(),

@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HscInstitutionCombobox } from "@/components/common/HscInstitutionCombobox";
 import { StudentPhotoUploader } from "@/components/students/photo/StudentPhotoUploader";
 import { COMPLETION_LABELS, StudentPage } from "@/components/student/StudentPortalKit";
+import { SupportCard } from "@/components/student/SupportCard";
 import { RELATIONS, HSC_SSC_GROUPS } from "@/types/student";
 import type { SelfEditableFields } from "@/contexts/StudentSelfContext";
 import { ApiClientError } from "@/contexts/AuthContext";
@@ -65,6 +66,8 @@ export default function StudentProfile() {
   return (
     <StudentPage icon={User} title="আমার প্রোফাইল" description="ব্যক্তিগত, ব্যাচ ও শিক্ষাগত তথ্য — চিহ্নিত অংশগুলো আপনি নিজে হালনাগাদ করতে পারবেন">
       <ProfileBody />
+      {/* Fixed developer/support credit — always the last section of the page. */}
+      <SupportCard />
     </StudentPage>
   );
 }

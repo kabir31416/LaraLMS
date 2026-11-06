@@ -9,6 +9,7 @@ import {
   adjustStockSchema,
   checkDuplicateSchema,
   createDistributionSchema,
+  createBulkDistributionSchema,
   createMaterialSchema,
   dashboardQuerySchema,
   deactivateMaterialSchema,
@@ -35,6 +36,7 @@ router.use(requireAuth);
 // -------------------- Student Distribution --------------------
 router.post("/distributions/check-duplicate", requirePermission(PERMISSIONS.MATERIALS_DISTRIBUTE), validate(checkDuplicateSchema), controller.checkDuplicate);
 router.post("/distributions", requirePermission(PERMISSIONS.MATERIALS_DISTRIBUTE), validate(createDistributionSchema), controller.createDistribution);
+router.post("/distributions/bulk", requirePermission(PERMISSIONS.MATERIALS_DISTRIBUTE), validate(createBulkDistributionSchema), controller.createBulkDistribution);
 router.get("/distributions", requirePermission(PERMISSIONS.MATERIALS_DISTRIBUTION_VIEW), validate(listDistributionsQuerySchema), controller.listDistributions);
 router.get("/distributions/:id", requirePermission(PERMISSIONS.MATERIALS_DISTRIBUTION_VIEW), validate(idParamSchema), controller.getDistributionById);
 router.post(
@@ -67,6 +69,8 @@ router.post("/", requirePermission(PERMISSIONS.MATERIALS_CREATE), validate(creat
 router.get("/:id", requirePermission(PERMISSIONS.MATERIALS_VIEW), validate(idParamSchema), controller.getById);
 router.patch("/:id", requirePermission(PERMISSIONS.MATERIALS_UPDATE), validate(updateMaterialSchema), controller.update);
 router.patch("/:id/status", requirePermission(PERMISSIONS.MATERIALS_DEACTIVATE), validate(deactivateMaterialSchema), controller.setStatus);
+// Permanent delete — only for a material that was never distributed (service refuses otherwise).
+router.delete("/:id", requirePermission(PERMISSIONS.MATERIALS_DEACTIVATE), validate(idParamSchema), controller.remove);
 
 // -------------------- Stock Management --------------------
 router.post("/:id/stock/add", requirePermission(PERMISSIONS.MATERIALS_STOCK_ADD), validate(addStockSchema), controller.addStock);
